@@ -1,0 +1,14 @@
+:root { color-scheme: dark; }
+body { width: 360px; margin: 0; background: #121314; color: #f2f0ea; font: 13px/1.45 system-ui, sans-serif; }
+main { padding: 16px; }
+h1 { margin: 0; font-size: 17px; }
+h2 { margin: 20px 0 8px; font-size: 13px; }
+.privacy { margin: 4px 0; color: #b7b1a4; }
+#status { min-height: 18px; color: #91d5a4; }
+#status.error { color: #ff9c96; }
+.matches { display: grid; gap: 8px; }
+.match { display: grid; gap: 5px; padding: 10px; border: 1px solid #3b3d40; border-radius: 8px; background: #1d1f21; }
+.match span { color: #b7b1a4; }
+.match div { display: flex; gap: 6px; }
+button { border: 0; border-radius: 6px; padding: 6px 9px; background: #e0b95c; color: #201b10; font: inherit; font-weight: 650; cursor: pointer; }
+button.secondary { background: #3b3d40; color: #f2f0ea; }
