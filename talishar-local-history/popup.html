@@ -3,24 +3,33 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Hyperdriver — Talishar History</title>
+    <title>Hyperdriver — Histórico Talishar</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
       <header class="brand">
         <span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><strong>Hyperdriver</strong><small>Talishar history</small></span>
+        <span><strong>Hyperdriver</strong></span>
       </header>
       <div class="intro">
-        <p>Telemetria de corrida aplicada ao FAB.</p>
+        <p>Histórico de partidas do Talishar.</p>
         <div class="sector-bars" aria-hidden="true"><i></i><i></i><i></i></div>
       </div>
-      <p class="privacy">Replays ficam neste navegador, são baixados ao final e sincronizados quando você abre o Hyperdriver autenticado.</p>
+      <p class="privacy">Baixe um JSON quando quiser ou abra o Hyperdriver autenticado para sincronizá-los.</p>
       <p id="status" role="status"></p>
       <section>
         <h2><span>01</span> Partidas locais</h2>
         <div id="matches" class="matches"></div>
+      </section>
+      <section>
+        <h2><span>02</span> Importar históricos</h2>
+        <p class="import-help">Selecione os JSONs que você já salvou no computador para carregá-los nesta extensão.</p>
+        <input id="import-files" type="file" accept=".json,application/json" multiple>
+        <div class="import-actions">
+          <button id="import-button" type="button">Selecionar JSONs</button>
+          <button id="sync-button" class="secondary" type="button">Sincronizar tudo</button>
+        </div>
       </section>
     </main>
     <script src="popup.js"></script>

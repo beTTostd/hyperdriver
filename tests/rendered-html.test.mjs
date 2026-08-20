@@ -11,6 +11,7 @@ import Database from "better-sqlite3";
 import {
   indicators,
   isCompleteMatch,
+  isFinished,
   normalizeCompletion,
 } from "../talishar-local-history/replay-state.js";
 
@@ -360,6 +361,8 @@ test("recognizes Talishar completion indicators in legacy captures", () => {
   });
   assert.equal(indicator.turn, "7");
   assert.equal(indicator.phase, "OVER");
+  assert.equal(isFinished({ phase: "over" }), true);
+  assert.equal(isFinished({ gameOver: "1" }), true);
 
   const incomplete = {
     status: "recording",

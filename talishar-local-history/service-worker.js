@@ -43,6 +43,14 @@ async function listMatches() {
   return withStore("readonly", (store) => store.getAll());
 }
 
+function gameMode(match) {
+  const frame = match.frames.find((item) => {
+    const value = item.payload?.initialLoad?.gameFormat;
+    return typeof value === "string" && value.trim();
+  });
+  return frame?.payload?.initialLoad?.gameFormat?.trim().toLowerCase() || null;
+}
+
 function sanitize(value, seen = new WeakSet()) {
   if (value === null || typeof value !== "object") return value;
   if (seen.has(value)) return "[Circular]";
@@ -67,6 +75,58 @@ function parseAndSanitize(raw) {
   } catch {
     return { rawText: raw.replace(/([?&](?:authKey|token)=[^&\s]+)/gi, "$1[REDACTED]") };
   }
+}
+
+function parseImportedMatch(raw) {
+  const document = parseAndSanitize(raw);
+  if (!document || typeof document !== "object" || Array.isArray(document) || "rawText" in document) {
+    throw new Error("O arquivo não contém JSON válido.");
+  }
+
+  const candidate = document.match && typeof document.match === "object" && !Array.isArray(document.match)
+    ? document.match
+    : document;
+  if (typeof candidate.id !== "string" || !candidate.id || !Array.isArray(candidate.frames) || candidate.frames.length === 0) {
+    throw new Error("O JSON não parece ser um replay do Talishar.");
+  }
+
+  const match = {
+    ...candidate,
+    schemaVersion: candidate.schemaVersion || document.schemaVersion || SCHEMA_VERSION,
+    status: candidate.status || "recording",
+    frames: candidate.frames,
+    summary: {
+      turn: null,
+      activePlayer: null,
+      winner: null,
+      ...(candidate.summary || {})
+    },
+    sync: null,
+    syncError: null,
+    exportedAt: candidate.exportedAt || document.exportedAt || null
+  };
+  return normalizeCompletion(match);
+}
+
+async function importMatch(raw) {
+  const match = parseImportedMatch(raw);
+  const existing = await getMatch(match.id);
+  const existingIsCurrent = existing
+    && existing.frames.length >= match.frames.length
+    && (existing.status === "finished" || match.status !== "finished");
+  if (existingIsCurrent) return { imported: false, id: match.id };
+  await putMatch(match);
+  return { imported: true, id: match.id };
+}
+
+async function requestSynchronization() {
+  const tabs = await chrome.tabs.query({});
+  const responses = await Promise.all(
+    tabs
+      .filter((tab) => tab.id != null)
+      .map((tab) => chrome.tabs.sendMessage(tab.id, { type: "sync-now" }).catch(() => null)),
+  );
+  return { requested: responses.filter((response) => response?.ok).length };
 }
 
 function makeMatch(pageSessionId, startedAt, pageUrl) {
@@ -95,9 +155,11 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
 }
 
 async function ensureMatch(message) {
-  const existing = await getMatch(message.pageSessionId);
-  if (existing) return existing;
-  const match = makeMatch(message.pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
+  let pageSessionId = message.pageSessionId;
+  const existing = await getMatch(pageSessionId);
+  if (existing && existing.status !== "finished") return existing;
+  if (existing?.status === "finished") pageSessionId = crypto.randomUUID();
+  const match = makeMatch(pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
   await putMatch(match);
   return match;
 }
@@ -131,7 +193,6 @@ async function recordFrame(message) {
   }
 
   await putMatch(match);
-  if (match.status === "finished") await exportMatch(match, true);
 }
 
 function fileName(match) {
@@ -139,7 +200,7 @@ function fileName(match) {
   return `talishar-history-${date}-${match.id.slice(0, 8)}.json`;
 }
 
-async function exportMatch(match, automatic = false) {
+async function exportMatch(match) {
   const exportDocument = {
     schemaVersion: match.schemaVersion,
     exportedAt: new Date().toISOString(),
@@ -154,20 +215,28 @@ async function exportMatch(match, automatic = false) {
   });
   match.exportedAt = new Date().toISOString();
   await putMatch(match);
-  return { automatic, filename: fileName(match) };
+  return { filename: fileName(match) };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     if (!message?.type) return;
     if (message.type === "capture-session-start") {
-      await ensureMatch(message);
-      sendResponse({ ok: true });
+      const match = await ensureMatch(message);
+      sendResponse({ ok: true, pageSessionId: match.id });
       return;
     }
     if (message.type === "capture-frame") {
       await recordFrame(message);
       sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "import-match") {
+      sendResponse({ ok: true, result: await importMatch(message.raw) });
+      return;
+    }
+    if (message.type === "request-sync") {
+      sendResponse({ ok: true, result: await requestSynchronization() });
       return;
     }
     if (message.type === "list-matches") {
@@ -180,6 +249,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         updatedAt: match.updatedAt,
         endedAt: match.endedAt,
         frameCount: match.frames.length,
+        gameMode: gameMode(match),
         summary: match.summary,
         exportedAt: match.exportedAt,
         sync: match.sync || null,

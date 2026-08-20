@@ -7,8 +7,10 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 - Observa exclusivamente o stream de atualizações do Talishar (`GetUpdateSSE.php`), hospedado em `api.talishar.net`.
 - Guarda os frames da partida no IndexedDB da extensão.
 - Remove campos de autenticação conhecidos antes de persistir os dados.
-- Tenta detectar o fim da partida e baixa automaticamente um JSON.
+- Detecta o fim da partida e deixa o replay pronto para sincronização.
 - Permite baixar ou apagar cada partida pelo popup da extensão.
+- Permite importar um ou vários JSONs já salvos pelo popup da extensão.
+- Permite solicitar a sincronização de todos os replays pendentes de uma vez.
 - Ao abrir `hyperdriver.com.br` ou `beta.hyperdriver.com.br` autenticado, envia automaticamente partidas completas ainda não sincronizadas.
 - Mantém a cópia local e o arquivo baixado depois do envio.
 
@@ -20,7 +22,8 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 4. Selecione esta pasta: `talishar-local-history`.
 5. Abra uma partida em `https://talishar.net`.
 6. Clique no ícone da extensão para acompanhar e baixar o JSON.
-7. Entre no Hyperdriver para sincronizar automaticamente as partidas concluídas.
+7. Para recuperar arquivos antigos, clique em **Selecionar JSONs** e escolha os arquivos salvos.
+8. Entre no Hyperdriver para sincronizar automaticamente as partidas concluídas.
 
 Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 

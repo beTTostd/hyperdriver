@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Hyperdriver — Talishar History",
-  "version": "0.2.0",
+  "name": "Hyperdriver — Histórico Talishar",
+  "version": "0.2.1",
   "description": "Captura partidas do Talishar e sincroniza replays completos com o Hyperdriver.",
   "permissions": ["downloads", "storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "host_permissions": [
     "https://talishar.net/*",
     "https://api.talishar.net/*",
@@ -15,7 +21,12 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Hyperdriver — Talishar History",
+    "default_title": "Hyperdriver — Histórico Talishar",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    },
     "default_popup": "popup.html"
   },
   "content_scripts": [

@@ -105,7 +105,7 @@ essa variável deixa de ser obrigatória e não altera a senha já cadastrada.
 
 ## Replays e privacidade
 
-A extensão mantém cada replay no navegador, baixa o JSON ao final da partida e
+A extensão mantém cada replay no navegador, permite baixar o JSON pelo popup e
 sincroniza partidas completas quando o usuário abre o Hyperdriver autenticado.
 Os arquivos enviados ficam em `UPLOADS_DIR`; o SQLite guarda somente metadados e
 o vínculo com o proprietário. A biblioteca `/me`, a mesa e a telemetria filtram

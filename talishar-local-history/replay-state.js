@@ -27,7 +27,9 @@ export function indicators(payload) {
 }
 
 export function isFinished(indicator) {
-  return indicator.gameOver === true || indicator.gameOver === "true" || indicator.gameOver === 1 || indicator.phase === "OVER";
+  const gameOver = typeof indicator.gameOver === "string" ? indicator.gameOver.trim().toLowerCase() : indicator.gameOver;
+  const phase = typeof indicator.phase === "string" ? indicator.phase.trim().toUpperCase() : indicator.phase;
+  return gameOver === true || gameOver === "true" || gameOver === "1" || gameOver === 1 || phase === "OVER";
 }
 
 export function isCompleteMatch(match) {

@@ -373,6 +373,25 @@
   color: var(--signal-red);
 }
 
+.loadMoreButton {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  color: var(--paper);
+  background: rgba(242, 241, 236, 0.025);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.loadMoreButton:hover {
+  border-color: var(--signal-red);
+  color: var(--signal-red);
+}
+
 .emptyState {
   margin: 32px 0 20px;
   color: var(--muted);

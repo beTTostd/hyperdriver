@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CARD_AVATAR_OPTIONS,
+  type CardAvatarOption,
   cardArtImageUrl,
   DEFAULT_CARD_AVATAR,
 } from "../../../lib/card-avatars";
@@ -21,14 +22,20 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
   const [search, setSearch] = useState("");
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cards, setCards] = useState<readonly CardAvatarOption[]>(CARD_AVATAR_OPTIONS);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [visibleCardCount, setVisibleCardCount] = useState(96);
 
   const filteredCards = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase();
-    if (!normalizedSearch) return CARD_AVATAR_OPTIONS;
-    return CARD_AVATAR_OPTIONS.filter((card) =>
-      `${card.label} ${card.id}`.toLocaleLowerCase().includes(normalizedSearch),
+    if (!normalizedSearch) return cards;
+    return cards.filter((card) =>
+      `${card.label} ${card.id.replace(/_(red|yellow|blue)$/, "")}`.toLocaleLowerCase().includes(normalizedSearch),
     );
-  }, [search]);
+  }, [cards, search]);
+
+  const visibleCards = filteredCards.slice(0, visibleCardCount);
+  const isLoadingCards = isModalOpen && !catalogLoaded && !error;
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -47,9 +54,34 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
     };
   }, [isModalOpen, pendingCardId]);
 
+  useEffect(() => {
+    if (!isModalOpen || catalogLoaded) return;
+
+    let cancelled = false;
+    fetch("/api/profile/avatar-options")
+      .then(async (response) => {
+        const data = await response.json() as { options?: CardAvatarOption[]; error?: string };
+        if (!response.ok || !Array.isArray(data.options)) {
+          throw new Error(data.error || "Não foi possível carregar as cartas.");
+        }
+        if (!cancelled) {
+          setCards(data.options);
+          setCatalogLoaded(true);
+        }
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar as cartas.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogLoaded, isModalOpen]);
+
   function openModal() {
     setError(null);
     setSearch("");
+    setVisibleCardCount(96);
     setIsModalOpen(true);
   }
 
@@ -83,7 +115,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
     }
   }
 
-  const selectedCard = CARD_AVATAR_OPTIONS.find((card) => card.id === selectedCardId);
+  const selectedCard = cards.find((card) => card.id === selectedCardId);
   const selectedCardLabel = selectedCard?.label || selectedCardId;
 
   return (
@@ -159,34 +191,45 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
 
             <div className={styles.resultsHeader}>
               <span>{filteredCards.length} {filteredCards.length === 1 ? "arte encontrada" : "artes encontradas"}</span>
-              <span>Selecione uma para aplicar</span>
+              <span>{isLoadingCards ? "Carregando catálogo completo…" : "Selecione uma para aplicar"}</span>
             </div>
 
             {filteredCards.length > 0 ? (
-              <div className={styles.artGrid}>
-                {filteredCards.map((card) => {
-                  const isSelected = card.id === selectedCardId;
-                  const isPending = card.id === pendingCardId;
-                  return (
-                    <button
-                      className={`${styles.artOption} ${isSelected ? styles.selected : ""}`}
-                      key={card.id}
-                      type="button"
-                      onClick={() => chooseCard(card.id)}
-                      disabled={Boolean(pendingCardId)}
-                      aria-pressed={isSelected}
-                    >
-                      <span className={styles.artImage}>
-                        <img src={cardArtImageUrl(card.id)} alt="" />
-                      </span>
-                      <span className={styles.artMeta}>
-                        <strong>{card.label}</strong>
-                        <small>{isPending ? "Aplicando…" : isSelected ? "Selecionada" : "Escolher"}</small>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className={styles.artGrid}>
+                  {visibleCards.map((card) => {
+                    const isSelected = card.id === selectedCardId;
+                    const isPending = card.id === pendingCardId;
+                    return (
+                      <button
+                        className={`${styles.artOption} ${isSelected ? styles.selected : ""}`}
+                        key={card.id}
+                        type="button"
+                        onClick={() => chooseCard(card.id)}
+                        disabled={Boolean(pendingCardId)}
+                        aria-pressed={isSelected}
+                      >
+                        <span className={styles.artImage}>
+                          <img src={cardArtImageUrl(card.id)} alt="" loading="lazy" />
+                        </span>
+                        <span className={styles.artMeta}>
+                          <strong>{card.label}</strong>
+                          <small>{isPending ? "Aplicando…" : isSelected ? "Selecionada" : "Escolher"}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {visibleCards.length < filteredCards.length && (
+                  <button
+                    className={styles.loadMoreButton}
+                    type="button"
+                    onClick={() => setVisibleCardCount((count) => count + 96)}
+                  >
+                    Carregar mais cartas ({filteredCards.length - visibleCards.length} restantes)
+                  </button>
+                )}
+              </>
             ) : (
               <p className={styles.emptyState}>Nenhuma arte encontrada para “{search}”.</p>
             )}

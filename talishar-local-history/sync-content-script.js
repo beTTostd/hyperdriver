@@ -13,7 +13,7 @@
     return response;
   }
 
-  async function synchronize() {
+  async function runSynchronization() {
     const pending = await send({ type: "list-sync-pending" });
     let uploaded = 0;
 
@@ -56,7 +56,26 @@
     }
 
     if (uploaded > 0) window.location.reload();
+    return uploaded;
   }
+
+  let synchronizationPromise = null;
+  function synchronize() {
+    if (!synchronizationPromise) {
+      synchronizationPromise = runSynchronization().finally(() => {
+        synchronizationPromise = null;
+      });
+    }
+    return synchronizationPromise;
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "sync-now") return;
+    synchronize()
+      .then((uploaded) => sendResponse({ ok: true, uploaded }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  });
 
   synchronize().catch(() => undefined);
 })();

@@ -39,6 +39,13 @@ main { padding: 18px; }
 #status.error { color: var(--signal-red); }
 section > h2 { margin: 17px 0 9px; font: 900 14px/1 "Arial Narrow", Impact, sans-serif; letter-spacing: .03em; text-transform: uppercase; }
 section > h2 span { margin-right: 7px; color: var(--signal-red); font: 8px/1 "IBM Plex Mono", Consolas, monospace; }
+.import-help { margin: 0 0 9px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+#import-files { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.import-actions { display: grid; gap: 6px; }
+#import-button,
+#sync-button { width: 100%; }
+#import-button:disabled,
+#sync-button:disabled { cursor: wait; opacity: .6; }
 .matches { display: grid; gap: 8px; color: var(--muted); font-size: 11px; }
 .match { position: relative; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-top: 2px solid var(--signal-red); background: var(--panel); }
 .match strong { padding-right: 82px; font: 900 15px/1 "Arial Narrow", Impact, sans-serif; text-transform: uppercase; }
