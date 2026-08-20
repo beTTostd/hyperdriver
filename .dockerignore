@@ -2,8 +2,7 @@
 .agents
 .codex
 .next
-.sites-runtime
-.wrangler
+.npm-cache
 data
 *.sqlite
 *.sqlite-shm

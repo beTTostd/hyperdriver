@@ -14,7 +14,6 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/.openai
       - ./data/dev/db:/app/data
       - ./data/dev/files:/app/uploads
     init: true

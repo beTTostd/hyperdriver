@@ -12,7 +12,7 @@ Página local para reproduzir uma partida capturada pela extensão **Talishar Lo
 
 ## Executar localmente
 
-Requer Node.js 22 ou superior.
+Requer Node.js 22.13 ou superior.
 
 ```bash
 npm install
@@ -20,6 +20,17 @@ npm run dev
 ```
 
 Abra a URL mostrada no terminal.
+
+Para validar e executar o build de produção sem Docker:
+
+```bash
+npm run build
+npm start
+```
+
+O projeto usa o App Router e o servidor Node nativos do Next.js. O build de
+produção gera um artefato standalone em `.next/standalone`, sem depender de
+Cloudflare Workers, Wrangler, Vite ou Vinext.
 
 ## Executar com Docker
 
@@ -73,4 +84,7 @@ npm run db:generate
 
 ## Privacidade
 
-Não há banco de dados, autenticação ou upload de arquivos. Ao abrir outro replay, o JSON é lido somente no navegador. A interface busca apenas as imagens públicas das cartas no CDN do Talishar; o conteúdo da partida não é enviado para esse serviço.
+Nenhum replay é persistido, autenticado ou enviado ao servidor. Ao abrir outro
+replay, o JSON é lido somente no navegador. A interface busca apenas as imagens
+públicas das cartas no CDN do Talishar; o conteúdo da partida não é enviado
+para esse serviço.

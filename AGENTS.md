@@ -2,8 +2,8 @@
 
 ## Project Structure & Module Organization
 
-- `app/` contains the Next.js/Vite application routes and UI (`page.tsx`, route-specific CSS modules, and shared `globals.css`).
-- `worker/` and `build/` contain the Cloudflare/Vinext worker entry point and build integration.
+- `app/` contains the Next.js App Router routes and UI (`page.tsx`, route-specific CSS modules, and shared `globals.css`).
+- `.next/standalone/` is the generated production server artifact; do not commit it.
 - `public/` stores static assets and replay fixtures, including `public/replays/recorded-match.json`.
 - `tests/` contains Node’s built-in test suites; `db/` contains Drizzle schema and database access code.
 - `talishar-local-history/` is the companion browser extension. Keep extension code self-contained there.
@@ -15,15 +15,15 @@ Use Node.js `>=22.13.0`.
 
 ```bash
 npm install                 # install dependencies
-npm run dev                 # start the local Vite/Vinext development server
-npm run build               # build and validate the packaged Sites worker
+npm run dev                 # start the native Next.js development server
+npm run build               # build and validate the standalone Next.js server
 npm test                    # build first, then run rendered HTML tests
 npm run lint                # run ESLint with the Next.js TypeScript rules
-npm run validate:artifact   # validate an existing dist/ artifact
+npm run validate:artifact   # validate an existing .next/standalone artifact
 npm run db:generate         # generate Drizzle migrations from schema changes
 ```
 
-Run `npm run install:ci` when the repository’s controlled CI/runtime setup is required.
+Run `npm run install:ci` for a lockfile-exact CI installation.
 
 ## Coding Style & Naming Conventions
 
@@ -31,7 +31,7 @@ Use TypeScript/TSX for application code and modern ESM syntax. Follow the existi
 
 ## Testing Guidelines
 
-Tests use `node:test` and `node:assert/strict`, with files named `*.test.mjs` under `tests/`. Add or update tests when rendering, worker behavior, replay parsing, or public output changes. There is no configured coverage threshold; `npm test` is the required verification command and includes the production build.
+Tests use `node:test` and `node:assert/strict`, with files named `*.test.mjs` under `tests/`. Add or update tests when rendering, server behavior, replay parsing, or public output changes. There is no configured coverage threshold; `npm test` is the required verification command and includes the production build.
 
 ## Commit & Pull Request Guidelines
 
@@ -39,4 +39,4 @@ Use short, imperative commit subjects, consistent with the existing `Add project
 
 ## Security & Configuration Tips
 
-Do not commit secrets, generated runtime directories, or user replay data. Keep local tooling output inside the paths managed by `scripts/sites-env.sh`. Replay files are read in the browser; changes should preserve that local-only behavior unless the task explicitly requires otherwise.
+Do not commit secrets, generated runtime directories, npm cache contents, or user replay data. Replay files are read in the browser; changes should preserve that local-only behavior unless the task explicitly requires otherwise.

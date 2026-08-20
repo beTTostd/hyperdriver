@@ -36,10 +36,9 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
-/.wrangler/
 # Local SQLite databases and uploaded files
 /data/
-/.sites-runtime/
+/.npm-cache/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
