@@ -1,0 +1,20 @@
+services:
+  hyperdriver-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3101:3101"
+    environment:
+      NODE_ENV: development
+      PORT: 3101
+      DOCKER_DEV: 1
+      DATABASE_FILE: /app/data/hyperdriver.sqlite
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.openai
+      - ./data/dev/db:/app/data
+      - ./data/dev/files:/app/uploads
+    init: true

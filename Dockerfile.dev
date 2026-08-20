@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22.13-bookworm-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=development \
+    PORT=3101 \
+    HOSTNAME=0.0.0.0 \
+    DATABASE_FILE=/app/data/hyperdriver.sqlite \
+    UPLOADS_DIR=/app/uploads \
+    DOCKER_DEV=1 \
+    WRANGLER_WRITE_LOGS=false \
+    WRANGLER_LOG_PATH=/tmp/wrangler/logs \
+    MINIFLARE_REGISTRY_PATH=/tmp/wrangler/registry
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Keep a local fallback for the hosting manifest required by vite.config.ts.
+COPY docker/hosting.json .openai/hosting.json
+COPY . .
+
+RUN mkdir -p /app/data /tmp/wrangler/logs /tmp/wrangler/registry
+
+EXPOSE 3101
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3101"]

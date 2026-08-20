@@ -1,0 +1,16 @@
+services:
+  hyperdriver:
+    build:
+      context: .
+    ports:
+      - "3100:3100"
+    environment:
+      NODE_ENV: production
+      PORT: 3100
+      DATABASE_FILE: /app/data/hyperdriver.sqlite
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - ./data/prod/db:/app/data
+      - ./data/prod/files:/app/uploads
+    init: true
+    restart: unless-stopped

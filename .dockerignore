@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.next
+.sites-runtime
+.wrangler
+data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+coverage
+dist
+node_modules
+outputs
+work
+npm-debug.log*

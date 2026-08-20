@@ -37,6 +37,11 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /.wrangler/
+# Local SQLite databases and uploaded files
+/data/
 /.sites-runtime/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 /outputs/
 /work/
