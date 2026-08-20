@@ -1,26 +1,40 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import Brand from "../components/brand";
+import Link from "next/link";
+import styles from "./page.module.css";
 
 type Card = {
   cardNumber?: string;
-  counters?: number | string;
-  countersMap?: Record<string, number | string>;
-  defCounters?: number | string;
-  powerCounters?: number | string;
   slot?: string;
+  controller?: string | number;
+  counters?: string | number;
+  countersMap?: Record<string, string | number>;
   tapped?: boolean;
   isBroken?: boolean;
-  pitchValue?: number | string;
+  onChain?: boolean;
+  facing?: string;
 };
 
-type Payload = Record<string, unknown> & {
+type Chain = {
+  attackingCard?: Card;
+  totalPower?: string | number;
+  totalDefense?: string | number;
+  attackTarget?: string;
+  goAgain?: boolean;
+  dominate?: boolean;
+  overpower?: boolean;
+  reactions?: Card[];
+};
+
+type Payload = {
   turnNo?: string | number;
   turnPlayer?: string | number;
   turnPhase?: { turnPhase?: string; layer?: string; caption?: string };
   playerHealth?: string | number;
   opponentHealth?: string | number;
+  playerDeckCount?: string | number;
+  opponentDeckCount?: string | number;
   playerEquipment?: Card[];
   opponentEquipment?: Card[];
   playerHand?: Card[];
@@ -29,232 +43,396 @@ type Payload = Record<string, unknown> & {
   opponentArse?: Card[];
   playerPitch?: Card[];
   opponentPitch?: Card[];
+  playerBanish?: Card[];
+  opponentBanish?: Card[];
+  playerDiscard?: Card[];
+  opponentDiscard?: Card[];
   playerPermanents?: Card[];
   opponentPermanents?: Card[];
   playerItems?: Card[];
   opponentItems?: Card[];
-  playerBanish?: Card[];
-  opponentBanish?: Card[];
-  playerDeckCount?: number | string;
-  opponentDeckCount?: number | string;
+  playerAuras?: Card[];
+  opponentAuras?: Card[];
+  playerAllies?: Card[];
+  opponentAllies?: Card[];
+  playerDeckCard?: Card;
+  opponentDeckCard?: Card;
+  activeChainLink?: Chain | null;
+  lastPlayedCard?: Card;
   chatLog?: string;
-  activeChainLink?: {
-    attackingCard?: Card;
-    totalPower?: number | string;
-    totalDefense?: number | string;
-    reactions?: Card[];
-    attackTarget?: string;
-    goAgain?: boolean;
-  } | null;
 };
 
 type Frame = { sequence: number; receivedAt: string; payload: Payload };
-type Replay = { exportedAt?: string; match: { startedAt?: string; endedAt?: string | null; frames: Frame[] } };
+type Replay = { match: { startedAt?: string; frames: Frame[] } };
+type EquipmentKey = "playerEquipment" | "opponentEquipment";
 
-const CARD_NAMES: Record<string, string> = {
-  dash_io: "Dash I/O", symbiosis_shot: "Symbiosis Shot", teklo_foundry_heart: "Teklo Foundry Heart",
-  crown_of_providence: "Crown of Providence", cogwerx_tinker_rings: "Cogwerx Tinker Rings", adaptive_plating: "Adaptive Plating",
-  achilles_accelerator: "Achilles Accelerator", bios_update_red: "Bios Update", zero_to_sixty_red: "Zero to Sixty",
-  fast_and_furious_red: "Fast and Furious", heist_red: "Heist", pulsewave_harpoon_red: "Pulsewave Harpoon",
-  fender_bender_red: "Fender Bender", spark_of_genius_yellow: "Spark of Genius", zipper_hit_red: "Zipper Hit",
-  throttle_blue: "Throttle", boom_grenade_red: "Boom Grenade", cerebellum_processor_blue: "Cerebellum Processor",
-  teklo_trebuchet_2000_blue: "Teklo Trebuchet 2000", teklo_pounder_blue: "Teklo Pounder"
-};
-
-const asCards = (value: unknown): Card[] => Array.isArray(value) ? (value as Card[]) : [];
+const list = (value?: Card[]) => (Array.isArray(value) ? value : []);
 
 function cardName(card?: Card) {
   const id = card?.cardNumber;
-  if (!id || id === "NONE00") return "—";
-  if (CARD_NAMES[id]) return CARD_NAMES[id];
-  return id.replace(/_(red|yellow|blue)$/i, "").split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  if (!id || id === "NONE00") return "Vazio";
+  if (id === "CardBack") return "Carta oculta";
+  if (id === "dash_io") return "Dash I/O";
+  return id
+    .replace(/_(red|yellow|blue)(_(red|yellow|blue))?$/i, "")
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
-function cardImage(card?: Card) {
-  if (!card?.cardNumber || card.cardNumber === "NONE00") return null;
-  return `https://images.talishar.net/public/crops/${encodeURIComponent(card.cardNumber)}_cropped.webp`;
+function imageUrl(card?: Card) {
+  const id = card?.cardNumber;
+  if (!id || id === "NONE00" || id === "CardBack") return null;
+  return `https://images.talishar.net/public/cardimages/english/${encodeURIComponent(id)}.webp`;
 }
-
-function textFromLog(html = "") {
-  const withLineBreaks = html.replace(/<br\s*\/?\s*>/gi, "\n");
-  const document = new DOMParser().parseFromString(withLineBreaks, "text/html");
-  return (document.body.textContent || "").replace(/\[\[TURN_START:[^\]]+\]\]/g, "").split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-}
-
-function diffLog(previous?: Payload, current?: Payload) {
-  const before = previous?.chatLog || "";
-  const after = current?.chatLog || "";
-  const changed = after.startsWith(before) ? after.slice(before.length) : after;
-  return textFromLog(changed).filter((line) => !line.includes("No rust counters") && !line.includes("Sending game result"));
-}
-
-const heroFromEquipment = (cards: Card[]) => cards.find((card) => card.slot === "Hero") || cards[0];
-const playerLabel = (player: unknown) => String(player) === "1" ? "Você" : "Oponente";
-const phaseLabel = (payload: Payload) => payload.turnPhase?.caption || payload.turnPhase?.layer || payload.turnPhase?.turnPhase || "Aguardando atualização";
 
 function counterLabel(card: Card) {
-  const counters = Object.entries(card.countersMap || {}).filter(([, amount]) => String(amount) !== "0").map(([name, amount]) => `${name} ${amount}`);
-  if (counters.length) return counters.join(" · ");
-  if (String(card.counters ?? "0") !== "0") return `contador ${card.counters}`;
-  return "";
+  const mapped = Object.entries(card.countersMap ?? {})
+    .filter(([, value]) => Number(value) !== 0)
+    .map(([key, value]) => key === "steam" ? String(value) : `${key.slice(0, 1).toUpperCase()} ${value}`);
+  if (mapped.length) return mapped.join(" · ");
+  return Number(card.counters ?? 0) === 0 ? "" : String(card.counters);
 }
 
-function CardTile({ card, compact = false }: { card: Card; compact?: boolean }) {
-  const [broken, setBroken] = useState(false);
-  const image = cardImage(card);
-  const name = cardName(card);
-  const counter = counterLabel(card);
-  return <div className={`card-tile ${compact ? "compact" : ""}`} title={name}>
-    {image && !broken ? <img src={image} alt={name} onError={() => setBroken(true)} /> : <div className="card-fallback">{name}</div>}
-    {card.tapped && <span className="state-badge tapped">T</span>}
-    {card.isBroken && <span className="state-badge broken">X</span>}
-    {counter && <span className="counter-badge">{counter}</span>}
-    {card.pitchValue !== undefined && <span className="pitch-badge">{card.pitchValue}</span>}
-  </div>;
+function phaseName(payload: Payload) {
+  if (payload.turnPhase?.turnPhase === "OVER") return "Partida encerrada";
+  return payload.turnPhase?.caption || payload.turnPhase?.layer || payload.turnPhase?.turnPhase || "Aguardando";
 }
 
-function CardStrip({ cards, empty, limit = 8 }: { cards: Card[]; empty: string; limit?: number }) {
-  if (!cards.length) return <span className="empty-zone">{empty}</span>;
-  const visible = cards.slice(0, limit);
-  return <div className="card-strip">
-    {visible.map((card, index) => <CardTile card={card} key={`${card.cardNumber}-${index}`} compact />)}
-    {cards.length > visible.length && <span className="overflow-count">+{cards.length - visible.length}</span>}
-  </div>;
+function playerName(value?: string | number) {
+  return String(value) === "1" ? "Você" : "Oponente";
 }
 
-function Zone({ label, children, muted = false }: { label: string; children: React.ReactNode; muted?: boolean }) {
-  return <section className={`zone ${muted ? "muted" : ""}`}><h3>{label}</h3>{children}</section>;
+function plainLog(html = "") {
+  if (typeof DOMParser === "undefined") return [];
+  const normalized = html.replace(/<br\s*\/?\s*>/gi, "\n");
+  const document = new DOMParser().parseFromString(normalized, "text/html");
+  return (document.body.textContent ?? "")
+    .replace(/\[\[TURN_START:[^\]]+\]\]/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line && !line.includes("No rust counters"));
 }
 
-function getTurnMarkers(frames: Frame[]) {
-  const markers: { index: number; key: string; turn: string; player: string }[] = [];
-  let prior = "";
+function turnMarkers(frames: Frame[]) {
+  const markers: Array<{ index: number; key: string; turn: string; player: string }> = [];
+  let previous = "";
   frames.forEach((frame, index) => {
     const turn = String(frame.payload.turnNo ?? "?");
     const player = String(frame.payload.turnPlayer ?? "?");
     const key = `${turn}-${player}`;
-    if (key !== prior) { markers.push({ index, key, turn, player }); prior = key; }
+    if (key !== previous) {
+      markers.push({ index, key, turn, player });
+      previous = key;
+    }
   });
   return markers;
 }
 
-function dateTime(value?: string) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function setupEquipment(frames: Frame[], key: EquipmentKey) {
+  const bySlot = new Map<string, Card>();
+  frames.forEach((frame) => {
+    list(frame.payload[key]).forEach((card) => {
+      if (card.slot && card.slot !== "-" && card.cardNumber !== "NONE00" && !bySlot.has(card.slot)) bySlot.set(card.slot, card);
+    });
+  });
+  return [...bySlot.values()];
 }
 
-export default function Home() {
+function completeFirstEquipment(values: Card[] | undefined, setup: Card[], firstFrame: boolean) {
+  const current = list(values);
+  if (!firstFrame) return current;
+  return [...current, ...setup.filter((card) => !current.some((item) => item.slot === card.slot && item.cardNumber !== "NONE00"))];
+}
+
+function attackCardNumbers(frames: Frame[]) {
+  return new Set(frames.map((frame) => frame.payload.activeChainLink?.attackingCard?.cardNumber).filter((cardNumber): cardNumber is string => Boolean(cardNumber)));
+}
+
+function CardView({ card, hidden = false, variant = "normal", label }: { card?: Card; hidden?: boolean; variant?: "normal" | "hero" | "handCard" | "combat"; label?: string }) {
+  const [failed, setFailed] = useState(false);
+  const faceDown = hidden || card?.cardNumber === "CardBack";
+  const source = faceDown ? null : imageUrl(card);
+  const counters = card ? counterLabel(card) : "";
+  return (
+    <figure
+      className={`${styles.card} ${styles[variant]} ${faceDown ? styles.cardBack : ""} ${card?.tapped ? styles.tapped : ""} ${card?.onChain ? styles.onChain : ""} ${!card && !faceDown ? styles.missingCard : ""}`}
+      title={faceDown ? "Carta oculta" : cardName(card)}
+      aria-label={faceDown ? "Carta oculta" : cardName(card)}
+    >
+      {source && !failed ? <img src={source} alt={cardName(card)} onError={() => setFailed(true)} /> : !faceDown && <span>{label || cardName(card)}</span>}
+      {counters && !faceDown && <b className={styles.counter}>{counters}</b>}
+      {card?.isBroken && <b className={styles.broken}>×</b>}
+    </figure>
+  );
+}
+
+function ZonePile({ className, label, values, count, topCard, hidden = false, stacked = false }: { className: string; label: string; values?: Card[]; count?: string | number; topCard?: Card; hidden?: boolean; stacked?: boolean }) {
+  const zoneCards = list(values);
+  const total = count ?? zoneCards.length;
+  const card = topCard ?? zoneCards.at(-1);
+  const occupied = Number(total) > 0 || Boolean(card);
+  const showStack = stacked && zoneCards.length > 1;
+  return (
+    <section className={`${styles.zone} ${className}`} aria-label={`${label}: ${total}`}>
+      <div className={`${styles.zoneCard} ${showStack ? styles.stackedZoneCards : ""}`}>
+        {occupied ? showStack ? zoneCards.map((zoneCard, index) => (
+          <div className={styles.stackedCard} style={{ top: `${index * 24}px`, zIndex: index + 1 }} key={`${zoneCard.cardNumber}-${index}`}>
+            <CardView card={zoneCard} hidden={hidden} />
+          </div>
+        )) : <CardView card={card} hidden={hidden} /> : <div className={styles.zoneGhost}>{label}</div>}
+      </div>
+      {occupied && <b>{total}</b>}
+    </section>
+  );
+}
+
+function EquipmentCluster({ equipment, opponent }: { equipment?: Card[]; opponent: boolean }) {
+  const values = list(equipment);
+  const get = (slot: string) => values.find((card) => card.slot === slot && card.cardNumber !== "NONE00");
+  const slot = (name: string, label: string) => {
+    const card = get(name);
+    return card ? <CardView card={card} /> : <div className={styles.emptyEquipment} aria-label={`${label} vazio`} />;
+  };
+  return (
+    <section className={`${styles.equipment} ${opponent ? styles.opponentEquipment : styles.playerEquipment}`} aria-label={`Equipamentos ${opponent ? "do oponente" : "do jogador"}`}>
+      <div className={styles.slotHead}>{slot("Head", "Cabeça")}</div>
+      <div className={styles.slotChest}>{slot("Chest", "Peito")}</div>
+      <div className={styles.slotArms}>{slot("Arms", "Braços")}</div>
+      <div className={styles.slotLegs}>{slot("Legs", "Pernas")}</div>
+    </section>
+  );
+}
+
+function HeroCluster({ equipment, health, opponent }: { equipment?: Card[]; health?: string | number; opponent: boolean }) {
+  const values = list(equipment);
+  const hero = values.find((card) => card.slot === "Hero");
+  const leftWeapon = values.find((card) => card.slot === "LWep");
+  const rightWeapon = values.find((card) => card.slot === "RWep");
+  return (
+    <section className={`${styles.heroCluster} ${opponent ? styles.opponentHero : styles.playerHero}`}>
+      <div className={styles.leftWeapon}>{leftWeapon && <CardView card={leftWeapon} />}</div>
+      <div className={styles.heroCenter}>
+        <CardView card={hero} variant="hero" label="Herói" />
+        <b className={styles.heroLife} aria-label={`Vida: ${health ?? "desconhecida"}`}><span aria-hidden="true">♥</span>{health ?? "—"}</b>
+      </div>
+      <div className={styles.rightWeapon}>{rightWeapon && <CardView card={rightWeapon} />}</div>
+    </section>
+  );
+}
+
+function Hand({ values, opponent }: { values?: Card[]; opponent: boolean }) {
+  const hand = list(values);
+  return (
+    <section className={`${styles.hand} ${opponent ? styles.opponentHand : styles.playerHand}`} aria-label={`Mão ${opponent ? "do oponente" : "do jogador"}: ${hand.length}`}>
+      {hand.map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} hidden={opponent} variant="handCard" />)}
+    </section>
+  );
+}
+
+function Arsenal({ values, opponent }: { values?: Card[]; opponent: boolean }) {
+  const arsenal = list(values);
+  return (
+    <section className={`${styles.arsenal} ${opponent ? styles.opponentArsenal : styles.playerArsenal}`} aria-label={`Arsenal: ${arsenal.length}`}>
+      {arsenal.length ? arsenal.slice(0, 3).map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} hidden={opponent} />) : <div className={styles.zoneGhost}>Arsenal</div>}
+    </section>
+  );
+}
+
+function Permanents({ values, opponent }: { values: Card[]; opponent: boolean }) {
+  if (!values.length) return null;
+  return (
+    <section className={`${styles.permanents} ${opponent ? styles.opponentPermanents : styles.playerPermanents}`} aria-label="Permanentes e itens">
+      {values.slice(0, 7).map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} />)}
+      {values.length > 7 && <b>+{values.length - 7}</b>}
+    </section>
+  );
+}
+
+function CombatChain({ chain }: { chain?: Chain | null }) {
+  if (!chain?.attackingCard) return null;
+  const reactions = list(chain.reactions);
+  return (
+    <section className={styles.combatChain} aria-label="Combat chain">
+      <small>Combat chain</small>
+      <div className={styles.attackCard}><CardView card={chain.attackingCard} variant="combat" /><b>{chain.totalPower ?? "—"}<span>ATK</span></b></div>
+      <i>›</i>
+      <div className={styles.reactions}>{reactions.map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} variant="combat" />)}{!reactions.length && <span>Sem defesa</span>}</div>
+      <div className={styles.chainInfo}><strong>{chain.totalDefense ?? 0} DEF</strong><span>Alvo: {chain.attackTarget || "—"}</span><div>{chain.goAgain && <em>Go again</em>}{chain.dominate && <em>Dominate</em>}{chain.overpower && <em>Overpower</em>}</div></div>
+    </section>
+  );
+}
+
+function ActionDisplay({ card }: { card?: Card }) {
+  if (!card?.cardNumber || card.cardNumber === "CardBack" || card.cardNumber === "NONE00") return null;
+  const owner = card.controller == null ? "Jogador ativo" : playerName(card.controller);
+  return (
+    <section className={`${styles.combatChain} ${styles.actionDisplay}`} aria-label={`Ação em resolução: ${cardName(card)}`}>
+      <small>Ação</small>
+      <div className={styles.actionCard}><CardView card={card} variant="combat" /></div>
+      <div className={styles.actionInfo}><strong>{cardName(card)}</strong><span>{owner}</span></div>
+    </section>
+  );
+}
+
+export default function TalisharTable() {
   const [replay, setReplay] = useState<Replay | null>(null);
-  const [frameIndex, setFrameIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [sourceLabel, setSourceLabel] = useState("Partida capturada");
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [source, setSource] = useState("Partida gravada · 16/08/2026");
+  const [error, setError] = useState("");
+  const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
-    fetch("/replays/recorded-match.json").then((response) => {
-      if (!response.ok) throw new Error("Não foi possível carregar a partida.");
-      return response.json();
-    }).then((data: Replay) => setReplay(data)).catch((error: Error) => setLoadError(error.message));
+    fetch("/replays/recorded-match.json")
+      .then((response) => {
+        if (!response.ok) throw new Error("Não foi possível abrir a partida.");
+        return response.json();
+      })
+      .then((data: Replay) => setReplay(data))
+      .catch((reason: Error) => setError(reason.message));
   }, []);
 
-  const frames = replay?.match.frames || [];
-  const currentFrame = frames[frameIndex];
+  const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
+  const currentFrame = frames[index];
   const current = currentFrame?.payload;
-  const previous = frames[Math.max(frameIndex - 1, 0)]?.payload;
-  const markers = useMemo(() => getTurnMarkers(frames), [frames]);
+  const markers = useMemo(() => turnMarkers(frames), [frames]);
+  const logs = useMemo(() => plainLog(current?.chatLog).slice(-18).reverse(), [current?.chatLog]);
+  const opponentSetupEquipment = useMemo(() => setupEquipment(frames, "opponentEquipment"), [frames]);
+  const playerSetupEquipment = useMemo(() => setupEquipment(frames, "playerEquipment"), [frames]);
+  const attackCards = useMemo(() => attackCardNumbers(frames), [frames]);
 
   useEffect(() => {
-    if (!isPlaying || frames.length < 2) return;
-    const timer = window.setInterval(() => setFrameIndex((index) => {
-      if (index >= frames.length - 1) { setIsPlaying(false); return index; }
-      return index + 1;
-    }), 420);
+    if (!playing || frames.length < 2) return;
+    const timer = window.setInterval(() => {
+      setIndex((value) => {
+        if (value >= frames.length - 1) {
+          setPlaying(false);
+          return value;
+        }
+        return value + 1;
+      });
+    }, 480);
     return () => window.clearInterval(timer);
-  }, [isPlaying, frames.length]);
+  }, [playing, frames.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!frames.length || event.target instanceof HTMLInputElement) return;
-      if (event.key === "ArrowLeft") setFrameIndex((index) => Math.max(0, index - 1));
-      if (event.key === "ArrowRight") setFrameIndex((index) => Math.min(frames.length - 1, index + 1));
-      if (event.key === " ") { event.preventDefault(); setIsPlaying((playing) => !playing); }
+      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
+      if (event.key === "ArrowRight") setIndex((value) => Math.min(frames.length - 1, value + 1));
+      if (event.key === " ") {
+        event.preventDefault();
+        setPlaying((value) => !value);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [frames.length]);
 
-  function loadFile(event: ChangeEvent<HTMLInputElement>) {
+  function openFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.currentTarget.closest("details")?.removeAttribute("open");
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result)) as Replay;
-        if (!Array.isArray(parsed.match?.frames)) throw new Error("Arquivo não contém frames de replay.");
-        setReplay(parsed); setFrameIndex(0); setIsPlaying(false); setLoadError(""); setSourceLabel(file.name);
-      } catch (error) { setLoadError(error instanceof Error ? error.message : "Arquivo inválido."); }
+        if (!Array.isArray(parsed.match?.frames)) throw new Error("Este JSON não contém frames de replay.");
+        setReplay(parsed);
+        setIndex(0);
+        setPlaying(false);
+        setSource(file.name);
+        setError("");
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "JSON inválido.");
+      }
     };
     reader.readAsText(file);
   }
 
-  if (loadError) return <main className="status-page"><div><span className="eyebrow">Talishar Local History</span><h1>Não foi possível abrir o replay.</h1><p>{loadError}</p></div></main>;
-  if (!replay || !current) return <main className="status-page"><div className="loading-orb" /><p>Carregando a partida…</p></main>;
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }
 
-  const playerEquipment = asCards(current.playerEquipment);
-  const opponentEquipment = asCards(current.opponentEquipment);
-  const playerHero = heroFromEquipment(playerEquipment);
-  const opponentHero = heroFromEquipment(opponentEquipment);
-  const recentEvents = diffLog(previous, current);
-  const fullLog = textFromLog(current.chatLog || "");
-  const chain = current.activeChainLink;
+  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/">Voltar para o replay clássico</Link></div></main>;
+  if (!current || !currentFrame) return <main className={styles.loading}><div className={styles.spinner} /><p>Montando a mesa…</p></main>;
 
-  return <main className="replay-shell">
-    <header className="topbar">
-      <Brand subtitle="Live replay" />
-      <div className="replay-heading"><p className="eyebrow"><span>03</span> Mesa de análise</p><h1>Dash I/O mirror</h1><p className="subtitle">{sourceLabel} · {dateTime(replay.match.startedAt)}</p></div>
-      <label className="file-button">＋ Abrir outro JSON<input type="file" accept="application/json,.json" onChange={loadFile} /></label>
-    </header>
+  const opponentPermanents = [...list(current.opponentPermanents), ...list(current.opponentItems), ...list(current.opponentAuras), ...list(current.opponentAllies)];
+  const playerPermanents = [...list(current.playerPermanents), ...list(current.playerItems), ...list(current.playerAuras), ...list(current.playerAllies)];
+  const opponentEquipment = completeFirstEquipment(current.opponentEquipment, opponentSetupEquipment, index === 0);
+  const playerEquipment = completeFirstEquipment(current.playerEquipment, playerSetupEquipment, index === 0);
+  const actionCard = !current.activeChainLink?.attackingCard && current.lastPlayedCard?.cardNumber && !attackCards.has(current.lastPlayedCard.cardNumber) ? current.lastPlayedCard : undefined;
+  const isFinal = current.turnPhase?.turnPhase === "OVER";
 
-    <section className="scoreboard" aria-label="Placar da partida">
-      <article className="player-score opponent"><div className="hero-chip"><CardTile card={opponentHero} /></div><div><span>Oponente · Player 2</span><strong>{cardName(opponentHero)}</strong></div><b>{current.opponentHealth ?? "—"}</b></article>
-      <div className="versus"><span>vs</span><small>turno {current.turnNo ?? "—"}</small></div>
-      <article className="player-score me"><b>{current.playerHealth ?? "—"}</b><div><span>Você · Player 1</span><strong>{cardName(playerHero)}</strong></div><div className="hero-chip"><CardTile card={playerHero} /></div></article>
-    </section>
+  return (
+    <main className={styles.replay}>
+      <section className={styles.table}>
+        <div className={styles.opponentMat} />
+        <div className={styles.playerMat} />
+        <Hand values={current.opponentHand} opponent />
+        <ZonePile className={styles.opponentBanish} label="Banido" values={current.opponentBanish} />
+        <ZonePile className={styles.opponentDeck} label="Deck" count={current.opponentDeckCount ?? 0} topCard={current.opponentDeckCard} hidden />
+        <ZonePile className={styles.opponentPitch} label="Pitch" values={current.opponentPitch} stacked />
+        <ZonePile className={styles.opponentGraveyard} label="Cemitério" values={current.opponentDiscard} />
+        <Arsenal values={current.opponentArse} opponent />
+        <HeroCluster equipment={opponentEquipment} health={current.opponentHealth} opponent />
+        <EquipmentCluster equipment={opponentEquipment} opponent />
+        <Permanents values={opponentPermanents} opponent />
 
-    <section className="turn-jumps" aria-label="Ir para turno">
-      {markers.map((marker) => <button type="button" key={marker.key} className={marker.index <= frameIndex && (markers.find((item) => item.index > marker.index)?.index ?? frames.length) > frameIndex ? "active" : ""} onClick={() => setFrameIndex(marker.index)}>T{marker.turn} · {playerLabel(marker.player)}</button>)}
-    </section>
+        <EquipmentCluster equipment={playerEquipment} opponent={false} />
+        <Permanents values={playerPermanents} opponent={false} />
+        <HeroCluster equipment={playerEquipment} health={current.playerHealth} opponent={false} />
+        <Arsenal values={current.playerArse} opponent={false} />
+        <Hand values={current.playerHand} opponent={false} />
+        <ZonePile className={styles.playerGraveyard} label="Cemitério" values={current.playerDiscard} />
+        <ZonePile className={styles.playerPitch} label="Pitch" values={current.playerPitch} stacked />
+        <ZonePile className={styles.playerDeck} label="Deck" count={current.playerDeckCount ?? 0} topCard={current.playerDeckCard} hidden={!current.playerDeckCard || current.playerDeckCard.cardNumber === "CardBack"} />
+        <ZonePile className={styles.playerBanish} label="Banido" values={current.playerBanish} />
 
-    <section className="replay-controls" aria-label="Controles do replay">
-      <button type="button" onClick={() => setFrameIndex(0)} aria-label="Primeiro frame">↞</button><button type="button" onClick={() => setFrameIndex((index) => Math.max(0, index - 1))} aria-label="Frame anterior">‹</button>
-      <button type="button" className="play-button" onClick={() => setIsPlaying((playing) => !playing)}>{isPlaying ? "Pausar" : "Reproduzir"}</button>
-      <button type="button" onClick={() => setFrameIndex((index) => Math.min(frames.length - 1, index + 1))} aria-label="Próximo frame">›</button><button type="button" onClick={() => setFrameIndex(frames.length - 1)} aria-label="Último frame">↠</button>
-      <input aria-label="Posição na partida" type="range" min="0" max={Math.max(0, frames.length - 1)} value={frameIndex} onChange={(event) => { setIsPlaying(false); setFrameIndex(Number(event.target.value)); }} />
-      <span className="frame-count">{frameIndex + 1} / {frames.length}</span>
-    </section>
+        <CombatChain chain={current.activeChainLink} />
+        <ActionDisplay card={actionCard} />
+        {isFinal && <div className={styles.result}><small>Partida encerrada</small><strong>Oponente venceu · 2 × 0</strong></div>}
 
-    <section className="match-state">
-      <aside className="state-sidebar"><div className="state-panel"><span>Fase</span><strong>{phaseLabel(current)}</strong></div><div className="state-panel"><span>Jogador ativo</span><strong>{playerLabel(current.turnPlayer)}</strong></div><div className="state-panel"><span>Atualização</span><strong>{dateTime(currentFrame.receivedAt)}</strong></div></aside>
-      <section className="board" aria-label="Mesa no frame atual">
-        <div className="side opponent-side">
-          <div className="side-heading"><span>Oponente</span><small>Mão: {asCards(current.opponentHand).length} · Deck: {current.opponentDeckCount ?? "—"}</small></div>
-          <Zone label="Equipamento"><CardStrip cards={opponentEquipment.filter((card) => card.slot !== "Hero")} empty="Sem equipamento" /></Zone>
-          <div className="zone-row"><Zone label={`Arsenal (${asCards(current.opponentArse).length})`} muted><span className="hidden-cards">Cartas ocultas</span></Zone><Zone label="Pitch"><CardStrip cards={asCards(current.opponentPitch)} empty="Vazio" limit={4} /></Zone><Zone label={`Banished (${asCards(current.opponentBanish).length})`}><CardStrip cards={asCards(current.opponentBanish)} empty="Vazio" limit={4} /></Zone></div>
-          <Zone label={`Permanentes (${asCards(current.opponentPermanents).length + asCards(current.opponentItems).length})`}><CardStrip cards={[...asCards(current.opponentPermanents), ...asCards(current.opponentItems)]} empty="Nenhum permanente" /></Zone>
-        </div>
-
-        <div className="arena"><div className="arena-label">Combat chain</div>{chain?.attackingCard ? <div className="chain-card"><CardTile card={chain.attackingCard} /><div className="chain-stats"><strong>{chain.totalPower ?? "—"} ATK</strong><span>{chain.totalDefense ?? 0} DEF</span>{chain.goAgain && <em>Go again</em>}</div><div className="chain-target">Alvo: {chain.attackTarget || "—"}<br />{chain.reactions?.length ? `Reações: ${chain.reactions.map(cardName).join(", ")}` : "Sem reações"}</div></div> : <p>Nenhum ataque ativo neste momento.</p>}</div>
-
-        <div className="side player-side">
-          <div className="side-heading"><span>Você</span><small>Mão: {asCards(current.playerHand).length} · Deck: {current.playerDeckCount ?? "—"}</small></div>
-          <Zone label="Equipamento"><CardStrip cards={playerEquipment.filter((card) => card.slot !== "Hero")} empty="Sem equipamento" /></Zone>
-          <div className="zone-row"><Zone label={`Arsenal (${asCards(current.playerArse).length})`}><CardStrip cards={asCards(current.playerArse)} empty="Vazio" limit={2} /></Zone><Zone label="Pitch"><CardStrip cards={asCards(current.playerPitch)} empty="Vazio" limit={4} /></Zone><Zone label={`Banished (${asCards(current.playerBanish).length})`}><CardStrip cards={asCards(current.playerBanish)} empty="Vazio" limit={4} /></Zone></div>
-          <Zone label={`Permanentes (${asCards(current.playerPermanents).length + asCards(current.playerItems).length})`}><CardStrip cards={[...asCards(current.playerPermanents), ...asCards(current.playerItems)]} empty="Nenhum permanente" /></Zone>
-        </div>
+        {showLog && <aside className={styles.logPanel}>
+          <header><div><small>Snapshot #{currentFrame.sequence}</small><h2>Game log</h2></div><button type="button" onClick={() => setShowLog(false)} aria-label="Fechar log">×</button></header>
+          <ol>{logs.map((entry, logIndex) => <li key={`${index}-${logIndex}`}><span>{logIndex === 0 ? "Agora" : `−${logIndex}`}</span><p>{entry}</p></li>)}</ol>
+        </aside>}
       </section>
-    </section>
 
-    <section className="bottom-grid"><section className="hand-panel"><div className="panel-heading"><h2>Sua mão</h2><span>{asCards(current.playerHand).length} cartas</span></div><div className="hand-cards"><CardStrip cards={asCards(current.playerHand)} empty="Sem cartas na mão" limit={8} /></div></section><section className="event-panel"><div className="panel-heading"><h2>Eventos desta atualização</h2><span>{recentEvents.length}</span></div><ol>{(recentEvents.length ? recentEvents : fullLog.slice(-8)).slice(-10).map((event, index) => <li key={`${frameIndex}-${index}`}>{event}</li>)}</ol></section></section>
-    <p className="keyboard-tip">Use ← → para avançar quadro a quadro e Espaço para reproduzir/pausar.</p>
-  </main>;
+      <section className={styles.timeline} aria-label="Controles do replay">
+        <div className={styles.transport}>
+          <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot">↞</button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior">‹</button>
+          <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"}>{playing ? "Ⅱ" : "▶"}</button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot">›</button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot">↠</button>
+          <details className={styles.timelineMenu}>
+            <summary aria-label="Abrir menu">⋯</summary>
+            <div className={styles.menuPopover}>
+              <div className={styles.menuMeta}>
+                <span>Turno {current.turnNo ?? "—"} · {playerName(current.turnPlayer)}</span>
+                <strong>{phaseName(current)}</strong>
+                <small>{source}</small>
+              </div>
+              <Link href="/">Visão analítica</Link>
+              <button type="button" onClick={(event) => { setShowLog((value) => !value); event.currentTarget.closest("details")?.removeAttribute("open"); }}>{showLog ? "Fechar game log" : "Abrir game log"}</button>
+              <button type="button" onClick={(event) => { toggleFullscreen(); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Tela cheia</button>
+              <label>Abrir JSON<input type="file" accept=".json,application/json" onChange={openFile} /></label>
+            </div>
+          </details>
+        </div>
+        <div className={styles.scrubber}>
+          <div className={styles.turns}>{markers.map((marker, markerIndex) => {
+            const next = markers[markerIndex + 1]?.index ?? frames.length;
+            const selected = index >= marker.index && index < next;
+            return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.key} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
+          })}</div>
+          <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
+        </div>
+        <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
+      </section>
+    </main>
+  );
 }
