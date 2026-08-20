@@ -7,13 +7,15 @@
   },
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
-    "dev": "next dev --hostname 0.0.0.0",
+    "dev": "npm run db:migrate && next dev --hostname 0.0.0.0",
     "build": "bash scripts/build-verified.sh",
     "start": "next start --hostname 0.0.0.0",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "eslint . --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:seed": "node scripts/seed.mjs"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",

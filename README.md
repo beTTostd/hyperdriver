@@ -37,7 +37,7 @@ Cloudflare Workers, Wrangler, Vite ou Vinext.
 Com Docker Compose:
 
 ```bash
-docker compose up --build
+ADMIN_INITIAL_PASSWORD='Troque-esta-senha!123' docker compose up --build
 ```
 
 Abra [http://localhost:3100](http://localhost:3100). Para executar somente a
@@ -58,7 +58,7 @@ docker compose -f compose.dev.yaml up --build
 Abra [http://localhost:3101](http://localhost:3101). As alterações nos arquivos
 do projeto serão refletidas automaticamente no container.
 
-## Banco de dados
+## Banco de dados e acesso
 
 O projeto usa SQLite local por meio do Drizzle. Os dados persistentes ficam
 separados por ambiente:
@@ -74,17 +74,38 @@ Nos containers, `DATABASE_FILE=/app/data/hyperdriver.sqlite` é montado na pasta
 `db` correspondente e `UPLOADS_DIR=/app/uploads` na pasta `files`. A pasta
 `data/` é ignorada pelo Git para não versionar bancos ou arquivos enviados.
 
-O banco ainda não possui tabelas de aplicação: o schema em `db/schema.ts` está
-pronto para receber as entidades do projeto. Depois de adicionar tabelas,
-gere as migrações com:
+As tabelas de usuários, sessões e convites ficam no SQLite. Em desenvolvimento,
+`npm run dev` aplica a migration automaticamente antes de iniciar o servidor.
+Para aplicar manualmente:
 
 ```bash
-npm run db:generate
+npm run db:migrate
+npm run dev
 ```
+
+O primeiro administrador é criado explicitamente. Use uma senha forte fora do
+repositório:
+
+```bash
+APP_URL=http://localhost:3000 \\
+DATABASE_FILE=data/dev/db/hyperdriver.sqlite \\
+ADMIN_INITIAL_PASSWORD='Troque-esta-senha!123' \\
+npm run db:seed
+```
+
+O seed cria o usuário `admin` apenas se ele ainda não existir. A senha deve ter
+no mínimo 12 caracteres, incluindo maiúscula, minúscula, número e símbolo.
+Administradores criam os demais usuários em `/admin`; o link de primeira senha
+é de uso único e expira em duas horas. Sessões permanecem válidas por 30 dias.
+
+Em produção, o container aplica a migration e garante a existência do usuário
+`admin` ao iniciar. No primeiro start, configure `APP_URL` com a URL pública do
+serviço e defina `ADMIN_INITIAL_PASSWORD`. Depois que o administrador existir,
+essa variável deixa de ser obrigatória e não altera a senha já cadastrada.
 
 ## Privacidade
 
-Nenhum replay é persistido, autenticado ou enviado ao servidor. Ao abrir outro
-replay, o JSON é lido somente no navegador. A interface busca apenas as imagens
-públicas das cartas no CDN do Talishar; o conteúdo da partida não é enviado
-para esse serviço.
+Replays continuam sendo dados locais do projeto e não são enviados ao CDN do
+Talishar. O acesso à aplicação e ao replay bundled exige uma sessão autenticada;
+ao abrir outro replay, o JSON é lido somente no navegador. A interface busca
+apenas as imagens públicas das cartas no CDN do Talishar.

@@ -1,58 +1,54 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import Brand from "./components/brand";
-import styles from "./page.module.css";
+import { getCurrentUser } from "../lib/auth";
+import styles from "./landing.module.css";
 
-const heroImage = "https://images.talishar.net/public/cardimages/english/dash_io.webp";
+export default async function LandingPage() {
+  const currentUser = await getCurrentUser();
+  if (currentUser) redirect("/me");
 
-export default function Home() {
+  const appLink = "/login?returnTo=%2Fme";
+
   return (
     <main className={styles.page}>
-      <header className={styles.header}>
-        <Brand subtitle="Replay telemetry" />
-        <button className={styles.uploadButton} type="button" disabled title="Disponível em breve">
-          <span aria-hidden="true">＋</span> Importar replay <small>Em breve</small>
-        </button>
-      </header>
-
-      <section className={styles.intro}>
-        <div className={styles.introCopy}>
-          <p><span>01</span> Central de telemetria</p>
-          <h1>Leia a corrida.<br /><em>Domine o turno.</em></h1>
-          <span>Reveja cada decisão, turno e combat chain com a precisão de uma equipe de pista.</span>
+      <nav className={styles.nav}>
+        <Brand subtitle="Game intelligence" />
+        <div className={styles.navActions}>
+          <Link className={styles.navCta} href={appLink}>Acessar plataforma <span aria-hidden="true">↗</span></Link>
         </div>
-        <aside className={styles.sessionStatus} aria-label="Status da sessão">
-          <span>Sessão local</span>
-          <strong>1 replay</strong>
-          <small>Dados processados no navegador</small>
-        </aside>
-      </section>
-
-      <section className={styles.library} aria-labelledby="replay-list-title">
-        <div className={styles.libraryHeader}>
-          <div><p>Última sessão</p><h2 id="replay-list-title">Replays recentes</h2></div>
-          <div className={styles.sectorBars} aria-hidden="true"><i /><i /><i /></div>
+      </nav>
+      <section className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <span className={styles.liveBadge}><i aria-hidden="true" /> LIVE / GAME DATA</span>
+          <p className={styles.eyebrow}><span>01</span> Clareza para cada jogo</p>
+          <h1>Acompanhe<br />seus jogos.<br /><em>Evolua a cada partida.</em></h1>
+          <p className={styles.lead}>Transforme suas sessões em decisões melhores com estatísticas claras, histórico organizado e uma visão precisa do seu desempenho.</p>
+          <div className={styles.heroActions}>
+            <Link className={styles.primaryCta} href={appLink}>Acompanhar meus jogos <span aria-hidden="true">→</span></Link>
+            <Link className={styles.textCta} href="#recursos">Conheça a plataforma <span aria-hidden="true">↓</span></Link>
+          </div>
         </div>
-        <article className={styles.replayCard}>
-          <span className={styles.cardIndex}>RPL / 001</span>
-          <div className={styles.matchArt} aria-label="Dash I/O contra Dash I/O">
-            <figure className={styles.heroCard}><img src={heroImage} alt="Dash I/O" /></figure>
-            <span className={styles.versus}>VS</span>
-            <figure className={`${styles.heroCard} ${styles.opponentCard}`}><img src={heroImage} alt="Dash I/O do oponente" /></figure>
-          </div>
-          <div className={styles.replayInfo}>
-            <div className={styles.statusRow}><span className={styles.finished}>Encerrada</span><time dateTime="2026-08-16T21:25:30.937Z">16 ago 2026 · 18:25</time></div>
-            <h3>Dash I/O <span>vs.</span> Dash I/O</h3>
-            <p className={styles.score}><small>Você</small><strong>00</strong><span>:</span><strong>02</strong><small>Oponente</small></p>
-            <dl className={styles.metadata}>
-              <div><dt>Snapshots</dt><dd>275</dd></div><div><dt>Turno final</dt><dd>4</dd></div><div><dt>Origem</dt><dd>Talishar</dd></div>
-            </dl>
-          </div>
-          <div className={styles.replayActions}>
-            <Link className={styles.openReplay} href="/mesa">Abrir replay <span aria-hidden="true">→</span></Link>
-            <Link className={styles.analyseReplay} href="/valor">Ver telemetria <span aria-hidden="true">↗</span></Link>
-          </div>
-        </article>
+        <div className={styles.signalPanel} aria-label="Visão geral das estatísticas">
+          <div className={styles.panelTop}><span>VISÃO GERAL / 001</span><i /></div>
+          <div className={styles.scanLine} aria-hidden="true" />
+          <div className={styles.signalMetric}><small>Desempenho</small><strong>+24%</strong><span>últimas sessões</span></div>
+          <div className={styles.chart} aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><b /></div>
+          <div className={styles.panelBottom}><span>Dados em contexto</span><strong>03 áreas de evolução</strong></div>
+        </div>
       </section>
+      <section className={styles.features} id="recursos" aria-labelledby="features-title">
+        <div className={styles.sectionIntro}>
+          <p className={styles.eyebrow}><span>02</span> Tudo em um só lugar</p>
+          <h2 id="features-title">Jogue mais.<br /><em>Entenda melhor.</em></h2>
+        </div>
+        <div className={styles.featureGrid}>
+          <article><span>01</span><h3>Estatísticas claras</h3><p>Veja o que aconteceu em cada sessão sem perder tempo procurando respostas.</p></article>
+          <article><span>02</span><h3>Histórico organizado</h3><p>Compare seus jogos, identifique padrões e acompanhe sua evolução.</p></article>
+          <article><span>03</span><h3>Decisões melhores</h3><p>Use seus dados para transformar experiência em consistência.</p></article>
+        </div>
+      </section>
+      <footer className={styles.footer}><Brand subtitle="Play with perspective" /><span>Estatísticas que ajudam você a jogar melhor.</span></footer>
     </main>
   );
 }

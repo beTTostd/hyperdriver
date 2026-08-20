@@ -284,7 +284,7 @@ export default function TalisharTable() {
   const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
-    fetch("/replays/recorded-match.json")
+    fetch("/api/replays/recorded-match")
       .then((response) => {
         if (!response.ok) throw new Error("Não foi possível abrir a partida.");
         return response.json();
@@ -356,7 +356,7 @@ export default function TalisharTable() {
     else document.documentElement.requestFullscreen();
   }
 
-  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/">Voltar para o replay clássico</Link></div></main>;
+  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para o replay clássico</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div className={styles.spinner} /><p>Montando a mesa…</p></main>;
 
   const opponentPermanents = [...list(current.opponentPermanents), ...list(current.opponentItems), ...list(current.opponentAuras), ...list(current.opponentAllies)];
@@ -416,7 +416,7 @@ export default function TalisharTable() {
                 <strong>{phaseName(current)}</strong>
                 <small>{source}</small>
               </div>
-              <Link href="/">Visão analítica</Link>
+              <Link href="/me">Visão analítica</Link>
               <button type="button" onClick={(event) => { setShowLog((value) => !value); event.currentTarget.closest("details")?.removeAttribute("open"); }}>{showLog ? "Fechar game log" : "Abrir game log"}</button>
               <button type="button" onClick={(event) => { toggleFullscreen(); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Tela cheia</button>
               <label>Abrir JSON<input type="file" accept=".json,application/json" onChange={openFile} /></label>

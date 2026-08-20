@@ -1,5 +1,7 @@
 import Link from "next/link";
 import Brand from "../components/brand";
+import AuthControls from "../components/auth-controls";
+import { requireUser } from "../../lib/auth";
 import styles from "./page.module.css";
 
 const turns = [
@@ -7,9 +9,10 @@ const turns = [
   ["T2", "Você", 10, 0], ["T3", "Oponente", 19, 3], ["T3", "Você", 17, 3], ["T4", "Oponente", 4, 3],
 ] as const;
 
-export default function TurnValuePage() {
+export default async function TurnValuePage() {
+  const currentUser = await requireUser("/valor");
   return <main className={styles.page}><div className={styles.shell}>
-    <nav><Brand subtitle="Performance analysis" /><div><Link href="/">Replays</Link><Link href="/mesa">Abrir mesa <span>↗</span></Link></div></nav>
+    <nav><Brand subtitle="Performance analysis" /><div><AuthControls username={currentUser.username} avatarCardId={currentUser.avatarCardId} isAdmin={currentUser.role === "admin"} /><Link href="/me">Replays</Link><Link href="/mesa">Abrir mesa <span>↗</span></Link></div></nav>
     <header><p><span>02</span> Análise da partida</p><h1>Valor por<br /><em>turno</em></h1><span>Valor = poder final dos ataques + bloqueio feito por cartas da mão.</span></header>
     <section className={styles.summary}><article><small>Valor total</small><strong>118</strong><span>8 turnos efetivos</span></article><article><small>Ataque</small><strong className={styles.attack}>99</strong><span>84% do valor</span></article><article><small>Bloqueio da mão</small><strong className={styles.block}>19</strong><span>Equipamentos excluídos</span></article><article><small>Melhor turno</small><strong>32</strong><span>T2 · Oponente</span></article></section>
     <section className={styles.panel}><div className={styles.panelHeader}><div><p>Comparação</p><h2>Produção de cada turno</h2></div><aside><i /> Ataque <b /> Bloqueio da mão</aside></div><div className={styles.chart}>{turns.map(([turn, player, attack, block]) => <div className={styles.row} key={`${turn}-${player}`}><label><strong>{turn}</strong><span className={player === "Você" ? styles.you : styles.opponent}>{player}</span></label><div className={styles.track}><i style={{width:`${attack / 32 * 100}%`}} /><b style={{width:`${block / 32 * 100}%`}} /></div><strong>{attack + block}</strong></div>)}</div></section>

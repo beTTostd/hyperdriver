@@ -20,4 +20,4 @@ RUN mkdir -p /app/data /app/uploads
 
 EXPOSE 3101
 
-CMD ["npm", "run", "dev", "--", "--port", "3101"]
+CMD ["sh", "-c", "npm run db:migrate && exec next dev --hostname 0.0.0.0 --port 3101"]

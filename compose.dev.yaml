@@ -3,11 +3,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    env_file:
+      - .env.local
     ports:
       - "3101:3101"
     environment:
       NODE_ENV: development
       PORT: 3101
+      APP_URL: http://localhost:3101
       DOCKER_DEV: 1
       DATABASE_FILE: /app/data/hyperdriver.sqlite
       UPLOADS_DIR: /app/uploads

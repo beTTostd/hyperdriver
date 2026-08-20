@@ -26,35 +26,38 @@
   border-bottom: 1px solid var(--line);
 }
 
-.uploadButton {
+.headerLeft {
   display: flex;
-  min-height: 42px;
   align-items: center;
-  gap: 9px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 0;
-  color: var(--paper);
-  background: var(--panel);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  gap: 24px;
 }
 
-.uploadButton > span {
-  color: var(--signal-red);
-  font-size: 18px;
+.installButton {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--signal-red);
+  color: var(--carbon);
+  background: var(--signal-red);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.installButton span {
+  font-family: var(--font-mono);
+  font-size: 13px;
   line-height: 1;
 }
 
-.uploadButton small {
-  padding: 3px 5px;
-  color: var(--muted);
-  background: rgba(242, 241, 236, 0.06);
-  font-family: var(--font-mono);
-  font-size: 7px;
-  letter-spacing: 0.06em;
+.installButton:hover {
+  color: var(--signal-red);
+  background: transparent;
 }
 
 .intro {
@@ -459,12 +462,11 @@
   }
 
   .header {
-    align-items: stretch;
-    flex-direction: column;
+    gap: 12px;
   }
 
-  .uploadButton {
-    justify-content: center;
+  .headerLeft {
+    gap: 12px;
   }
 
   .intro h1 {

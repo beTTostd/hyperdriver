@@ -30,6 +30,8 @@ COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+COPY --from=build --chown=node:node /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=build --chown=node:node /app/scripts/seed.mjs ./scripts/seed.mjs
 COPY docker/entrypoint.sh /usr/local/bin/hyperdriver-entrypoint
 
 RUN chmod +x /usr/local/bin/hyperdriver-entrypoint \

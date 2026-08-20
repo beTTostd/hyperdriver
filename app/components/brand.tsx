@@ -2,7 +2,7 @@ import Link from "next/link";
 
 type BrandProps = {
   href?: string;
-  subtitle?: string;
+  subtitle?: string | null;
 };
 
 export default function Brand({ href = "/", subtitle = "Pitwall" }: BrandProps) {
@@ -15,7 +15,7 @@ export default function Brand({ href = "/", subtitle = "Pitwall" }: BrandProps) 
       </span>
       <span className="brand-copy">
         <strong>Hyperdriver</strong>
-        <small>{subtitle}</small>
+        {subtitle && <small>{subtitle}</small>}
       </span>
     </Link>
   );

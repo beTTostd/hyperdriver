@@ -16,11 +16,11 @@ if [[ ! -x "${next}" ]]; then
 fi
 
 cd "${project_root}"
-echo "Running bounded Next.js build..."
+echo "Running bounded Next.js build with webpack..."
 timeout \
   --signal=TERM \
   --kill-after="${NEXT_BUILD_KILL_AFTER:-10s}" \
   "${NEXT_BUILD_TIMEOUT:-3m}" \
-  "${next}" build
+  "${next}" build --webpack
 
 "${script_dir}/validate-artifact.sh"
