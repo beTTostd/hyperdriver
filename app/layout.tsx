@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Talishar Match Replay",
-  description: "Replay local de uma partida do Talishar.",
+  title: "Hyperdriver — Pitwall",
+  description: "Telemetria de corrida aplicada às suas partidas de Flesh and Blood.",
   other: {
     "codex-preview": "development",
   },

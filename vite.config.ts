@@ -24,7 +24,7 @@ export default defineConfig(async () => {
   return {
     server: {
       host: "0.0.0.0",
-      allowedHosts: ["terminal.local"],
+      allowedHosts: ["terminal.local", "beta.hyperdriver.com.br"],
       ...(isCodexSeatbeltSandbox || isDockerDev
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import Brand from "../components/brand";
 
 type Card = {
   cardNumber?: string;
@@ -209,8 +210,9 @@ export default function Home() {
 
   return <main className="replay-shell">
     <header className="topbar">
-      <div><p className="eyebrow">Talishar Local History · Replay</p><h1>Dash I/O mirror</h1><p className="subtitle">{sourceLabel} · {dateTime(replay.match.startedAt)}</p></div>
-      <label className="file-button">Abrir outro JSON<input type="file" accept="application/json,.json" onChange={loadFile} /></label>
+      <Brand subtitle="Live replay" />
+      <div className="replay-heading"><p className="eyebrow"><span>03</span> Mesa de análise</p><h1>Dash I/O mirror</h1><p className="subtitle">{sourceLabel} · {dateTime(replay.match.startedAt)}</p></div>
+      <label className="file-button">＋ Abrir outro JSON<input type="file" accept="application/json,.json" onChange={loadFile} /></label>
     </header>
 
     <section className="scoreboard" aria-label="Placar da partida">
