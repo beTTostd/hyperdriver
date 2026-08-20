@@ -8,7 +8,7 @@ type AuthenticatedHeaderProps = {
   isAdmin?: boolean;
 };
 
-const extensionUrl = "https://github.com/beTTostd/hyperdriver/tree/main/talishar-local-history";
+const extensionUrl = "/downloads/hyperdriver-extension.zip";
 
 export default function AuthenticatedHeader({
   username,
@@ -22,10 +22,9 @@ export default function AuthenticatedHeader({
         <a
           className={styles.installButton}
           href={extensionUrl}
-          target="_blank"
-          rel="noreferrer"
+          download="hyperdriver-extension.zip"
         >
-          Instalar extensão <span aria-hidden="true">↗</span>
+          Instalar extensão <span aria-hidden="true">↓</span>
         </a>
       </div>
       <AuthControls username={username} avatarCardId={avatarCardId} isAdmin={isAdmin} />

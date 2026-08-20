@@ -67,6 +67,7 @@ function readSchema() {
       password_hash TEXT,
       avatar_card_id TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
+      last_login_at INTEGER,
       created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
       updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
     );

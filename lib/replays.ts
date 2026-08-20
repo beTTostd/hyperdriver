@@ -235,3 +235,9 @@ export async function readUserReplay(userId: number, replayId: number) {
     raw: await readFile(replayPath(replay.storageKey), "utf8"),
   };
 }
+
+export async function deleteReplayFiles(storageKeys: string[]): Promise<void> {
+  await Promise.all(
+    storageKeys.map((storageKey) => unlink(replayPath(storageKey)).catch(() => undefined)),
+  );
+}

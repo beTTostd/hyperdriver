@@ -24,7 +24,11 @@ export default async function ProfilePage() {
   const replayList = listUserReplays(currentUser.id);
   return (
     <main className={styles.page}>
-      <AuthenticatedHeader username={currentUser.username} avatarCardId={currentUser.avatarCardId} />
+      <AuthenticatedHeader
+        username={currentUser.username}
+        avatarCardId={currentUser.avatarCardId}
+        isAdmin={currentUser.role === "admin"}
+      />
       <section className={styles.library} aria-labelledby="replay-list-title">
         <div className={styles.libraryHeader}>
           <div><h2 id="replay-list-title">Replays recentes</h2></div>

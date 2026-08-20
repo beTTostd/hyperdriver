@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "hyperdriver_session";
-const publicPaths = new Set(["/", "/login", "/primeira-senha"]);
+const publicPaths = new Set(["/", "/login", "/set-password", "/primeira-senha"]);
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -31,7 +31,11 @@ function safeRelativePath(value: string): string {
   try {
     const url = new URL(value, "https://hyperdriver.local");
     if (url.origin !== "https://hyperdriver.local") return "/";
-    if (url.pathname === "/login" || url.pathname === "/primeira-senha") return "/";
+    if (
+      url.pathname === "/login" ||
+      url.pathname === "/set-password" ||
+      url.pathname === "/primeira-senha"
+    ) return "/";
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return "/";

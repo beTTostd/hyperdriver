@@ -45,6 +45,7 @@ export async function POST(request: Request) {
 
   const token = createOpaqueToken();
   const expiresAt = Date.now() + PASSWORD_SETUP_DURATION_MS;
+  let createdId: number;
   try {
     const created = getDb().transaction((database) => {
       const existing = database.select({ id: users.id }).from(users).where(eq(users.username, username)).get();
@@ -65,16 +66,18 @@ export async function POST(request: Request) {
     if (!created) {
       return NextResponse.json({ error: "Este username já está em uso." }, { status: 409 });
     }
+    createdId = created.id;
   } catch {
     return NextResponse.json({ error: "Não foi possível criar o usuário." }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
+    id: createdId,
     username,
     role,
     expiresAt,
-    setupUrl: `${origin}/primeira-senha?token=${encodeURIComponent(token)}`,
+    setupUrl: `${origin}/set-password?token=${encodeURIComponent(token)}`,
   }, { status: 201 });
 }
 

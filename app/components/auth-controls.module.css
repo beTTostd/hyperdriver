@@ -106,6 +106,7 @@
   text-transform: uppercase;
 }
 
+.adminLink,
 .editProfileLink {
   display: flex;
   min-height: 38px;
@@ -123,11 +124,13 @@
   text-transform: uppercase;
 }
 
+.adminLink span,
 .editProfileLink span {
   color: var(--signal-red);
   font-size: 14px;
 }
 
+.adminLink:hover,
 .editProfileLink:hover {
   color: var(--signal-red);
   background: rgba(255, 77, 61, 0.1);

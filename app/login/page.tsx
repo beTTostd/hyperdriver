@@ -14,7 +14,7 @@ export default async function LoginPage({
         <Brand subtitle="Secure pitwall" />
         <header>
           <p className={styles.eyebrow}>Acesso restrito</p>
-          <h1>Entre<br /><em>na pista</em></h1>
+          <h1>Entre<br /><em>no jogo</em></h1>
           <p className={styles.description}>Use suas credenciais para acessar os replays e a telemetria do Hyperdriver.</p>
         </header>
         <LoginForm returnTo={params.returnTo || "/me"} />

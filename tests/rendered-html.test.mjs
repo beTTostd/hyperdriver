@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import Database from "better-sqlite3";
 import {
   indicators,
   isCompleteMatch,
@@ -125,25 +126,46 @@ test("requires authentication and supports one-time user invitations", async () 
   const created = await fetch(new URL("/api/admin/users", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ username: "piloto-01", role: "user" }),
+    body: JSON.stringify({ username: "jogador-01", role: "user" }),
   });
   assert.equal(created.status, 201);
   const invitation = await created.json();
-  assert.match(invitation.setupUrl, /\/primeira-senha\?token=/);
+  assert.equal(typeof invitation.id, "number");
+  assert.match(invitation.setupUrl, /\/set-password\?token=/);
   assert.ok(invitation.expiresAt - Date.now() > 2 * 60 * 60 * 1000 - 5000);
   assert.ok(invitation.expiresAt - Date.now() <= 2 * 60 * 60 * 1000);
 
   const setupPage = await fetch(invitation.setupUrl);
   assert.equal(setupPage.status, 200);
-  assert.match(await setupPage.text(), /piloto-01/);
+  assert.match(await setupPage.text(), /jogador-01/);
+
+  const regenerated = await fetch(
+    new URL(`/api/admin/users/${invitation.id}/password-link`, baseUrl),
+    { method: "POST", headers: { cookie } },
+  );
+  assert.equal(regenerated.status, 200);
+  const regeneratedInvitation = await regenerated.json();
+  assert.match(regeneratedInvitation.setupUrl, /\/set-password\?token=/);
+  assert.notEqual(regeneratedInvitation.setupUrl, invitation.setupUrl);
+
+  const staleSetup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      token: new URL(invitation.setupUrl).searchParams.get("token"),
+      password: "PlayerPassword!123",
+      confirmation: "PlayerPassword!123",
+    }),
+  });
+  assert.equal(staleSetup.status, 400);
 
   const setup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(invitation.setupUrl).searchParams.get("token"),
-      password: "PilotPassword!123",
-      confirmation: "PilotPassword!123",
+      token: new URL(regeneratedInvitation.setupUrl).searchParams.get("token"),
+      password: "PlayerPassword!123",
+      confirmation: "PlayerPassword!123",
     }),
   });
   assert.equal(setup.status, 200);
@@ -152,9 +174,9 @@ test("requires authentication and supports one-time user invitations", async () 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(invitation.setupUrl).searchParams.get("token"),
-      password: "PilotPassword!123",
-      confirmation: "PilotPassword!123",
+      token: new URL(regeneratedInvitation.setupUrl).searchParams.get("token"),
+      password: "PlayerPassword!123",
+      confirmation: "PlayerPassword!123",
     }),
   });
   assert.equal(reused.status, 400);
@@ -162,17 +184,103 @@ test("requires authentication and supports one-time user invitations", async () 
   const userLogin = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "piloto-01", password: "PilotPassword!123" }),
+    body: JSON.stringify({ username: "jogador-01", password: "PlayerPassword!123" }),
   });
   assert.equal(userLogin.status, 200);
   const userCookie = getCookie(userLogin);
   assert.ok(userCookie);
+  const successfulLastLogin = readLastLogin("jogador-01");
+  assert.equal(typeof successfulLastLogin, "number");
+
+  const invalidLogin = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "jogador-01", password: "InvalidPassword!123" }),
+  });
+  assert.equal(invalidLogin.status, 401);
+  assert.equal(readLastLogin("jogador-01"), successfulLastLogin);
   const userAdminPage = await fetch(new URL("/admin", baseUrl), {
     headers: { cookie: userCookie },
     redirect: "manual",
   });
   assert.equal(userAdminPage.status, 307);
   assert.equal(new URL(userAdminPage.headers.get("location"), baseUrl).pathname, "/");
+  const userProfilePage = await fetch(new URL("/me", baseUrl), {
+    headers: { cookie: userCookie },
+  });
+  assert.equal(userProfilePage.status, 200);
+  assert.doesNotMatch(await userProfilePage.text(), />Administração<\/a>/);
+
+  const forbiddenLink = await fetch(
+    new URL(`/api/admin/users/${invitation.id}/password-link`, baseUrl),
+    { method: "POST", headers: { cookie: userCookie } },
+  );
+  assert.equal(forbiddenLink.status, 403);
+  const forbiddenDelete = await fetch(
+    new URL(`/api/admin/users/${invitation.id}`, baseUrl),
+    { method: "DELETE", headers: { cookie: userCookie } },
+  );
+  assert.equal(forbiddenDelete.status, 403);
+
+  const resetLinkResponse = await fetch(
+    new URL(`/api/admin/users/${invitation.id}/password-link`, baseUrl),
+    { method: "POST", headers: { cookie } },
+  );
+  assert.equal(resetLinkResponse.status, 200);
+  const resetInvitation = await resetLinkResponse.json();
+  const resetPassword = "NewPlayerPassword!123";
+  const reset = await fetch(new URL("/api/auth/setup-password", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      token: new URL(resetInvitation.setupUrl).searchParams.get("token"),
+      password: resetPassword,
+      confirmation: resetPassword,
+    }),
+  });
+  assert.equal(reset.status, 200);
+  const expiredSession = await fetch(new URL("/me", baseUrl), {
+    headers: { cookie: userCookie },
+    redirect: "manual",
+  });
+  assert.equal(expiredSession.status, 307);
+  assert.match(expiredSession.headers.get("location") ?? "", /\/login/);
+  const oldPasswordLogin = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "jogador-01", password: "PlayerPassword!123" }),
+  });
+  assert.equal(oldPasswordLogin.status, 401);
+  const resetLogin = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "jogador-01", password: resetPassword }),
+  });
+  assert.equal(resetLogin.status, 200);
+
+  const selfDelete = await fetch(new URL("/api/admin/users/1", baseUrl), {
+    method: "DELETE",
+    headers: { cookie },
+  });
+  assert.equal(selfDelete.status, 400);
+
+  const adminPage = await fetch(new URL("/admin", baseUrl), { headers: { cookie } });
+  const adminHtml = await adminPage.text();
+  assert.match(adminHtml, /Gerar link de senha/);
+  assert.match(adminHtml, />Apagar<\/button>/);
+  assert.match(adminHtml, /Último login:/);
+
+  const deleted = await fetch(new URL(`/api/admin/users/${invitation.id}`, baseUrl), {
+    method: "DELETE",
+    headers: { cookie },
+  });
+  assert.equal(deleted.status, 200);
+  const deletedLogin = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "jogador-01", password: resetPassword }),
+  });
+  assert.equal(deletedLogin.status, 401);
 });
 
 test("renders the replay and telemetry routes", async () => {
@@ -197,6 +305,9 @@ test("renders the replay and telemetry routes", async () => {
   const replayLibraryHtml = await replayLibraryResponse.text();
   assert.match(replayLibraryHtml, /Replays recentes/);
   assert.match(replayLibraryHtml, /Abrir menu de admin/);
+  assert.match(replayLibraryHtml, /href="\/admin"[^>]*>Administração/);
+  assert.match(replayLibraryHtml, /href="\/downloads\/hyperdriver-extension\.zip"/);
+  assert.match(replayLibraryHtml, /download="hyperdriver-extension\.zip"/);
   assert.doesNotMatch(replayLibraryHtml, /Replay telemetry|Importar replay|Perfil \/ avatar/);
   assert.equal(editProfileResponse.status, 200);
   const editProfileHtml = await editProfileResponse.text();
@@ -424,4 +535,15 @@ async function waitForServer(url) {
 function getCookie(response) {
   const values = response.headers.getSetCookie?.() ?? [];
   return (values[0] ?? response.headers.get("set-cookie"))?.split(";", 1)[0];
+}
+
+function readLastLogin(username) {
+  const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  try {
+    return database
+      .prepare("SELECT last_login_at AS lastLoginAt FROM users WHERE username = ?")
+      .get(username)?.lastLoginAt ?? null;
+  } finally {
+    database.close();
+  }
 }

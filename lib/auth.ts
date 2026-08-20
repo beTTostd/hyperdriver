@@ -25,6 +25,7 @@ export type AuthUser = {
 
 export type AdminUser = AuthUser & {
   hasPassword: boolean;
+  lastLoginAt: number | null;
   createdAt: number;
 };
 
@@ -128,7 +129,11 @@ export function safeRelativePath(value: string): string {
   try {
     const url = new URL(value, "https://hyperdriver.local");
     if (url.origin !== "https://hyperdriver.local") return "/";
-    if (url.pathname === "/login" || url.pathname === "/primeira-senha") return "/";
+    if (
+      url.pathname === "/login" ||
+      url.pathname === "/set-password" ||
+      url.pathname === "/primeira-senha"
+    ) return "/";
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return "/";
@@ -144,6 +149,7 @@ export function listAdminUsers(): AdminUser[] {
       avatarCardId: users.avatarCardId,
       isActive: users.isActive,
       passwordHash: users.passwordHash,
+      lastLoginAt: users.lastLoginAt,
       createdAt: users.createdAt,
     })
     .from(users)
@@ -156,6 +162,7 @@ export function listAdminUsers(): AdminUser[] {
       avatarCardId: row.avatarCardId,
       isActive: row.isActive,
       hasPassword: Boolean(row.passwordHash),
+      lastLoginAt: row.lastLoginAt,
       createdAt: row.createdAt,
     }));
 }
@@ -183,14 +190,22 @@ export function deleteSession(token: string | undefined): void {
 
 export function createSession(userId: number): string {
   const token = createOpaqueToken();
-  getDb()
-    .insert(sessions)
-    .values({
-      userId,
-      tokenHash: hashToken(token),
-      expiresAt: Date.now() + SESSION_DURATION_MS,
-    })
-    .run();
+  const now = Date.now();
+  getDb().transaction((database) => {
+    database
+      .update(users)
+      .set({ lastLoginAt: now, updatedAt: now })
+      .where(eq(users.id, userId))
+      .run();
+    database
+      .insert(sessions)
+      .values({
+        userId,
+        tokenHash: hashToken(token),
+        expiresAt: now + SESSION_DURATION_MS,
+      })
+      .run();
+  });
   return token;
 }
 
@@ -226,10 +241,11 @@ export function consumePasswordSetup(token: string, password: string): boolean {
   const updated = database
     .update(users)
     .set({ passwordHash: hashPassword(password), updatedAt: now })
-    .where(and(eq(users.id, setup.userId), isNull(users.passwordHash)))
+    .where(eq(users.id, setup.userId))
     .run();
   if (updated.changes !== 1) return false;
 
+  database.delete(sessions).where(eq(sessions.userId, setup.userId)).run();
   database
     .update(passwordSetupTokens)
     .set({ usedAt: now })

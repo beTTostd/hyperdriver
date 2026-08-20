@@ -9,7 +9,11 @@ export default async function ProfilePage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <AuthenticatedHeader username={currentUser.username} avatarCardId={currentUser.avatarCardId} />
+        <AuthenticatedHeader
+          username={currentUser.username}
+          avatarCardId={currentUser.avatarCardId}
+          isAdmin={currentUser.role === "admin"}
+        />
         <ProfileEditor
           username={currentUser.username}
           avatarCardId={currentUser.avatarCardId}

@@ -16,6 +16,7 @@ export const users = sqliteTable(
     passwordHash: text("password_hash"),
     avatarCardId: text("avatar_card_id"),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    lastLoginAt: integer("last_login_at"),
     createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
     updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
   },

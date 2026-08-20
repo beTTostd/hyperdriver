@@ -11,7 +11,11 @@ type AuthControlsProps = {
   isAdmin?: boolean;
 };
 
-export default function AuthControls({ username, avatarCardId = null }: AuthControlsProps) {
+export default function AuthControls({
+  username,
+  avatarCardId = null,
+  isAdmin = false,
+}: AuthControlsProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,8 +67,18 @@ export default function AuthControls({ username, avatarCardId = null }: AuthCont
         <span className={styles.profileName}>{username}</span>
         <span className={styles.chevron} aria-hidden="true">⌄</span>
       </button>
-      {open && (
-        <div className={styles.profileMenu} id={menuId} role="menu">
+      <div className={styles.profileMenu} id={menuId} role="menu" hidden={!open}>
+          {isAdmin && (
+            <Link
+              className={styles.adminLink}
+              href="/admin"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+            >
+              Administração
+              <span aria-hidden="true">↗</span>
+            </Link>
+          )}
           <Link
             className={styles.editProfileLink}
             href="/me/profile"
@@ -84,8 +98,7 @@ export default function AuthControls({ username, avatarCardId = null }: AuthCont
             {pending ? "Saindo…" : "Sair"}
             <span aria-hidden="true">↗</span>
           </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

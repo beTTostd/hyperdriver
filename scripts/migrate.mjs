@@ -19,6 +19,9 @@ const userColumns = database.pragma("table_info(users)");
 if (!userColumns.some((column) => column.name === "avatar_card_id")) {
   database.exec(readFileSync(resolve("drizzle/0001_user_avatar.sql"), "utf8"));
 }
+if (!userColumns.some((column) => column.name === "last_login_at")) {
+  database.exec(readFileSync(resolve("drizzle/0003_user_last_login.sql"), "utf8"));
+}
 const replayTable = database
   .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'replays'")
   .get();
