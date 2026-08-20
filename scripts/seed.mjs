@@ -98,6 +98,7 @@ function readSchema() {
       schema_version TEXT NOT NULL,
       status TEXT NOT NULL,
       result TEXT NOT NULL,
+      game_mode TEXT,
       player_hero_id TEXT,
       opponent_hero_id TEXT,
       started_at INTEGER NOT NULL,

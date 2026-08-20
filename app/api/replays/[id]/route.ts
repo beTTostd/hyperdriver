@@ -13,10 +13,10 @@ export async function GET(
     return NextResponse.json({ error: "Autenticação necessária." }, { status: 401 });
   }
   const { id } = await context.params;
-  if (!/^\d+$/.test(id)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && !/^\d+$/.test(id)) {
     return NextResponse.json({ error: "Replay não encontrado." }, { status: 404 });
   }
-  const replay = await readUserReplay(user.id, Number(id));
+  const replay = await readUserReplay(user.id, id);
   if (!replay) {
     return NextResponse.json({ error: "Replay não encontrado." }, { status: 404 });
   }

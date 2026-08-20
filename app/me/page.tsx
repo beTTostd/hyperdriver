@@ -19,6 +19,20 @@ function resultLabel(result: string) {
   return "Encerrada";
 }
 
+function gameModeLabel(gameMode: string | null) {
+  const labels: Record<string, string> = {
+    blitz: "Blitz",
+    cc: "Classic Constructed",
+    commoner: "Commoner",
+    draft: "Booster Draft",
+    ll: "Living Legend",
+    sealed: "Sealed Deck",
+    upf: "Ultimate Pit Fight",
+  };
+  if (!gameMode) return "Não informado";
+  return labels[gameMode.toLowerCase()] ?? gameMode.toUpperCase();
+}
+
 export default async function ProfilePage() {
   const currentUser = await requireUser("/me");
   const replayList = listUserReplays(currentUser.id);
@@ -65,13 +79,12 @@ export default async function ProfilePage() {
                     <h3>{playerHero} <span>vs.</span> {opponentHero}</h3>
                     <dl className={styles.metadata}>
                       <div><dt>Turno final</dt><dd>{replay.finalTurn ?? "—"}</dd></div>
-                      <div><dt>Snapshots</dt><dd>{replay.frameCount}</dd></div>
-                      <div><dt>Origem</dt><dd>Talishar</dd></div>
+                      <div><dt>Modo de jogo</dt><dd>{gameModeLabel(replay.gameMode)}</dd></div>
                     </dl>
                   </div>
                   <div className={styles.replayActions}>
-                    <Link className={styles.openReplay} href={`/mesa?replay=${replay.id}`}>Abrir replay <span aria-hidden="true">→</span></Link>
-                    <Link className={styles.analyseReplay} href={`/valor?replay=${replay.id}`}>Ver telemetria <span aria-hidden="true">↗</span></Link>
+                    <Link className={styles.openReplay} href={`/table?replay=${replay.sourceMatchId}`}>Abrir replay <span aria-hidden="true">→</span></Link>
+                    <Link className={styles.analyseReplay} href={`/valor?replay=${replay.sourceMatchId}`}>Ver telemetria <span aria-hidden="true">↗</span></Link>
                   </div>
                 </article>
               );

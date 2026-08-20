@@ -6,6 +6,7 @@ import { getDb } from "../db";
 import { replays } from "../db/schema";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type ReplayCard = {
   cardNumber?: string;
@@ -28,6 +29,7 @@ export type ReplayPayload = {
   playerEquipment?: ReplayCard[];
   opponentEquipment?: ReplayCard[];
   activeChainLink?: ReplayChain | null;
+  initialLoad?: { gameFormat?: string };
   [key: string]: unknown;
 };
 
@@ -88,6 +90,20 @@ function heroId(frames: ReplayFrame[], side: "playerEquipment" | "opponentEquipm
   return null;
 }
 
+function gameMode(document: ReplayDocument) {
+  const matchMode = document.match.gameFormat;
+  if (typeof matchMode === "string" && matchMode.trim()) {
+    return matchMode.trim().toLowerCase();
+  }
+  for (const frame of document.match.frames) {
+    const frameMode = frame.payload.initialLoad?.gameFormat;
+    if (typeof frameMode === "string" && frameMode.trim()) {
+      return frameMode.trim().toLowerCase();
+    }
+  }
+  return null;
+}
+
 export function isCompleteReplay(document: ReplayDocument): boolean {
   return document.match.frames.some(
     (frame) => frame.payload?.turnPhase?.turnPhase === "OVER",
@@ -113,7 +129,7 @@ export function parseReplayDocument(raw: string): ReplayDocument {
     !match ||
     typeof match !== "object" ||
     typeof match.id !== "string" ||
-    !/^[A-Za-z0-9_-]{8,128}$/.test(match.id) ||
+    !UUID_PATTERN.test(match.id) ||
     typeof match.startedAt !== "string" ||
     !Array.isArray(match.frames) ||
     match.frames.length === 0 ||
@@ -148,6 +164,7 @@ function extractedMetadata(document: ReplayDocument) {
     schemaVersion: document.schemaVersion,
     status: "finished",
     result,
+    gameMode: gameMode(document),
     playerHeroId: heroId(match.frames, "playerEquipment"),
     opponentHeroId: heroId(match.frames, "opponentEquipment"),
     startedAt: parseTimestamp(match.startedAt)!,
@@ -169,6 +186,18 @@ export async function saveReplayUpload(userId: number, raw: string) {
   if (existing) {
     if (existing.userId !== userId) {
       throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409);
+    }
+    if (!existing.gameMode) {
+      const metadata = extractedMetadata(document);
+      if (metadata.gameMode) {
+        const updated = database
+          .update(replays)
+          .set({ gameMode: metadata.gameMode })
+          .where(eq(replays.id, existing.id))
+          .returning()
+          .get();
+        return { replay: updated, duplicate: true };
+      }
     }
     return { replay: existing, duplicate: true };
   }
@@ -219,15 +248,23 @@ export function listUserReplays(userId: number): ReplayMetadata[] {
     .all();
 }
 
-export function findUserReplay(userId: number, replayId: number): ReplayMetadata | null {
-  return getDb()
+export function findUserReplay(userId: number, replayId: string): ReplayMetadata | null {
+  const database = getDb();
+  const bySourceId = database
     .select()
     .from(replays)
-    .where(and(eq(replays.id, replayId), eq(replays.userId, userId)))
+    .where(and(eq(replays.sourceMatchId, replayId), eq(replays.userId, userId)))
+    .get();
+  if (bySourceId) return bySourceId;
+  if (!/^\d+$/.test(replayId)) return null;
+  return database
+    .select()
+    .from(replays)
+    .where(and(eq(replays.id, Number(replayId)), eq(replays.userId, userId)))
     .get() ?? null;
 }
 
-export async function readUserReplay(userId: number, replayId: number) {
+export async function readUserReplay(userId: number, replayId: string) {
   const replay = findUserReplay(userId, replayId);
   if (!replay) return null;
   return {

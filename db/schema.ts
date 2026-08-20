@@ -70,6 +70,7 @@ export const replays = sqliteTable(
     schemaVersion: text("schema_version").notNull(),
     status: text("status").notNull(),
     result: text("result").notNull(),
+    gameMode: text("game_mode"),
     playerHeroId: text("player_hero_id"),
     opponentHeroId: text("opponent_hero_id"),
     startedAt: integer("started_at").notNull(),

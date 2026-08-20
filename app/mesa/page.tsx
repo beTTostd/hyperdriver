@@ -1,7 +1,8 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { BrandSymbol } from "../components/brand";
 import styles from "./page.module.css";
 
 type Card = {
@@ -66,6 +67,8 @@ type Frame = { sequence: number; receivedAt: string; payload: Payload };
 type Replay = { match: { startedAt?: string; frames: Frame[] } };
 type EquipmentKey = "playerEquipment" | "opponentEquipment";
 
+const isReplayId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) || /^\d+$/.test(value);
+
 const list = (value?: Card[]) => (Array.isArray(value) ? value : []);
 
 function cardName(card?: Card) {
@@ -94,24 +97,8 @@ function counterLabel(card: Card) {
   return Number(card.counters ?? 0) === 0 ? "" : String(card.counters);
 }
 
-function phaseName(payload: Payload) {
-  if (payload.turnPhase?.turnPhase === "OVER") return "Partida encerrada";
-  return payload.turnPhase?.caption || payload.turnPhase?.layer || payload.turnPhase?.turnPhase || "Aguardando";
-}
-
 function playerName(value?: string | number) {
   return String(value) === "1" ? "Você" : "Oponente";
-}
-
-function plainLog(html = "") {
-  if (typeof DOMParser === "undefined") return [];
-  const normalized = html.replace(/<br\s*\/?\s*>/gi, "\n");
-  const document = new DOMParser().parseFromString(normalized, "text/html");
-  return (document.body.textContent ?? "")
-    .replace(/\[\[TURN_START:[^\]]+\]\]/g, "")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line && !line.includes("No rust counters"));
 }
 
 function turnMarkers(frames: Frame[]) {
@@ -279,13 +266,11 @@ export default function TalisharTable() {
   const [replay, setReplay] = useState<Replay | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [source, setSource] = useState("Partida gravada · 16/08/2026");
   const [error, setError] = useState("");
-  const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
     const replayId = new URLSearchParams(window.location.search).get("replay");
-    const endpoint = replayId && /^\d+$/.test(replayId)
+    const endpoint = replayId && isReplayId(replayId)
       ? `/api/replays/${replayId}`
       : "/api/replays/recorded-match";
     fetch(endpoint)
@@ -295,7 +280,6 @@ export default function TalisharTable() {
       })
       .then((data: Replay) => {
         setReplay(data);
-        if (replayId) setSource(`Replay sincronizado · ${replayId}`);
       })
       .catch((reason: Error) => setError(reason.message));
   }, []);
@@ -304,7 +288,6 @@ export default function TalisharTable() {
   const currentFrame = frames[index];
   const current = currentFrame?.payload;
   const markers = useMemo(() => turnMarkers(frames), [frames]);
-  const logs = useMemo(() => plainLog(current?.chatLog).slice(-18).reverse(), [current?.chatLog]);
   const opponentSetupEquipment = useMemo(() => setupEquipment(frames, "opponentEquipment"), [frames]);
   const playerSetupEquipment = useMemo(() => setupEquipment(frames, "playerEquipment"), [frames]);
   const attackCards = useMemo(() => attackCardNumbers(frames), [frames]);
@@ -337,34 +320,8 @@ export default function TalisharTable() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [frames.length]);
 
-  function openFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    event.currentTarget.closest("details")?.removeAttribute("open");
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as Replay;
-        if (!Array.isArray(parsed.match?.frames)) throw new Error("Este JSON não contém frames de replay.");
-        setReplay(parsed);
-        setIndex(0);
-        setPlaying(false);
-        setSource(file.name);
-        setError("");
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "JSON inválido.");
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  function toggleFullscreen() {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen();
-  }
-
   if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para seus replays</Link></div></main>;
-  if (!current || !currentFrame) return <main className={styles.loading}><div className={styles.spinner} /><p>Montando a mesa…</p></main>;
+  if (!current || !currentFrame) return <main className={styles.loading}><div role="status" aria-live="polite"><BrandSymbol className={styles.loadingMark} /><p>Montando a mesa…</p></div></main>;
 
   const opponentPermanents = [...list(current.opponentPermanents), ...list(current.opponentItems), ...list(current.opponentAuras), ...list(current.opponentAllies)];
   const playerPermanents = [...list(current.playerPermanents), ...list(current.playerItems), ...list(current.playerAuras), ...list(current.playerAllies)];
@@ -402,10 +359,6 @@ export default function TalisharTable() {
         <ActionDisplay card={actionCard} />
         {isFinal && <div className={styles.result}><small>Partida encerrada</small><strong>Oponente venceu · 2 × 0</strong></div>}
 
-        {showLog && <aside className={styles.logPanel}>
-          <header><div><small>Snapshot #{currentFrame.sequence}</small><h2>Game log</h2></div><button type="button" onClick={() => setShowLog(false)} aria-label="Fechar log">×</button></header>
-          <ol>{logs.map((entry, logIndex) => <li key={`${index}-${logIndex}`}><span>{logIndex === 0 ? "Agora" : `−${logIndex}`}</span><p>{entry}</p></li>)}</ol>
-        </aside>}
       </section>
 
       <section className={styles.timeline} aria-label="Controles do replay">
@@ -415,20 +368,6 @@ export default function TalisharTable() {
           <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"}>{playing ? "Ⅱ" : "▶"}</button>
           <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot">›</button>
           <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot">↠</button>
-          <details className={styles.timelineMenu}>
-            <summary aria-label="Abrir menu">⋯</summary>
-            <div className={styles.menuPopover}>
-              <div className={styles.menuMeta}>
-                <span>Turno {current.turnNo ?? "—"} · {playerName(current.turnPlayer)}</span>
-                <strong>{phaseName(current)}</strong>
-                <small>{source}</small>
-              </div>
-              <Link href="/me">Visão analítica</Link>
-              <button type="button" onClick={(event) => { setShowLog((value) => !value); event.currentTarget.closest("details")?.removeAttribute("open"); }}>{showLog ? "Fechar game log" : "Abrir game log"}</button>
-              <button type="button" onClick={(event) => { toggleFullscreen(); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Tela cheia</button>
-              <label>Abrir JSON<input type="file" accept=".json,application/json" onChange={openFile} /></label>
-            </div>
-          </details>
         </div>
         <div className={styles.scrubber}>
           <div className={styles.turns}>{markers.map((marker, markerIndex) => {

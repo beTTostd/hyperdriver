@@ -285,7 +285,7 @@ test("requires authentication and supports one-time user invitations", async () 
 
 test("renders the replay and telemetry routes", async () => {
   const [tableResponse, telemetryResponse] = await Promise.all([
-    fetch(new URL("/mesa", baseUrl), { headers: { cookie } }),
+    fetch(new URL("/table", baseUrl), { headers: { cookie } }),
     fetch(new URL("/valor", baseUrl), { headers: { cookie } }),
   ]);
   const replayLibraryResponse = await fetch(new URL("/me", baseUrl), {
@@ -384,7 +384,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   });
   assert.equal(anonymous.status, 401);
 
-  const incomplete = replayDocument("capture-incomplete", false);
+  const incomplete = replayDocument("8dbf5f5f-4f18-4b23-9a3b-8e2f6bfda614", false);
   const incompleteResponse = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
@@ -392,7 +392,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   });
   assert.equal(incompleteResponse.status, 422);
 
-  const document = replayDocument("capture-admin-001", true);
+  const document = replayDocument("4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01", true);
   const created = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
@@ -402,6 +402,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const uploaded = await created.json();
   assert.equal(uploaded.duplicate, false);
   assert.equal(uploaded.username, "admin");
+  assert.match(uploaded.replayId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
   const duplicate = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
@@ -414,14 +415,17 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const adminLibrary = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
   const adminHtml = await adminLibrary.text();
   assert.match(adminHtml, /Alpha Hero/);
-  assert.match(adminHtml, new RegExp(`/mesa\\?replay=${uploaded.replayId}`));
+  assert.match(adminHtml, /Modo de jogo/);
+  assert.match(adminHtml, /Classic Constructed/);
+  assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
+  assert.match(adminHtml, new RegExp(`/table\\?replay=${uploaded.replayId}`));
   assert.match(adminHtml, new RegExp(`/valor\\?replay=${uploaded.replayId}`));
 
   const stored = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
   });
   assert.equal(stored.status, 200);
-  assert.equal((await stored.json()).match.id, "capture-admin-001");
+  assert.equal((await stored.json()).match.id, "4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01");
   const telemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
   });
@@ -459,6 +463,7 @@ function replayDocument(id, complete) {
         sequence: 1,
         receivedAt: "2026-08-20T12:01:00.000Z",
         payload: {
+          initialLoad: { gameFormat: "cc" },
           turnNo: "3",
           turnPlayer: "1",
           turnPhase: { turnPhase: complete ? "OVER" : "A" },

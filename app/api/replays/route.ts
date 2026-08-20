@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const raw = await request.text();
     const { replay, duplicate } = await saveReplayUpload(user.id, raw);
     return NextResponse.json(
-      { ok: true, replayId: replay.id, username: user.username, duplicate },
+      { ok: true, replayId: replay.sourceMatchId, username: user.username, duplicate },
       { status: duplicate ? 200 : 201 },
     );
   } catch (error) {

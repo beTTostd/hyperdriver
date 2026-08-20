@@ -31,4 +31,36 @@ if (!replayTable) {
       .replaceAll(/--> statement-breakpoint/g, ""),
   );
 }
+
+const replayColumns = database.pragma("table_info(replays)");
+if (!replayColumns.some((column) => column.name === "game_mode")) {
+  database.exec(readFileSync(resolve("drizzle/0004_replay_game_mode.sql"), "utf8"));
+}
+
+const uploadsDirectory = resolve(process.env.UPLOADS_DIR || "data/uploads");
+const missingGameModes = database
+  .prepare("SELECT id, storage_key FROM replays WHERE game_mode IS NULL")
+  .all();
+const updateGameMode = database.prepare(
+  "UPDATE replays SET game_mode = ? WHERE id = ?",
+);
+for (const replay of missingGameModes) {
+  try {
+    const document = JSON.parse(
+      readFileSync(resolve(uploadsDirectory, replay.storage_key), "utf8"),
+    );
+    const matchMode = document?.match?.gameFormat;
+    const frameMode = document?.match?.frames
+      ?.find((frame) => frame?.payload?.initialLoad?.gameFormat)
+      ?.payload?.initialLoad?.gameFormat;
+    const gameMode = typeof matchMode === "string" && matchMode.trim()
+      ? matchMode.trim().toLowerCase()
+      : typeof frameMode === "string" && frameMode.trim()
+        ? frameMode.trim().toLowerCase()
+        : null;
+    if (gameMode) updateGameMode.run(gameMode, replay.id);
+  } catch {
+    // Keep unknown modes nullable when an older replay file is unavailable.
+  }
+}
 database.close();

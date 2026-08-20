@@ -14,8 +14,8 @@ export default async function TurnValuePage({ searchParams }: PageProps) {
   const { replay: replayId } = await searchParams;
   let raw: string;
   if (replayId) {
-    if (!/^\d+$/.test(replayId)) notFound();
-    const stored = await readUserReplay(currentUser.id, Number(replayId));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(replayId) && !/^\d+$/.test(replayId)) notFound();
+    const stored = await readUserReplay(currentUser.id, replayId);
     if (!stored) notFound();
     raw = stored.raw;
   } else {
