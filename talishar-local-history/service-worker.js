@@ -1,3 +1,5 @@
+import { indicators, isCompleteMatch, isFinished, normalizeCompletion } from "./replay-state.js";
+
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
@@ -67,37 +69,6 @@ function parseAndSanitize(raw) {
   }
 }
 
-function findFirstByKey(value, keys, seen = new WeakSet()) {
-  if (value === null || typeof value !== "object" || seen.has(value)) return undefined;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findFirstByKey(item, keys, seen);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  for (const [key, item] of Object.entries(value)) {
-    if (keys.includes(key.toLowerCase()) && (typeof item === "string" || typeof item === "number" || typeof item === "boolean")) return item;
-    const found = findFirstByKey(item, keys, seen);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function indicators(payload) {
-  return {
-    turn: findFirstByKey(payload, ["turn", "turnnumber", "currentturn"]),
-    activePlayer: findFirstByKey(payload, ["activeplayer", "currentplayer", "playerturn"]),
-    gameOver: findFirstByKey(payload, ["gameover", "gameended", "matchended"]),
-    winner: findFirstByKey(payload, ["winner", "winningplayer"])
-  };
-}
-
-function isFinished(indicator) {
-  return indicator.gameOver === true || indicator.gameOver === "true" || indicator.gameOver === 1;
-}
-
 function makeMatch(pageSessionId, startedAt, pageUrl) {
   return {
     id: pageSessionId,
@@ -106,7 +77,7 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
       source: "Talishar Local History",
       startedAt,
       pageUrl,
-      privacy: "Local-only. Authentication fields are redacted before storage."
+      privacy: "Authentication fields are redacted before local storage or Hyperdriver synchronization."
     },
     status: "recording",
     startedAt,
@@ -200,7 +171,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "list-matches") {
-      const matches = (await listMatches()).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      const matches = (await listMatches()).map(normalizeCompletion).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      await Promise.all(matches.filter((match) => match.status === "finished").map(putMatch));
       sendResponse({ ok: true, matches: matches.map((match) => ({
         id: match.id,
         status: match.status,
@@ -209,8 +181,55 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         endedAt: match.endedAt,
         frameCount: match.frames.length,
         summary: match.summary,
-        exportedAt: match.exportedAt
+        exportedAt: match.exportedAt,
+        sync: match.sync || null,
+        syncError: match.syncError || null
       })) });
+      return;
+    }
+    if (message.type === "list-sync-pending") {
+      const matches = (await listMatches()).map(normalizeCompletion);
+      await Promise.all(matches.filter((match) => match.status === "finished").map(putMatch));
+      sendResponse({
+        ok: true,
+        ids: matches.filter((match) => match.status === "finished" && !match.sync?.uploadedAt).map((match) => match.id)
+      });
+      return;
+    }
+    if (message.type === "get-sync-match") {
+      const match = await getMatch(message.id);
+      if (!match || !isCompleteMatch(match) || match.sync?.uploadedAt) {
+        sendResponse({ ok: true, document: null });
+        return;
+      }
+      normalizeCompletion(match);
+      await putMatch(match);
+      sendResponse({
+        ok: true,
+        document: { schemaVersion: match.schemaVersion, exportedAt: new Date().toISOString(), match }
+      });
+      return;
+    }
+    if (message.type === "mark-match-synced") {
+      const match = await getMatch(message.id);
+      if (!match) throw new Error("Partida não encontrada.");
+      match.sync = {
+        uploadedAt: new Date().toISOString(),
+        origin: message.origin,
+        username: message.username,
+        replayId: message.replayId
+      };
+      match.syncError = null;
+      await putMatch(match);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "mark-sync-error") {
+      const match = await getMatch(message.id);
+      if (!match) throw new Error("Partida não encontrada.");
+      match.syncError = { at: new Date().toISOString(), message: message.error };
+      await putMatch(match);
+      sendResponse({ ok: true });
       return;
     }
     if (message.type === "export-match") {

@@ -1,16 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Talishar Local History",
-  "version": "0.1.1",
-  "description": "Captura localmente o histórico de partidas do Talishar e exporta arquivos JSON.",
+  "name": "Hyperdriver — Talishar History",
+  "version": "0.2.0",
+  "description": "Captura partidas do Talishar e sincroniza replays completos com o Hyperdriver.",
   "permissions": ["downloads", "storage"],
-  "host_permissions": ["https://talishar.net/*", "https://api.talishar.net/*"],
+  "host_permissions": [
+    "https://talishar.net/*",
+    "https://api.talishar.net/*",
+    "https://hyperdriver.com.br/*",
+    "https://beta.hyperdriver.com.br/*"
+  ],
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"
   },
   "action": {
-    "default_title": "Talishar Local History",
+    "default_title": "Hyperdriver — Talishar History",
     "default_popup": "popup.html"
   },
   "content_scripts": [
@@ -24,6 +29,14 @@
       "matches": ["https://talishar.net/*"],
       "js": ["content-script.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://hyperdriver.com.br/*",
+        "https://beta.hyperdriver.com.br/*"
+      ],
+      "js": ["sync-content-script.js"],
+      "run_at": "document_idle"
     }
   ]
 }

@@ -44,6 +44,7 @@
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(242, 241, 236, 0.45);
+  border-radius: 50%;
   background: var(--carbon);
 }
 
@@ -103,6 +104,33 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.editProfileLink {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border: 0;
+  color: var(--paper);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.editProfileLink span {
+  color: var(--signal-red);
+  font-size: 14px;
+}
+
+.editProfileLink:hover {
+  color: var(--signal-red);
+  background: rgba(255, 77, 61, 0.1);
 }
 
 .signOutButton span {

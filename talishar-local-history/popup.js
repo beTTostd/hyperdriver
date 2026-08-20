@@ -27,9 +27,26 @@ function render(matches) {
     const item = document.createElement("article");
     item.className = "match";
     const title = document.createElement("strong");
-    title.textContent = `${match.status === "recording" ? "● Gravando" : "Partida finalizada"} · ${match.frameCount} atualizações`;
+    title.textContent = `Partida ${match.summary.turn ? `T${match.summary.turn}` : "Talishar"}`;
     const metadata = document.createElement("span");
-    metadata.textContent = `${formatDate(match.startedAt)}${match.summary.turn ? ` · turno ${match.summary.turn}` : ""}`;
+    metadata.textContent = `${formatDate(match.startedAt)} · ${match.frameCount} snapshots`;
+    const syncState = document.createElement("span");
+    syncState.className = "sync-state";
+    if (match.sync?.uploadedAt) {
+      syncState.textContent = "Sincronizado";
+      syncState.title = `Enviado para ${match.sync.username || "sua conta"}`;
+    } else if (match.status === "recording") {
+      syncState.classList.add("recording");
+      syncState.textContent = "Gravando";
+    } else if (match.syncError?.message) {
+      syncState.classList.add("error");
+      syncState.textContent = "Erro";
+      syncState.title = match.syncError.message;
+    } else {
+      syncState.classList.add("ready");
+      syncState.textContent = "Pronto";
+      syncState.title = "Abra o Hyperdriver autenticado para sincronizar.";
+    }
     const actions = document.createElement("div");
     const exportButton = document.createElement("button");
     exportButton.textContent = "Baixar JSON";
@@ -51,7 +68,7 @@ function render(matches) {
       await load();
     });
     actions.append(exportButton, deleteButton);
-    item.append(title, metadata, actions);
+    item.append(title, metadata, syncState, actions);
     matchesElement.append(item);
   }
 }

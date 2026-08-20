@@ -14,53 +14,12 @@
   margin: auto;
 }
 
-.shell nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 21px;
-  border-bottom: 1px solid var(--line);
-}
-
-.shell nav > div {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.shell nav > div a {
-  padding: 11px 13px;
-  border: 1px solid transparent;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.shell nav > div a:last-child {
-  border-color: var(--line-strong);
-  color: var(--paper);
-}
-
-.shell nav a:hover {
-  color: var(--paper);
-  border-color: var(--paper);
-}
-
-.shell nav a span {
-  margin-left: 8px;
-  color: var(--signal-red);
-}
-
-.shell header {
+.analysisHeader {
   position: relative;
   padding: clamp(58px, 8vw, 96px) 0 48px;
 }
 
-.shell header::after {
+.analysisHeader::after {
   position: absolute;
   right: 0;
   bottom: 47px;
@@ -71,7 +30,7 @@
   opacity: 0.7;
 }
 
-.shell header p,
+.analysisHeader p,
 .panelHeader p {
   margin: 0 0 12px;
   color: var(--signal-red);
@@ -82,7 +41,7 @@
   text-transform: uppercase;
 }
 
-.shell header p span {
+.analysisHeader p span {
   margin-right: 10px;
   color: var(--paper);
 }
@@ -103,7 +62,7 @@
   font-style: normal;
 }
 
-.shell header > span {
+.analysisHeader > span {
   display: block;
   max-width: 600px;
   margin-top: 28px;
@@ -363,7 +322,7 @@
 }
 
 @media (max-width: 760px) {
-  .shell header::after {
+  .analysisHeader::after {
     display: none;
   }
 
@@ -384,15 +343,6 @@
 @media (max-width: 560px) {
   .page {
     padding-inline: 12px;
-  }
-
-  .shell nav {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .shell nav > div {
-    justify-content: space-between;
   }
 
   .panel {

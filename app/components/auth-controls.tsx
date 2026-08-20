@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { cardImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
+import Link from "next/link";
+import { cardArtImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
 import styles from "./auth-controls.module.css";
 
 type AuthControlsProps = {
@@ -57,13 +58,22 @@ export default function AuthControls({ username, avatarCardId = null }: AuthCont
       >
         <span className={styles.avatar} aria-hidden="true">
           <span className={styles.avatarFallback}>{initials}</span>
-          <img src={cardImageUrl(visibleAvatar)} alt="" onError={(event) => event.currentTarget.remove()} />
+          <img src={cardArtImageUrl(visibleAvatar)} alt="" onError={(event) => event.currentTarget.remove()} />
         </span>
         <span className={styles.profileName}>{username}</span>
         <span className={styles.chevron} aria-hidden="true">⌄</span>
       </button>
       {open && (
         <div className={styles.profileMenu} id={menuId} role="menu">
+          <Link
+            className={styles.editProfileLink}
+            href="/me/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            Editar perfil
+            <span aria-hidden="true">↗</span>
+          </Link>
           <button
             className={styles.signOutButton}
             type="button"

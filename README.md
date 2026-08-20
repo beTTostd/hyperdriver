@@ -103,9 +103,11 @@ Em produção, o container aplica a migration e garante a existência do usuári
 serviço e defina `ADMIN_INITIAL_PASSWORD`. Depois que o administrador existir,
 essa variável deixa de ser obrigatória e não altera a senha já cadastrada.
 
-## Privacidade
+## Replays e privacidade
 
-Replays continuam sendo dados locais do projeto e não são enviados ao CDN do
-Talishar. O acesso à aplicação e ao replay bundled exige uma sessão autenticada;
-ao abrir outro replay, o JSON é lido somente no navegador. A interface busca
-apenas as imagens públicas das cartas no CDN do Talishar.
+A extensão mantém cada replay no navegador, baixa o JSON ao final da partida e
+sincroniza partidas completas quando o usuário abre o Hyperdriver autenticado.
+Os arquivos enviados ficam em `UPLOADS_DIR`; o SQLite guarda somente metadados e
+o vínculo com o proprietário. A biblioteca `/me`, a mesa e a telemetria filtram
+sempre pela conta autenticada. Os replays não são enviados ao CDN do Talishar; a
+interface busca nesse CDN apenas as imagens públicas das cartas.

@@ -10,7 +10,8 @@ export function proxy(request: NextRequest) {
     publicPaths.has(pathname) ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.svg" ||
-    pathname.startsWith("/api/auth/")
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/replays")
   ) {
     return NextResponse.next();
   }

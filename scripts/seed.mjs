@@ -89,6 +89,25 @@ function readSchema() {
     );
     CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_hash_unique ON sessions(token_hash);
+    CREATE TABLE IF NOT EXISTS replays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source_match_id TEXT NOT NULL,
+      storage_key TEXT NOT NULL,
+      schema_version TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result TEXT NOT NULL,
+      player_hero_id TEXT,
+      opponent_hero_id TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      final_turn INTEGER,
+      frame_count INTEGER NOT NULL,
+      uploaded_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS replays_source_match_unique ON replays(source_match_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS replays_storage_key_unique ON replays(storage_key);
+    CREATE INDEX IF NOT EXISTS replays_user_uploaded_idx ON replays(user_id, uploaded_at);
     CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique ON users(username);
   `;
 }

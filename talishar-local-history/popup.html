@@ -3,16 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Talishar Local History</title>
+    <title>Hyperdriver — Talishar History</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
-      <h1>Talishar Local History</h1>
-      <p class="privacy">Dados ficam apenas neste navegador.</p>
+      <header class="brand">
+        <span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>Hyperdriver</strong><small>Talishar history</small></span>
+      </header>
+      <div class="intro">
+        <p>Telemetria de corrida aplicada ao FAB.</p>
+        <div class="sector-bars" aria-hidden="true"><i></i><i></i><i></i></div>
+      </div>
+      <p class="privacy">Replays ficam neste navegador, são baixados ao final e sincronizados quando você abre o Hyperdriver autenticado.</p>
       <p id="status" role="status"></p>
       <section>
-        <h2>Partidas locais</h2>
+        <h2><span>01</span> Partidas locais</h2>
         <div id="matches" class="matches"></div>
       </section>
     </main>

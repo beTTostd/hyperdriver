@@ -1,6 +1,4 @@
-import Link from "next/link";
-import Brand from "../components/brand";
-import AuthControls from "../components/auth-controls";
+import AuthenticatedHeader from "../components/authenticated-header";
 import { listAdminUsers, requireAdmin } from "../../lib/auth";
 import AdminPanel from "./admin-panel";
 import styles from "../auth.module.css";
@@ -11,13 +9,7 @@ export default async function AdminPage() {
   return (
     <main className={styles.adminPage}>
       <div className={styles.adminShell}>
-        <nav className={styles.adminNav}>
-          <Brand subtitle="User control" />
-          <div>
-            <Link href="/me">Replays</Link>
-            <AuthControls username={currentUser.username} avatarCardId={currentUser.avatarCardId} isAdmin />
-          </div>
-        </nav>
+        <AuthenticatedHeader username={currentUser.username} avatarCardId={currentUser.avatarCardId} isAdmin />
         <header className={styles.adminHeader}>
           <p className={styles.eyebrow}>01 · Controle de acesso</p>
           <h1>Equipe<br /><em>de pista</em></h1>

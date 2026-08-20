@@ -147,36 +147,8 @@
 }
 
 .adminShell {
-  width: min(1080px, 100%);
+  width: min(1180px, 100%);
   margin: auto;
-}
-
-.adminNav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 21px;
-  border-bottom: 1px solid var(--line);
-}
-
-.adminNav > div {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.adminNav a {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.adminNav a:hover {
-  color: var(--paper);
 }
 
 .adminHeader {
@@ -289,8 +261,4 @@
     grid-template-columns: 1fr;
   }
 
-  .adminNav {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }

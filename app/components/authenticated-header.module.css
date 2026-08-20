@@ -1,0 +1,55 @@
+.header {
+  display: flex;
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 21px;
+  border-bottom: 1px solid var(--line);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.installButton {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--signal-red);
+  color: var(--carbon);
+  background: var(--signal-red);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.installButton span {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.installButton:hover {
+  color: var(--signal-red);
+  background: transparent;
+}
+
+@media (max-width: 560px) {
+  .header {
+    gap: 12px;
+  }
+
+  .headerLeft {
+    gap: 12px;
+  }
+}

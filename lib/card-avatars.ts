@@ -1,4 +1,5 @@
 export const CARD_IMAGE_BASE_URL = "https://images.talishar.net/public/cardimages/english";
+export const CARD_ART_BASE_URL = "https://images.talishar.net/public/crops";
 export const DEFAULT_CARD_AVATAR = "dash_io";
 
 export const CARD_AVATAR_OPTIONS = [
@@ -18,6 +19,10 @@ export const CARD_AVATAR_OPTIONS = [
 
 export function cardImageUrl(cardId: string): string {
   return `${CARD_IMAGE_BASE_URL}/${encodeURIComponent(cardId)}.webp`;
+}
+
+export function cardArtImageUrl(cardId: string): string {
+  return `${CARD_ART_BASE_URL}/${encodeURIComponent(cardId)}_cropped.webp`;
 }
 
 export function normalizeCardAvatar(value: unknown): string | null {

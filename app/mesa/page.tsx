@@ -284,12 +284,19 @@ export default function TalisharTable() {
   const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
-    fetch("/api/replays/recorded-match")
+    const replayId = new URLSearchParams(window.location.search).get("replay");
+    const endpoint = replayId && /^\d+$/.test(replayId)
+      ? `/api/replays/${replayId}`
+      : "/api/replays/recorded-match";
+    fetch(endpoint)
       .then((response) => {
         if (!response.ok) throw new Error("Não foi possível abrir a partida.");
         return response.json();
       })
-      .then((data: Replay) => setReplay(data))
+      .then((data: Replay) => {
+        setReplay(data);
+        if (replayId) setSource(`Replay sincronizado · ${replayId}`);
+      })
       .catch((reason: Error) => setError(reason.message));
   }, []);
 
@@ -356,7 +363,7 @@ export default function TalisharTable() {
     else document.documentElement.requestFullscreen();
   }
 
-  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para o replay clássico</Link></div></main>;
+  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para seus replays</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div className={styles.spinner} /><p>Montando a mesa…</p></main>;
 
   const opponentPermanents = [...list(current.opponentPermanents), ...list(current.opponentItems), ...list(current.opponentAuras), ...list(current.opponentAllies)];

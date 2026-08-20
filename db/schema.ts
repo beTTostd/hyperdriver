@@ -57,9 +57,37 @@ export const sessions = sqliteTable(
   ],
 );
 
+export const replays = sqliteTable(
+  "replays",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceMatchId: text("source_match_id").notNull(),
+    storageKey: text("storage_key").notNull(),
+    schemaVersion: text("schema_version").notNull(),
+    status: text("status").notNull(),
+    result: text("result").notNull(),
+    playerHeroId: text("player_hero_id"),
+    opponentHeroId: text("opponent_hero_id"),
+    startedAt: integer("started_at").notNull(),
+    endedAt: integer("ended_at"),
+    finalTurn: integer("final_turn"),
+    frameCount: integer("frame_count").notNull(),
+    uploadedAt: integer("uploaded_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("replays_source_match_unique").on(table.sourceMatchId),
+    uniqueIndex("replays_storage_key_unique").on(table.storageKey),
+    index("replays_user_uploaded_idx").on(table.userId, table.uploadedAt),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   passwordSetupTokens: many(passwordSetupTokens),
   sessions: many(sessions),
+  replays: many(replays),
 }));
 
 export const passwordSetupTokensRelations = relations(
@@ -75,6 +103,13 @@ export const passwordSetupTokensRelations = relations(
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
     fields: [sessions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const replaysRelations = relations(replays, ({ one }) => ({
+  user: one(users, {
+    fields: [replays.userId],
     references: [users.id],
   }),
 }));

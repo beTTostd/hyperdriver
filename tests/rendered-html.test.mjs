@@ -7,6 +7,11 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import {
+  indicators,
+  isCompleteMatch,
+  normalizeCompletion,
+} from "../talishar-local-history/replay-state.js";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 let application;
@@ -27,6 +32,7 @@ before(async () => {
     env: {
       ...process.env,
       DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
+      UPLOADS_DIR: join(databaseDirectory, "uploads"),
       ADMIN_INITIAL_PASSWORD: "TestPassword!123",
     },
     encoding: "utf8",
@@ -49,6 +55,7 @@ before(async () => {
         NODE_ENV: "production",
         APP_URL: baseUrl,
         DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
+        UPLOADS_DIR: join(databaseDirectory, "uploads"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -176,21 +183,33 @@ test("renders the replay and telemetry routes", async () => {
   const replayLibraryResponse = await fetch(new URL("/me", baseUrl), {
     headers: { cookie },
   });
+  const editProfileResponse = await fetch(new URL("/me/profile", baseUrl), {
+    headers: { cookie },
+  });
 
   assert.equal(tableResponse.status, 200);
   assert.match(await tableResponse.text(), /Montando a mesa/);
   assert.equal(telemetryResponse.status, 200);
-  assert.match(await telemetryResponse.text(), /Valor por/);
+  const telemetryHtml = await telemetryResponse.text();
+  assert.match(telemetryHtml, /Valor por/);
+  assert.doesNotMatch(telemetryHtml, /Replays/);
   assert.equal(replayLibraryResponse.status, 200);
   const replayLibraryHtml = await replayLibraryResponse.text();
   assert.match(replayLibraryHtml, /Replays recentes/);
   assert.match(replayLibraryHtml, /Abrir menu de admin/);
   assert.doesNotMatch(replayLibraryHtml, /Replay telemetry|Importar replay|Perfil \/ avatar/);
+  assert.equal(editProfileResponse.status, 200);
+  const editProfileHtml = await editProfileResponse.text();
+  assert.match(editProfileHtml, /Seu perfil/);
+  assert.match(editProfileHtml, /Nome de usuário/);
+  assert.match(editProfileHtml, /Alterar foto/);
+  assert.doesNotMatch(editProfileHtml, /Replays/);
 });
 
 test("allows authenticated users to choose a FAB card avatar", async () => {
   const initial = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
-  assert.match(await initial.text(), /dash_io\.webp/);
+  const initialHtml = await initial.text();
+  assert.match(initialHtml, /dash_io_cropped\.webp/);
 
   const updated = await fetch(new URL("/api/profile/avatar", baseUrl), {
     method: "POST",
@@ -201,7 +220,7 @@ test("allows authenticated users to choose a FAB card avatar", async () => {
   assert.deepEqual(await updated.json(), { ok: true, avatarCardId: "crown_of_providence" });
 
   const afterUpdate = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
-  assert.match(await afterUpdate.text(), /crown_of_providence\.webp/);
+  assert.match(await afterUpdate.text(), /crown_of_providence_cropped\.webp/);
 
   const invalid = await fetch(new URL("/api/profile/avatar", baseUrl), {
     method: "POST",
@@ -221,6 +240,156 @@ test("serves the bundled replay fixture", async () => {
   const replay = await response.json();
   assert.equal(replay.match.frames.length, 275);
 });
+
+test("recognizes Talishar completion indicators in legacy captures", () => {
+  const indicator = indicators({
+    turnNo: "7",
+    turnPlayer: "2",
+    turnPhase: { turnPhase: "OVER" },
+  });
+  assert.equal(indicator.turn, "7");
+  assert.equal(indicator.phase, "OVER");
+
+  const incomplete = {
+    status: "recording",
+    updatedAt: "2026-08-20T10:00:00.000Z",
+    summary: {},
+    frames: [{ receivedAt: "2026-08-20T10:00:00.000Z", payload: { turnPhase: { turnPhase: "A" } } }],
+  };
+  assert.equal(isCompleteMatch(incomplete), false);
+  const complete = structuredClone(incomplete);
+  complete.frames.push({ receivedAt: "2026-08-20T10:01:00.000Z", payload: { turnPhase: { turnPhase: "OVER" } } });
+  assert.equal(isCompleteMatch(complete), true);
+  normalizeCompletion(complete);
+  assert.equal(complete.status, "finished");
+  assert.equal(complete.endedAt, "2026-08-20T10:01:00.000Z");
+});
+
+test("stores complete replays idempotently and isolates them by user", async () => {
+  const anonymous = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(anonymous.status, 401);
+
+  const incomplete = replayDocument("capture-incomplete", false);
+  const incompleteResponse = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(incomplete),
+  });
+  assert.equal(incompleteResponse.status, 422);
+
+  const document = replayDocument("capture-admin-001", true);
+  const created = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(document),
+  });
+  assert.equal(created.status, 201);
+  const uploaded = await created.json();
+  assert.equal(uploaded.duplicate, false);
+  assert.equal(uploaded.username, "admin");
+
+  const duplicate = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(document),
+  });
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).replayId, uploaded.replayId);
+
+  const adminLibrary = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  const adminHtml = await adminLibrary.text();
+  assert.match(adminHtml, /Alpha Hero/);
+  assert.match(adminHtml, new RegExp(`/mesa\\?replay=${uploaded.replayId}`));
+  assert.match(adminHtml, new RegExp(`/valor\\?replay=${uploaded.replayId}`));
+
+  const stored = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(stored.status, 200);
+  assert.equal((await stored.json()).match.id, "capture-admin-001");
+  const telemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
+    headers: { cookie },
+  });
+  const telemetryHtml = await telemetry.text();
+  assert.equal(telemetry.status, 200);
+  assert.match(telemetryHtml, /Defesa total/);
+  assert.match(telemetryHtml, />10</);
+
+  const isolatedCookie = await createTestUser("isolated-user");
+  const isolatedLibrary = await fetch(new URL("/me", baseUrl), {
+    headers: { cookie: isolatedCookie },
+  });
+  assert.doesNotMatch(await isolatedLibrary.text(), /Alpha Hero/);
+  const privateReplay = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
+    headers: { cookie: isolatedCookie },
+  });
+  assert.equal(privateReplay.status, 404);
+  const privateTelemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
+    headers: { cookie: isolatedCookie },
+  });
+  assert.equal(privateTelemetry.status, 404);
+});
+
+function replayDocument(id, complete) {
+  return {
+    schemaVersion: "0.1.0",
+    exportedAt: "2026-08-20T12:01:00.000Z",
+    match: {
+      id,
+      schemaVersion: "0.1.0",
+      status: complete ? "finished" : "recording",
+      startedAt: "2026-08-20T12:00:00.000Z",
+      endedAt: complete ? "2026-08-20T12:01:00.000Z" : null,
+      frames: [{
+        sequence: 1,
+        receivedAt: "2026-08-20T12:01:00.000Z",
+        payload: {
+          turnNo: "3",
+          turnPlayer: "1",
+          turnPhase: { turnPhase: complete ? "OVER" : "A" },
+          playerHealth: "5",
+          opponentHealth: "0",
+          playerEquipment: [{ slot: "Hero", cardNumber: "alpha_hero" }],
+          opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero" }],
+          activeChainLink: {
+            attackingCard: { cardNumber: "final_attack_red" },
+            totalPower: 7,
+            totalDefense: 3,
+          },
+        },
+      }],
+    },
+  };
+}
+
+async function createTestUser(username) {
+  const created = await fetch(new URL("/api/admin/users", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ username, role: "user" }),
+  });
+  assert.equal(created.status, 201);
+  const invitation = await created.json();
+  const token = new URL(invitation.setupUrl).searchParams.get("token");
+  const password = "IsolatedPassword!123";
+  const setup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, password, confirmation: password }),
+  });
+  assert.equal(setup.status, 200);
+  const login = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  assert.equal(login.status, 200);
+  return getCookie(login);
+}
 
 async function availablePort() {
   const server = createServer();
