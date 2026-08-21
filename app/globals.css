@@ -14,6 +14,7 @@
   --muted: #8b9298;
   --line: rgba(242, 241, 236, 0.11);
   --line-strong: rgba(242, 241, 236, 0.2);
+  --page-title-header-gap: clamp(24px, 3vw, 36px);
   --font-display: "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   --font-body: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;

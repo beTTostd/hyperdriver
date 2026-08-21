@@ -284,10 +284,11 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.equal(deletedLogin.status, 401);
 });
 
-test("renders the replay and telemetry routes", async () => {
-  const [tableResponse, telemetryResponse] = await Promise.all([
+test("renders the replay route and removes the legacy telemetry route", async () => {
+  const [tableResponse, legacyTelemetryResponse, invalidTelemetryResponse] = await Promise.all([
     fetch(new URL("/table", baseUrl), { headers: { cookie } }),
     fetch(new URL("/valor", baseUrl), { headers: { cookie } }),
+    fetch(new URL("/telemetry/not-a-replay", baseUrl), { headers: { cookie } }),
   ]);
   const replayLibraryResponse = await fetch(new URL("/me", baseUrl), {
     headers: { cookie },
@@ -298,10 +299,8 @@ test("renders the replay and telemetry routes", async () => {
 
   assert.equal(tableResponse.status, 200);
   assert.match(await tableResponse.text(), /Montando a mesa/);
-  assert.equal(telemetryResponse.status, 200);
-  const telemetryHtml = await telemetryResponse.text();
-  assert.match(telemetryHtml, /Valor por/);
-  assert.doesNotMatch(telemetryHtml, /Replays/);
+  assert.equal(legacyTelemetryResponse.status, 404);
+  assert.equal(invalidTelemetryResponse.status, 404);
   assert.equal(replayLibraryResponse.status, 200);
   const replayLibraryHtml = await replayLibraryResponse.text();
   assert.match(replayLibraryHtml, /Replays recentes/);
@@ -422,7 +421,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(adminHtml, /Classic Constructed/);
   assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
   assert.match(adminHtml, new RegExp(`/table\\?replay=${uploaded.replayId}`));
-  assert.match(adminHtml, new RegExp(`/valor\\?replay=${uploaded.replayId}`));
+  assert.match(adminHtml, new RegExp(`/telemetry/${uploaded.replayId}`));
 
   const stored = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
@@ -431,13 +430,51 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const storedDocument = await stored.json();
   assert.equal(storedDocument.match.id, "4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01");
   assert.equal(storedDocument.match.frames[0].payload.chatLog, undefined);
-  const telemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
+  const telemetry = await fetch(new URL(`/telemetry/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
   });
   const telemetryHtml = await telemetry.text();
   assert.equal(telemetry.status, 200);
-  assert.match(telemetryHtml, /Defesa total/);
-  assert.match(telemetryHtml, />10</);
+  assert.match(telemetryHtml, /Análise da/);
+  assert.match(telemetryHtml, /Dano recebido/);
+  assert.match(telemetryHtml, /Bloqueado por equipamento/);
+  assert.match(telemetryHtml, /Bloqueado por carta/);
+  assert.match(telemetryHtml, /Dano oferecido/);
+  assert.match(telemetryHtml, />Você</);
+  assert.match(telemetryHtml, /Alpha Hero/);
+  assert.match(telemetryHtml, /Beta Hero/);
+  assert.match(telemetryHtml, /Classic Constructed/);
+  assert.match(telemetryHtml, /Você(?:<!-- -->)? começou/);
+  assert.match(telemetryHtml, /Vitória/);
+  assert.match(telemetryHtml, /data-tooltip="Dano oferecido: 7"/);
+  assert.doesNotMatch(telemetryHtml, /Início parcial|Fim parcial/);
+
+  const telemetryDocument = telemetryReplayDocument("6684ca31-240a-44df-ae6f-5185878bcbf2");
+  const telemetryUpload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(telemetryDocument),
+  });
+  assert.equal(telemetryUpload.status, 201);
+  const telemetryReplay = await telemetryUpload.json();
+  const detailedTelemetry = await fetch(
+    new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
+    { headers: { cookie } },
+  );
+  assert.equal(detailedTelemetry.status, 200);
+  const detailedTelemetryHtml = await detailedTelemetry.text();
+  assert.match(detailedTelemetryHtml, /data-tooltip="Dano recebido: 5"/);
+  assert.match(detailedTelemetryHtml, /data-tooltip="Bloqueado por equipamento: 5"/);
+  assert.match(detailedTelemetryHtml, /data-tooltip="Bloqueado por carta: 3"/);
+  assert.match(detailedTelemetryHtml, /data-tooltip="Dano oferecido: 6"/);
+  assert.doesNotMatch(detailedTelemetryHtml, /Início parcial|Fim parcial/);
+
+  const anonymousTelemetry = await fetch(
+    new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
+    { redirect: "manual" },
+  );
+  assert.equal(anonymousTelemetry.status, 307);
+  assert.match(anonymousTelemetry.headers.get("location") ?? "", /\/login\?returnTo=/);
 
   const isolatedCookie = await createTestUser("isolated-user");
   const isolatedLibrary = await fetch(new URL("/me", baseUrl), {
@@ -448,7 +485,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
     headers: { cookie: isolatedCookie },
   });
   assert.equal(privateReplay.status, 404);
-  const privateTelemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
+  const privateTelemetry = await fetch(new URL(`/telemetry/${uploaded.replayId}`, baseUrl), {
     headers: { cookie: isolatedCookie },
   });
   assert.equal(privateTelemetry.status, 404);
@@ -484,6 +521,61 @@ function replayDocument(id, complete) {
           },
         },
       }],
+    },
+  };
+}
+
+function telemetryReplayDocument(id) {
+  const equipment = [
+    { slot: "Hero", cardNumber: "alpha_hero", controller: "1" },
+    { slot: "Head", cardNumber: "test_helmet", controller: "1" },
+  ];
+  const frame = (sequence, turnNo, turnPlayer, activeChainLink, turnPhase = "A") => ({
+    sequence,
+    receivedAt: `2026-08-20T12:00:${String(sequence).padStart(2, "0")}.000Z`,
+    payload: {
+      turnNo: String(turnNo),
+      turnPlayer: String(turnPlayer),
+      turnPhase: { turnPhase },
+      playerHealth: turnPhase === "OVER" ? "0" : "20",
+      opponentHealth: "20",
+      playerEquipment: equipment,
+      opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero", controller: "2" }],
+      activeChainLink,
+    },
+  });
+  const attack = (controller, cardNumber, totalPower, totalDefense, reactions = []) => ({
+    attackingCard: { controller: String(controller), cardNumber },
+    totalPower,
+    totalDefense,
+    reactions,
+  });
+
+  return {
+    schemaVersion: "0.1.0",
+    exportedAt: "2026-08-20T12:01:00.000Z",
+    match: {
+      id,
+      schemaVersion: "0.1.0",
+      status: "finished",
+      startedAt: "2026-08-20T12:00:00.000Z",
+      endedAt: "2026-08-20T12:01:00.000Z",
+      frames: [
+        frame(1, 0, 1, attack(1, "opening_attack_red", 4, 0)),
+        frame(2, 0, 1, null),
+        frame(3, 1, 2, attack(2, "opponent_attack_red", 10, 0)),
+        frame(4, 1, 2, attack(2, "opponent_attack_red", 10, 2, [{ cardNumber: "test_helmet", controller: "1" }])),
+        frame(5, 1, 2, attack(2, "opponent_attack_red", 10, 5, [
+          { cardNumber: "test_helmet", controller: "1" },
+          { cardNumber: "hand_block_blue", controller: "1" },
+        ])),
+        frame(6, 1, 2, null),
+        frame(7, 1, 2, attack(2, "overblock_attack_red", 3, 4, [{ cardNumber: "test_helmet", controller: "1" }])),
+        frame(8, 1, 2, null),
+        frame(9, 1, 1, attack(1, "player_attack_red", 6, 0)),
+        frame(10, 1, 1, null),
+        frame(11, 2, 2, attack(2, "lethal_attack_red", 4, 1, [{ cardNumber: "last_block_blue", controller: "1" }]), "OVER"),
+      ],
     },
   };
 }

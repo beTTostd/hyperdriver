@@ -20,7 +20,7 @@
   align-items: end;
   justify-content: space-between;
   gap: 18px;
-  padding: 24px 0 18px;
+  padding: var(--page-title-header-gap) 0 18px;
 }
 
 .libraryHeader h2 {

@@ -91,7 +91,7 @@ export default async function ProfilePage() {
                   </div>
                   <div className={styles.replayActions}>
                     <Link className={styles.openReplay} href={`/table?replay=${replay.sourceMatchId}`}>Abrir replay <Icon name="arrowRight" size={15} /></Link>
-                    <Link className={styles.analyseReplay} href={`/valor?replay=${replay.sourceMatchId}`}>Ver telemetria <Icon name="arrowUpRight" size={15} /></Link>
+                    <Link className={styles.analyseReplay} href={`/telemetry/${replay.sourceMatchId}`}>Ver telemetria <Icon name="arrowUpRight" size={15} /></Link>
                   </div>
                 </article>
               );

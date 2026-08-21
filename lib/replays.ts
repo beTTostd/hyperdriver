@@ -13,12 +13,17 @@ export type ReplayCard = {
   cardNumber?: string;
   slot?: string;
   controller?: string | number;
+  counters?: string | number;
+  countersMap?: Record<string, string | number>;
+  isBroken?: boolean;
+  onChain?: boolean;
 };
 
 export type ReplayChain = {
   attackingCard?: ReplayCard;
   totalPower?: string | number;
   totalDefense?: string | number;
+  reactions?: ReplayCard[];
 };
 
 export type ReplayPayload = {
