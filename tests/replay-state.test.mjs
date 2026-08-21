@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   compactReplayDocument,
   compactReplayPayload,
+  indicators,
   replayResult,
 } from "../talishar-local-history/replay-state.js";
 
@@ -18,6 +19,7 @@ test("compacts Talishar payloads to the state used by the replay", () => {
     },
     turnNo: 4,
     turnPlayer: "2",
+    otherPlayer: "1",
     turnPhase: { turnPhase: "BUTTONINPUT", caption: "Escolha", extra: "descartar" },
     playerHealth: 18,
     playerEquipment: [{
@@ -43,6 +45,7 @@ test("compacts Talishar payloads to the state used by the replay", () => {
   assert.equal(compacted.chatEnabled, undefined);
   assert.equal(compacted.newEvents, undefined);
   assert.deepEqual(compacted.initialLoad, { gameFormat: "cc" });
+  assert.equal(compacted.otherPlayer, "1");
   assert.deepEqual(compacted.turnPhase, { turnPhase: "BUTTONINPUT", caption: "Escolha" });
   assert.deepEqual(compacted.playerEquipment, [{
     cardNumber: "dash_io",
@@ -88,6 +91,7 @@ test("identifies a lethal final attack as a player victory", () => {
         turnPhase: { turnPhase: "OVER" },
         playerHealth: "9",
         opponentHealth: "5",
+        playerEquipment: [{ slot: "Hero", controller: "1" }],
         activeChainLink: {
           attackingCard: { controller: "1" },
           totalPower: 5,
@@ -100,45 +104,58 @@ test("identifies a lethal final attack as a player victory", () => {
   assert.equal(replayResult(replay), "victory");
 });
 
-test("uses the final turn player for surrender results", () => {
+test("does not treat the active turn player as the surrender winner", () => {
   const frame = (turnPlayer) => ({
     payload: {
       turnPhase: { turnPhase: "OVER" },
       playerHealth: "20",
       opponentHealth: "20",
+      playerEquipment: [{ slot: "Hero", controller: "1" }],
       turnPlayer,
     },
   });
 
-  assert.equal(replayResult({ frames: [frame("1")] }), "victory");
-  assert.equal(replayResult({ frames: [frame("2")] }), "defeat");
+  assert.equal(replayResult({ frames: [frame("1")] }), "unknown");
+  assert.equal(replayResult({ frames: [frame("2")] }), "unknown");
 });
 
-test("keeps explicit, health and lethal attack results ahead of surrender fallback", () => {
+test("maps absolute winner and attack controllers to the local player", () => {
   const overFrame = (payload = {}, indicators = {}) => ({
     indicators,
     payload: {
       turnPhase: { turnPhase: "OVER" },
       playerHealth: "20",
       opponentHealth: "20",
-      turnPlayer: "2",
+      playerEquipment: [{ slot: "Hero", controller: "2" }],
       ...payload,
     },
   });
 
   assert.equal(replayResult({
-    summary: { winner: "1" },
     frames: [overFrame({}, { winner: "2" })],
+  }), "victory");
+  assert.equal(replayResult({
+    frames: [overFrame({}, { winner: "1" })],
   }), "defeat");
   assert.equal(replayResult({ frames: [overFrame({ playerHealth: "0" })] }), "defeat");
   assert.equal(replayResult({ frames: [overFrame({
     opponentHealth: "5",
     activeChainLink: {
-      attackingCard: { controller: "1" },
+      attackingCard: { controller: "2" },
       totalPower: 5,
       totalDefense: 0,
     },
   })] }), "victory");
+});
+
+test("extracts the explicit Talishar winner without retaining chat", () => {
+  const payload = {
+    chatLog: "Player 1 conceded the game.<br><span>Player 2 won! 🎉</span>",
+    turnPhase: { turnPhase: "OVER" },
+  };
+
+  assert.equal(indicators(payload).winner, "2");
+  assert.equal(compactReplayPayload(payload).chatLog, undefined);
 });
 
 test("keeps incomplete final results unknown", () => {

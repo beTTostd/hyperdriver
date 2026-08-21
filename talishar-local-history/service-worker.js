@@ -262,8 +262,9 @@ async function recordFrame(message) {
     throw new Error("Uma atualização do Talishar excedeu o limite de captura de 5 MB.");
   }
 
-  const payload = compactReplayPayload(parseAndSanitize(message.payload));
-  const indicator = indicators(payload);
+  const parsedPayload = parseAndSanitize(message.payload);
+  const indicator = indicators(parsedPayload);
+  const payload = compactReplayPayload(parsedPayload);
   const frame = {
     sequence: match.frames.length + 1,
     receivedAt: message.receivedAt || new Date().toISOString(),

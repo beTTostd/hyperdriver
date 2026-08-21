@@ -54,6 +54,7 @@ const CARD_FIELDS_SET = new Set(CARD_FIELDS);
 const SCALAR_FIELDS = [
   "opponentHealth",
   "opponentDeckCount",
+  "otherPlayer",
   "playerHealth",
   "playerDeckCount",
   "turnNo",
@@ -224,12 +225,29 @@ export function compactReplayDocument(document) {
   };
 }
 
+function winnerFromChatLog(value) {
+  if (typeof value !== "string") return undefined;
+  let winner;
+  for (const match of value.matchAll(/Player\s+([12])(?:\s+\([^)]*\))?\s+won!/gi)) {
+    winner = match[1];
+  }
+  if (winner) return winner;
+
+  let concedingPlayer;
+  for (const match of value.matchAll(/Player\s+([12])\s+conceded the game/gi)) {
+    concedingPlayer = match[1];
+  }
+  if (!concedingPlayer) return undefined;
+  return concedingPlayer === "1" ? "2" : "1";
+}
+
 export function indicators(payload) {
   return {
     turn: findFirstByKey(payload, ["turn", "turnno", "turnnumber", "currentturn"]),
     activePlayer: findFirstByKey(payload, ["activeplayer", "currentplayer", "playerturn"]),
     gameOver: findFirstByKey(payload, ["gameover", "gameended", "matchended"]),
-    winner: findFirstByKey(payload, ["winner", "winningplayer"]),
+    winner: findFirstByKey(payload, ["winner", "winningplayer"])
+      ?? winnerFromChatLog(findFirstByKey(payload, ["chatlog"])),
     phase: findFirstByKey(payload, ["turnphase"])
   };
 }
@@ -250,9 +268,38 @@ function numeric(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function winnerResult(value) {
-  if (value === 1 || value === "1") return "victory";
-  if (value === 2 || value === "2") return "defeat";
+function playerNumber(value) {
+  if (value === 1 || value === "1") return "1";
+  if (value === 2 || value === "2") return "2";
+  return null;
+}
+
+function localPlayerNumber(match) {
+  const frames = Array.isArray(match?.frames) ? match.frames : [];
+  for (const frame of frames) {
+    const payload = frame?.payload;
+    const otherPlayer = playerNumber(payload?.otherPlayer);
+    if (otherPlayer) return otherPlayer === "1" ? "2" : "1";
+
+    for (const key of CARD_ARRAY_FIELDS) {
+      if (!key.startsWith("player") || !Array.isArray(payload?.[key])) continue;
+      for (const card of payload[key]) {
+        const controller = playerNumber(card?.controller);
+        if (controller) return controller;
+      }
+    }
+    for (const key of ["playerDeckCard"]) {
+      const controller = playerNumber(payload?.[key]?.controller);
+      if (controller) return controller;
+    }
+  }
+  return null;
+}
+
+function winnerResult(value, localPlayer) {
+  const winner = playerNumber(value);
+  if (winner && localPlayer) return winner === localPlayer ? "victory" : "defeat";
+  if (winner) return null;
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
   if (["player", "you", "self", "local"].includes(normalized)) return "victory";
@@ -267,26 +314,22 @@ function finalFrame(match) {
   }) ?? match?.frames?.at(-1);
 }
 
-function isOverFrame(frame) {
-  const phase = frame?.payload?.turnPhase?.turnPhase;
-  return typeof phase === "string" && phase.trim().toUpperCase() === "OVER";
-}
-
-function pendingAttackResult(frame) {
+function pendingAttackResult(frame, localPlayer) {
   const attack = frame?.payload?.activeChainLink;
-  const controller = String(attack?.attackingCard?.controller ?? "");
+  const controller = playerNumber(attack?.attackingCard?.controller);
   const power = numeric(attack?.totalPower);
   const defense = numeric(attack?.totalDefense);
-  if (!power || !["1", "2"].includes(controller)) return null;
+  if (!power || !controller || !localPlayer) return null;
   const damage = Math.max(0, power - (defense ?? 0));
   if (damage <= 0) return null;
-  return controller === "1" ? "victory" : "defeat";
+  return controller === localPlayer ? "victory" : "defeat";
 }
 
 export function replayResult(match) {
   const frame = finalFrame(match);
-  const winner = winnerResult(frame?.indicators?.winner)
-    ?? winnerResult(match?.summary?.winner);
+  const localPlayer = localPlayerNumber(match);
+  const winner = winnerResult(frame?.indicators?.winner, localPlayer)
+    ?? winnerResult(match?.summary?.winner, localPlayer);
   if (winner) return winner;
 
   const playerHealth = numeric(frame?.payload?.playerHealth);
@@ -295,7 +338,7 @@ export function replayResult(match) {
   if (opponentHealth !== null && opponentHealth <= 0) return "victory";
 
   const attack = frame?.payload?.activeChainLink;
-  const attackResult = pendingAttackResult(frame);
+  const attackResult = pendingAttackResult(frame, localPlayer);
   const power = numeric(attack?.totalPower);
   const defense = numeric(attack?.totalDefense);
   const damage = power !== null ? Math.max(0, power - (defense ?? 0)) : 0;
@@ -303,8 +346,6 @@ export function replayResult(match) {
   if (attackResult && targetHealth !== null && targetHealth > 0 && damage >= targetHealth) {
     return attackResult;
   }
-
-  if (isOverFrame(frame)) return winnerResult(frame?.payload?.turnPlayer) ?? "unknown";
 
   return "unknown";
 }

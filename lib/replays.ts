@@ -29,6 +29,7 @@ export type ReplayChain = {
 export type ReplayPayload = {
   turnNo?: string | number;
   turnPlayer?: string | number;
+  otherPlayer?: string | number;
   turnPhase?: { turnPhase?: string };
   playerHealth?: string | number;
   opponentHealth?: string | number;
