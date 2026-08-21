@@ -5,7 +5,7 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 ## O que esta versão faz
 
 - Observa exclusivamente o stream de atualizações do Talishar (`GetUpdateSSE.php`), hospedado em `api.talishar.net`.
-- Guarda os frames da partida no IndexedDB da extensão.
+- Guarda snapshots compactos da partida no IndexedDB da extensão.
 - Remove campos de autenticação conhecidos antes de persistir os dados.
 - Detecta o fim da partida e deixa o replay pronto para sincronização.
 - Permite baixar ou apagar cada partida pelo popup da extensão.
@@ -34,11 +34,12 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 - O upload usa a sessão já aberta no site e passa a pertencer à conta autenticada na primeira sincronização bem-sucedida.
 - Não são solicitadas permissões de histórico, cookies, abas ou acesso genérico a todos os sites.
 - Campos conhecidos como `authKey`, `token`, `cookie`, `password` e IDs de sessão são redigidos antes do armazenamento.
+- O payload mantém somente o estado usado pelo replay: cartas, zonas, vida, turno, fase, combate e formato da partida. Chat, inventário, dados de conta e estado de interface são descartados.
 
 ## Limitações conhecidas
 
-O Talishar não publica um contrato estável para o formato dos eventos. Por isso, esta primeira versão preserva os frames sanitizados e extrai apenas indicadores genéricos, como turno ativo e final de jogo quando disponíveis. A leitura semântica de cartas, pitch, dano e combat chains será a próxima etapa, baseada em arquivos reais capturados.
+O Talishar não publica um contrato estável para o formato dos eventos. Por isso, a extensão mantém uma projeção conservadora do estado necessário para a mesa e extrai indicadores genéricos, como turno ativo e final de jogo quando disponíveis.
 
 ## Estrutura do JSON
 
-Cada arquivo contém `schemaVersion`, informações da captura, status, resumo e a sequência integral de frames recebidos. Isso permite evoluir o parser sem perder as partidas já registradas.
+Cada arquivo contém `schemaVersion`, informações da captura, status, resumo e a sequência de snapshots compactos recebidos. Isso reduz o armazenamento e evita transportar logs de chat ou dados de interface que não participam do replay.

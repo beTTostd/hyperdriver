@@ -10,7 +10,7 @@
     "dev": "npm run db:migrate && next dev --hostname 0.0.0.0",
     "build": "bash scripts/build-verified.sh",
     "start": "next start --hostname 0.0.0.0",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",

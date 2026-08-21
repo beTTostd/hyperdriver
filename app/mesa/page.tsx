@@ -60,7 +60,6 @@ type Payload = {
   opponentDeckCard?: Card;
   activeChainLink?: Chain | null;
   lastPlayedCard?: Card;
-  chatLog?: string;
 };
 
 type Frame = { sequence: number; receivedAt: string; payload: Payload };

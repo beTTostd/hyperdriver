@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { replays } from "../db/schema";
+import { compactReplayDocument } from "../talishar-local-history/replay-state.js";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -140,10 +141,11 @@ export function parseReplayDocument(raw: string): ReplayDocument {
   if (!parseTimestamp(match.startedAt)) {
     throw new ReplayUploadError("A data inicial do replay é inválida.", 400);
   }
-  if (!isCompleteReplay(document as ReplayDocument)) {
+  const compacted = compactReplayDocument(document as ReplayDocument) as ReplayDocument;
+  if (!isCompleteReplay(compacted)) {
     throw new ReplayUploadError("A partida ainda não foi concluída.", 422);
   }
-  return document as ReplayDocument;
+  return compacted;
 }
 
 function extractedMetadata(document: ReplayDocument) {
@@ -206,8 +208,9 @@ export async function saveReplayUpload(userId: number, raw: string) {
   const storageKey = `${randomUUID()}.json`;
   const temporaryPath = resolve(directory, `.${storageKey}.tmp`);
   const finalPath = replayPath(storageKey);
+  const normalizedRaw = JSON.stringify(document);
   await mkdir(directory, { recursive: true });
-  await writeFile(temporaryPath, raw, { encoding: "utf8", flag: "wx" });
+  await writeFile(temporaryPath, normalizedRaw, { encoding: "utf8", flag: "wx" });
   await rename(temporaryPath, finalPath);
 
   try {

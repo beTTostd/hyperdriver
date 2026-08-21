@@ -7,7 +7,7 @@ Página local para reproduzir uma partida capturada pela extensão **Talishar Lo
 - A partida enviada, com 275 snapshots, em `public/replays/recorded-match.json`.
 - Controles de reprodução, avanço quadro a quadro e salto entre turnos.
 - Estado de vida, mão, arsenal, pitch, equipamentos, banish, permanentes e combat chain.
-- Leitura dos eventos recentes do log do Talishar.
+- Persistência somente dos dados necessários para reconstruir a mesa, sem o log de chat.
 - Botão para abrir qualquer outro JSON gerado pela extensão.
 
 ## Executar localmente

@@ -428,7 +428,9 @@ test("stores complete replays idempotently and isolates them by user", async () 
     headers: { cookie },
   });
   assert.equal(stored.status, 200);
-  assert.equal((await stored.json()).match.id, "4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01");
+  const storedDocument = await stored.json();
+  assert.equal(storedDocument.match.id, "4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01");
+  assert.equal(storedDocument.match.frames[0].payload.chatLog, undefined);
   const telemetry = await fetch(new URL(`/valor?replay=${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
   });
@@ -466,6 +468,7 @@ function replayDocument(id, complete) {
         sequence: 1,
         receivedAt: "2026-08-20T12:01:00.000Z",
         payload: {
+          chatLog: "não persistir",
           initialLoad: { gameFormat: "cc" },
           turnNo: "3",
           turnPlayer: "1",

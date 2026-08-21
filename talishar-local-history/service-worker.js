@@ -1,9 +1,17 @@
-import { indicators, isCompleteMatch, isFinished, normalizeCompletion } from "./replay-state.js";
+import {
+  compactReplayDocument,
+  compactReplayMatch,
+  compactReplayPayload,
+  indicators,
+  isCompleteMatch,
+  isFinished,
+  normalizeCompletion,
+} from "./replay-state.js";
 
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
-const SCHEMA_VERSION = "0.1.0";
+const SCHEMA_VERSION = "0.2.0";
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -73,12 +81,12 @@ function parseAndSanitize(raw) {
   try {
     return sanitize(JSON.parse(raw));
   } catch {
-    return { rawText: raw.replace(/([?&](?:authKey|token)=[^&\s]+)/gi, "$1[REDACTED]") };
+    return {};
   }
 }
 
 function parseImportedMatch(raw) {
-  const document = parseAndSanitize(raw);
+  const document = compactReplayDocument(parseAndSanitize(raw));
   if (!document || typeof document !== "object" || Array.isArray(document) || "rawText" in document) {
     throw new Error("O arquivo não contém JSON válido.");
   }
@@ -137,7 +145,7 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
       source: "Talishar Local History",
       startedAt,
       pageUrl,
-      privacy: "Authentication fields are redacted before local storage or Hyperdriver synchronization."
+      privacy: "Authentication fields are redacted; chat and unused Talishar state are discarded before local storage or Hyperdriver synchronization."
     },
     status: "recording",
     startedAt,
@@ -157,7 +165,11 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
 async function ensureMatch(message) {
   let pageSessionId = message.pageSessionId;
   const existing = await getMatch(pageSessionId);
-  if (existing && existing.status !== "finished") return existing;
+  if (existing && existing.status !== "finished") {
+    const compacted = compactReplayMatch(existing);
+    await putMatch(compacted);
+    return compacted;
+  }
   if (existing?.status === "finished") pageSessionId = crypto.randomUUID();
   const match = makeMatch(pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
   await putMatch(match);
@@ -168,7 +180,7 @@ async function recordFrame(message) {
   const match = await ensureMatch(message);
   if (match.status === "finished") return;
 
-  const payload = parseAndSanitize(message.payload);
+  const payload = compactReplayPayload(parseAndSanitize(message.payload));
   const indicator = indicators(payload);
   const frame = {
     sequence: match.frames.length + 1,
@@ -201,6 +213,8 @@ function fileName(match) {
 }
 
 async function exportMatch(match) {
+  match = compactReplayMatch(match);
+  await putMatch(match);
   const exportDocument = {
     schemaVersion: match.schemaVersion,
     exportedAt: new Date().toISOString(),
@@ -240,8 +254,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "list-matches") {
-      const matches = (await listMatches()).map(normalizeCompletion).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-      await Promise.all(matches.filter((match) => match.status === "finished").map(putMatch));
+      const matches = (await listMatches())
+        .map((match) => normalizeCompletion(compactReplayMatch(match)))
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      await Promise.all(matches.map(putMatch));
       sendResponse({ ok: true, matches: matches.map((match) => ({
         id: match.id,
         status: match.status,
@@ -258,8 +274,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "list-sync-pending") {
-      const matches = (await listMatches()).map(normalizeCompletion);
-      await Promise.all(matches.filter((match) => match.status === "finished").map(putMatch));
+      const matches = (await listMatches()).map((match) => normalizeCompletion(compactReplayMatch(match)));
+      await Promise.all(matches.map(putMatch));
       sendResponse({
         ok: true,
         ids: matches.filter((match) => match.status === "finished" && !match.sync?.uploadedAt).map((match) => match.id)
@@ -267,7 +283,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "get-sync-match") {
-      const match = await getMatch(message.id);
+      const match = compactReplayMatch(await getMatch(message.id));
       if (!match || !isCompleteMatch(match) || match.sync?.uploadedAt) {
         sendResponse({ ok: true, document: null });
         return;
@@ -281,7 +297,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "mark-match-synced") {
-      const match = await getMatch(message.id);
+      const match = compactReplayMatch(await getMatch(message.id));
       if (!match) throw new Error("Partida não encontrada.");
       match.sync = {
         uploadedAt: new Date().toISOString(),
@@ -295,7 +311,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
     if (message.type === "mark-sync-error") {
-      const match = await getMatch(message.id);
+      const match = compactReplayMatch(await getMatch(message.id));
       if (!match) throw new Error("Partida não encontrada.");
       match.syncError = { at: new Date().toISOString(), message: message.error };
       await putMatch(match);
