@@ -46,7 +46,7 @@
 .matchFacts dt { color: #646b70; font-family: var(--font-mono); font-size: 7px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
 .matchFacts dd { margin: 6px 0 0; color: var(--paper); font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
 
-.summary { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--signal-red); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); background: var(--panel); }
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 2px solid var(--signal-red); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); background: var(--panel); }
 .summary article { min-height: 132px; padding: 22px 24px; border-left: 1px solid var(--line); }
 .summary article:first-child { border-left: 0; background: linear-gradient(135deg, rgba(255, 77, 61, 0.1), transparent 68%); }
 .summary small, .summary span { display: block; }
@@ -57,7 +57,8 @@
 .received { --metric-color: #ff4d3d; }
 .equipment { --metric-color: #6bb8ff; }
 .card { --metric-color: #f2b84b; }
-.offered { --metric-color: #65d18a; }
+.offered { --metric-color: #c084fc; }
+.life { --metric-color: #65d18a; }
 
 .panel { margin-top: 16px; padding: clamp(20px, 3vw, 31px); border: 1px solid var(--line-strong); background: rgba(18, 20, 22, 0.92); }
 .panelHeader { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 27px; }
@@ -116,6 +117,7 @@
   .summary { grid-template-columns: repeat(2, 1fr); }
   .summary article:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
   .summary article:nth-child(4) { border-top: 1px solid var(--line); }
+  .summary article:nth-child(5) { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
   .panelHeader { align-items: flex-start; flex-direction: column; }
   .legend { justify-content: flex-start; }
 }

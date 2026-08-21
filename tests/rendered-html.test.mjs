@@ -575,6 +575,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(telemetryHtml, /Bloqueado por equipamento/);
   assert.match(telemetryHtml, /Bloqueado por carta/);
   assert.match(telemetryHtml, /Dano oferecido/);
+  assert.match(telemetryHtml, /Vida ganha/);
   assert.match(telemetryHtml, />Você</);
   assert.match(telemetryHtml, /Alpha Hero/);
   assert.match(telemetryHtml, /Beta Hero/);
@@ -602,6 +603,12 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(detailedTelemetryHtml, /data-tooltip="Bloqueado por equipamento: 5"/);
   assert.match(detailedTelemetryHtml, /data-tooltip="Bloqueado por carta: 3"/);
   assert.match(detailedTelemetryHtml, /data-tooltip="Dano oferecido: 6"/);
+  assert.match(detailedTelemetryHtml, /data-tooltip="Vida ganha: 3"/);
+  assert.ok(
+    detailedTelemetryHtml.indexOf('data-tooltip="Vida ganha: 3"')
+      < detailedTelemetryHtml.indexOf('data-tooltip="Dano oferecido: 6"'),
+  );
+  assert.match(detailedTelemetryHtml, /cycleTotal[^"]*">22<\/strong>/);
   assert.doesNotMatch(detailedTelemetryHtml, /Início parcial|Fim parcial/);
 
   const rollbackDocument = rollbackTelemetryReplayDocument("7b2f1374-6c58-4f50-b070-2d69906825dd");
@@ -624,6 +631,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(rollbackTelemetryHtml, /data-tooltip="Dano oferecido: 7"/);
   assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Dano recebido: 33"/);
   assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Bloqueado por equipamento: 6"/);
+  assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Vida ganha:/);
 
   const anonymousTelemetry = await fetch(
     new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
@@ -728,9 +736,10 @@ function telemetryReplayDocument(id) {
         frame(6, 1, 2, null),
         frame(7, 1, 2, attack(2, "overblock_attack_red", 3, 4, [{ cardNumber: "test_helmet", controller: "1" }])),
         frame(8, 1, 2, null, "A", "17"),
-        frame(9, 1, 1, attack(1, "player_attack_red", 6, 0)),
-        frame(10, 1, 1, null),
-        frame(11, 2, 2, attack(2, "lethal_attack_red", 4, 1, [{ cardNumber: "last_block_blue", controller: "1" }]), "OVER"),
+        frame(9, 1, 1, null, "A", "inválida"),
+        frame(10, 1, 1, attack(1, "player_attack_red", 6, 0)),
+        frame(11, 1, 1, null),
+        frame(12, 2, 2, attack(2, "lethal_attack_red", 4, 1, [{ cardNumber: "last_block_blue", controller: "1" }]), "OVER"),
       ],
     },
   };

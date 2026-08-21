@@ -46,7 +46,8 @@
         "https://hyperdriver.com.br/*",
         "https://beta.hyperdriver.com.br/*"
       ],
-      "js": ["sync-content-script.js"],
+      "css": ["sync-content-script.css"],
+      "js": ["sync-content-script-utils.js", "sync-content-script.js"],
       "run_at": "document_idle"
     }
   ]

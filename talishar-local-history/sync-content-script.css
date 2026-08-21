@@ -1,0 +1,122 @@
+#hyperdriver-sync-toast,
+#hyperdriver-sync-toast * {
+  box-sizing: border-box;
+}
+
+#hyperdriver-sync-toast {
+  all: initial;
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2147483647;
+  display: block;
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid rgba(242, 241, 236, 0.2);
+  border-top: 2px solid #ff4d3d;
+  color: #f2f1ec;
+  background: #121416;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+  contain: layout paint style;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+#hyperdriver-sync-toast[data-state="complete"] {
+  border-top-color: #6bb8ff;
+}
+
+#hyperdriver-sync-toast[data-state="error"] {
+  border-top-color: #ff4d3d;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__eyebrow,
+#hyperdriver-sync-toast .hyperdriver-sync-toast__message,
+#hyperdriver-sync-toast .hyperdriver-sync-toast__progress-label {
+  display: block;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__eyebrow {
+  margin: 0 0 8px;
+  color: #ff4d3d;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+#hyperdriver-sync-toast[data-state="complete"] .hyperdriver-sync-toast__eyebrow {
+  color: #6bb8ff;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__title {
+  display: block;
+  margin: 0;
+  color: #f2f1ec;
+  font-family: "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__message {
+  margin: 8px 0 14px;
+  color: #8b9298;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__progress-label {
+  margin-bottom: 6px;
+  color: #f2f1ec;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(242, 241, 236, 0.2);
+  background: #090a0b;
+}
+
+#hyperdriver-sync-toast .hyperdriver-sync-toast__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #ff4d3d;
+  transition: width 260ms ease;
+}
+
+#hyperdriver-sync-toast[data-state="complete"] .hyperdriver-sync-toast__fill {
+  background: #6bb8ff;
+}
+
+#hyperdriver-sync-toast[data-state="error"] .hyperdriver-sync-toast__fill {
+  background: #ff4d3d;
+}
+
+@media (max-width: 520px) {
+  #hyperdriver-sync-toast {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hyperdriver-sync-toast .hyperdriver-sync-toast__fill {
+    transition: none;
+  }
+}

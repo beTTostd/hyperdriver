@@ -9,7 +9,7 @@ import styles from "./page.module.css";
 
 type PageProps = { params: Promise<{ id: string }> };
 type Metric = {
-  key: keyof Pick<TelemetryCycle, "receivedDamage" | "equipmentBlocked" | "cardBlocked" | "offeredDamage">;
+  key: keyof Pick<TelemetryCycle, "receivedDamage" | "equipmentBlocked" | "cardBlocked" | "offeredDamage" | "lifeGained">;
   label: string;
   className: string;
 };
@@ -19,6 +19,7 @@ const metrics: Metric[] = [
   { key: "receivedDamage", label: "Dano recebido", className: "received" },
   { key: "equipmentBlocked", label: "Bloqueado por equipamento", className: "equipment" },
   { key: "cardBlocked", label: "Bloqueado por carta", className: "card" },
+  { key: "lifeGained", label: "Vida ganha", className: "life" },
   { key: "offeredDamage", label: "Dano oferecido", className: "offered" },
 ];
 
@@ -202,7 +203,7 @@ export default async function TelemetryPage({ params }: PageProps) {
 
         <footer>
           <strong>Como calculamos</strong>
-          <span>O dano recebido considera o poder que passou pelos bloqueios. O dano oferecido soma o poder final dos seus ataques. Defesa acima do poder do ataque não é contabilizada.</span>
+          <span>O dano recebido considera o poder que passou pelos bloqueios. O dano oferecido soma o poder final dos seus ataques. A vida ganha soma os aumentos de vida registrados nos snapshots. Defesa acima do poder do ataque não é contabilizada.</span>
         </footer>
       </div>
     </main>

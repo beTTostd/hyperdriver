@@ -8,6 +8,7 @@ export type TelemetryCycle = {
   equipmentBlocked: number;
   cardBlocked: number;
   offeredDamage: number;
+  lifeGained: number;
 };
 
 type DamageKind = "equipment" | "card";
@@ -27,6 +28,13 @@ type ActiveAttack = {
 function amount(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function health(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function playerNumber(frame: ReplayFrame): "1" | "2" {
@@ -132,6 +140,7 @@ function emptySegment(frame: ReplayFrame): TurnSegment {
     equipmentBlocked: 0,
     cardBlocked: 0,
     offeredDamage: 0,
+    lifeGained: 0,
   };
 }
 
@@ -144,6 +153,7 @@ function emptyCycle(turn: string, partial: TelemetryCycle["partial"]): Telemetry
     equipmentBlocked: 0,
     cardBlocked: 0,
     offeredDamage: 0,
+    lifeGained: 0,
   };
 }
 
@@ -152,6 +162,7 @@ function mergeSegment(cycle: TelemetryCycle, segment: TurnSegment) {
   cycle.equipmentBlocked += segment.equipmentBlocked;
   cycle.cardBlocked += segment.cardBlocked;
   cycle.offeredDamage += segment.offeredDamage;
+  cycle.lifeGained += segment.lifeGained;
 }
 
 export function calculateReplayTelemetry(document: ReplayDocument): TelemetryCycle[] {
@@ -160,6 +171,7 @@ export function calculateReplayTelemetry(document: ReplayDocument): TelemetryCyc
   const segmentByKey = new Map<string, TurnSegment>();
   const playerEquipment = equipmentCardNumbers(frames);
   let active: ActiveAttack | null = null;
+  let previousPlayerHealth: number | null = null;
 
   const commitAttack = () => {
     if (!active) return;
@@ -181,6 +193,14 @@ export function calculateReplayTelemetry(document: ReplayDocument): TelemetryCyc
       const segment = emptySegment(frame);
       segments.push(segment);
       segmentByKey.set(key, segment);
+    }
+
+    const currentPlayerHealth = health(frame.payload.playerHealth);
+    if (currentPlayerHealth !== null) {
+      if (previousPlayerHealth !== null && currentPlayerHealth > previousPlayerHealth) {
+        segmentByKey.get(key)!.lifeGained += currentPlayerHealth - previousPlayerHealth;
+      }
+      previousPlayerHealth = currentPlayerHealth;
     }
 
     const chain = frame.payload.activeChainLink;
