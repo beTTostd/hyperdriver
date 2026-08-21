@@ -33,7 +33,7 @@
   transition: color 150ms ease, background 150ms ease;
 }
 
-.installButton span {
+.installButton :global(.uiIcon) {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1;

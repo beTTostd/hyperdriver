@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { cardArtImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
+import Icon from "./ui-icons";
 import styles from "./auth-controls.module.css";
 
 type AuthControlsProps = {
@@ -65,7 +66,7 @@ export default function AuthControls({
           <img src={cardArtImageUrl(visibleAvatar)} alt="" onError={(event) => event.currentTarget.remove()} />
         </span>
         <span className={styles.profileName}>{username}</span>
-        <span className={styles.chevron} aria-hidden="true">⌄</span>
+        <Icon className={styles.chevron} name="chevronDown" size={16} />
       </button>
       <div className={styles.profileMenu} id={menuId} role="menu" hidden={!open}>
           {isAdmin && (
@@ -76,7 +77,7 @@ export default function AuthControls({
               onClick={() => setOpen(false)}
             >
               Administração
-              <span aria-hidden="true">↗</span>
+              <Icon name="externalLink" size={14} />
             </Link>
           )}
           <Link
@@ -86,7 +87,7 @@ export default function AuthControls({
             onClick={() => setOpen(false)}
           >
             Editar perfil
-            <span aria-hidden="true">↗</span>
+            <Icon name="externalLink" size={14} />
           </Link>
           <button
             className={styles.signOutButton}
@@ -96,7 +97,7 @@ export default function AuthControls({
             disabled={pending}
           >
             {pending ? "Saindo…" : "Sair"}
-            <span aria-hidden="true">↗</span>
+            <Icon name="logOut" size={14} />
           </button>
       </div>
     </div>

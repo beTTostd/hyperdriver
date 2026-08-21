@@ -8,6 +8,7 @@ import {
   cardArtImageUrl,
   DEFAULT_CARD_AVATAR,
 } from "../../../lib/card-avatars";
+import Icon from "../../components/ui-icons";
 import styles from "./page.module.css";
 
 type ProfileEditorProps = {
@@ -161,7 +162,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
             <small>O nome não pode ser alterado nesta versão.</small>
           </div>
           <button className={styles.changeButton} type="button" onClick={openModal}>
-            Alterar foto <span aria-hidden="true">↗</span>
+            Alterar foto <Icon name="imageEdit" size={16} />
           </button>
         </div>
       </div>
@@ -188,12 +189,12 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                 <h2 id="art-picker-title">Escolha sua foto</h2>
               </div>
               <button className={styles.closeButton} type="button" onClick={closeModal} aria-label="Fechar modal">
-                ×
+                <Icon name="x" size={18} />
               </button>
             </div>
 
             <label className={styles.searchField}>
-              <span aria-hidden="true">⌕</span>
+              <Icon name="search" size={18} />
               <input
                 autoFocus
                 type="search"
@@ -229,7 +230,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                         </span>
                         <span className={styles.artMeta}>
                           <strong>{card.label}</strong>
-                          <small>{isPending ? "Aplicando…" : isSelected ? "Selecionada" : "Escolher"}</small>
+                          <small>{isPending ? "Aplicando…" : isSelected ? <><Icon name="check" size={13} /> Selecionada</> : "Escolher"}</small>
                         </span>
                       </button>
                     );
@@ -241,7 +242,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                     type="button"
                     onClick={() => setVisibleCardCount((count) => count + 96)}
                   >
-                    Carregar mais cartas ({cards.length - visibleCards.length} restantes)
+                    <Icon name="plus" size={14} /> Carregar mais cartas ({cards.length - visibleCards.length} restantes)
                   </button>
                 )}
               </>

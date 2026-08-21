@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+.uiIcon {
+  display: block;
+  flex: 0 0 auto;
+}
+
 :root {
   --carbon: #090a0b;
   --panel: #121416;

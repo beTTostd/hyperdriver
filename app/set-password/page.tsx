@@ -2,6 +2,7 @@ import Link from "next/link";
 import Brand from "../components/brand";
 import { getPasswordSetupState } from "../../lib/auth";
 import SetupPasswordForm from "../primeira-senha/setup-password-form";
+import Icon from "../components/ui-icons";
 import styles from "../auth.module.css";
 
 export default async function SetPasswordPage({
@@ -23,7 +24,7 @@ export default async function SetPasswordPage({
             {setup ? `Defina uma nova senha para ${setup.username}.` : "Este link não é válido ou já expirou."}
           </p>
         </header>
-        {setup ? <SetupPasswordForm token={token} /> : <Link className={styles.link} href="/login">Voltar para o login →</Link>}
+        {setup ? <SetupPasswordForm token={token} /> : <Link className={styles.link} href="/login">Voltar para o login <Icon name="arrowRight" size={15} /></Link>}
       </section>
     </main>
   );

@@ -1,4 +1,5 @@
 import Brand from "./brand";
+import Icon from "./ui-icons";
 import AuthControls from "./auth-controls";
 import styles from "./authenticated-header.module.css";
 
@@ -24,7 +25,7 @@ export default function AuthenticatedHeader({
           href={extensionUrl}
           download="hyperdriver-extension.zip"
         >
-          Instalar extensão <span aria-hidden="true">↓</span>
+          Instalar extensão <Icon name="download" size={14} />
         </a>
       </div>
       <AuthControls username={username} avatarCardId={avatarCardId} isAdmin={isAdmin} />

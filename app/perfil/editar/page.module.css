@@ -195,7 +195,7 @@
   background: var(--paper);
 }
 
-.changeButton span {
+.changeButton :global(.uiIcon) {
   font-family: var(--font-mono);
   font-size: 15px;
 }
@@ -269,7 +269,7 @@
   border-color: var(--telemetry-blue);
 }
 
-.searchField > span {
+.searchField > :global(.uiIcon) {
   color: var(--telemetry-blue);
   font-size: 20px;
   line-height: 1;

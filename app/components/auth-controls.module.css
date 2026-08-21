@@ -124,8 +124,8 @@
   text-transform: uppercase;
 }
 
-.adminLink span,
-.editProfileLink span {
+.adminLink :global(.uiIcon),
+.editProfileLink :global(.uiIcon) {
   color: var(--signal-red);
   font-size: 14px;
 }
@@ -136,7 +136,7 @@
   background: rgba(255, 77, 61, 0.1);
 }
 
-.signOutButton span {
+.signOutButton :global(.uiIcon) {
   color: var(--signal-red);
   font-size: 14px;
 }

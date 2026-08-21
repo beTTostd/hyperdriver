@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Icon from "../components/ui-icons";
 import { BrandSymbol } from "../components/brand";
 import { replayResult } from "../../talishar-local-history/replay-state.js";
+import {
+  cardMarkers,
+  fullCardImageUrl,
+  markerSummary,
+  squareCardImageUrl,
+} from "./card-presentation.js";
 import styles from "./page.module.css";
 
 type Card = {
@@ -66,6 +73,13 @@ type Payload = {
 type Frame = { sequence: number; receivedAt: string; payload: Payload };
 type Replay = { match: { startedAt?: string; frames: Frame[]; summary?: { winner?: string | number }; } };
 type EquipmentKey = "playerEquipment" | "opponentEquipment";
+type PreviewState = { card: Card; frameIndex: number; side: "left" | "right"; persistent: boolean };
+type PreviewContextValue = {
+  showPreview: (card: Card, element: HTMLElement, persistent: boolean) => void;
+  hideTransientPreview: () => void;
+};
+
+const PreviewContext = createContext<PreviewContextValue | null>(null);
 
 const isReplayId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) || /^\d+$/.test(value);
 
@@ -81,20 +95,6 @@ function cardName(card?: Card) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function imageUrl(card?: Card) {
-  const id = card?.cardNumber;
-  if (!id || id === "NONE00" || id === "CardBack") return null;
-  return `https://images.talishar.net/public/cardimages/english/${encodeURIComponent(id)}.webp`;
-}
-
-function counterLabel(card: Card) {
-  const mapped = Object.entries(card.countersMap ?? {})
-    .filter(([, value]) => Number(value) !== 0)
-    .map(([key, value]) => key === "steam" ? String(value) : `${key.slice(0, 1).toUpperCase()} ${value}`);
-  if (mapped.length) return mapped.join(" · ");
-  return Number(card.counters ?? 0) === 0 ? "" : String(card.counters);
 }
 
 function playerName(value?: string | number) {
@@ -136,32 +136,103 @@ function attackCardNumbers(frames: Frame[]) {
   return new Set(frames.map((frame) => frame.payload.activeChainLink?.attackingCard?.cardNumber).filter((cardNumber): cardNumber is string => Boolean(cardNumber)));
 }
 
+function MarkerIcon({ kind, abbreviation }: { kind: string; abbreviation: string }) {
+  if (kind === "generic") return <span className={styles.markerAbbreviation}>{abbreviation}</span>;
+  if (kind === "defense") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 5v6c0 5-3.2 9-8 11-4.8-2-8-6-8-11V5l8-3Z" /></svg>;
+  if (kind === "steam") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 2 1 3h4l1-3 3 2-2 3 2 3 3-1 1 4-4 1-2 3 2 3-3 2-1-3h-4l-1 3-3-2 2-3-2-3-3 1-1-4 4-1 2-3-2-3 3-2Z" /><circle cx="12" cy="12" r="3" /></svg>;
+  if (kind === "attack") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 18 12-12 3 3L6 21H3v-3Zm11-14 2-2 6 6-2 2-6-6Z" /></svg>;
+  if (kind === "life") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21S3 16 3 9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 7-9 12-9 12Z" /></svg>;
+  if (kind === "energy") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 2-9 12h6l-1 8 9-12h-6l1-8Z" /></svg>;
+  if (kind === "frost") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M8 4l4 3 4-3M8 20l4-3 4 3" /></svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="M12 1v5M12 18v5M1 12h5M18 12h5" /></svg>;
+}
+
+function TransportIcon({ name }: { name: "back" | "first" | "previous" | "play" | "pause" | "next" | "last" }) {
+  if (name === "play") return <svg className={`${styles.transportIcon} ${styles.transportIconFill}`} viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z" /></svg>;
+  if (name === "pause") return <svg className={`${styles.transportIcon} ${styles.transportIconFill}`} viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z" /></svg>;
+  if (name === "back") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16" /></svg>;
+  if (name === "first") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14m14-14-8 7 8 7V5Z" /></svg>;
+  if (name === "previous") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>;
+  if (name === "next") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>;
+  return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l8 7-8 7V5Z" /></svg>;
+}
+
+function CardMarkers({ card }: { card: Card }) {
+  const markers = cardMarkers(card);
+  if (!markers.length) return null;
+  return (
+    <span className={styles.markerOverlay} aria-hidden="true">
+      {markers.map((marker) => (
+        <span className={`${styles.marker} ${styles[marker.kind] || ""}`} key={marker.key} title={`${marker.label}: ${marker.value}`}>
+          <MarkerIcon kind={marker.kind} abbreviation={marker.abbreviation} />
+          <strong>{marker.value}</strong>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function CardView({ card, hidden = false, variant = "normal", label }: { card?: Card; hidden?: boolean; variant?: "normal" | "hero" | "handCard" | "combat"; label?: string }) {
-  const [failed, setFailed] = useState(false);
+  const preview = useContext(PreviewContext);
+  const [imageFailure, setImageFailure] = useState<{ cardNumber?: string; stage: "full" | "failed" } | null>(null);
   const faceDown = hidden || card?.cardNumber === "CardBack";
-  const source = faceDown ? null : imageUrl(card);
-  const counters = card ? counterLabel(card) : "";
+  const cardNumber = card?.cardNumber;
+  const canPreview = !faceDown && Boolean(cardNumber && cardNumber !== "NONE00");
+  const markers = card ? cardMarkers(card) : [];
+  const summary = markerSummary(markers);
+  const imageStage = imageFailure && imageFailure.cardNumber === cardNumber ? imageFailure.stage : "square";
+  const source = canPreview
+    ? imageStage === "square"
+      ? squareCardImageUrl(cardNumber as string)
+      : imageStage === "full"
+        ? fullCardImageUrl(cardNumber as string)
+        : null
+    : null;
+
+  const openPreview = (element: HTMLElement, persistent: boolean) => {
+    if (card && canPreview) preview?.showPreview(card, element, persistent);
+  };
+
   return (
     <figure
       className={`${styles.card} ${styles[variant]} ${faceDown ? styles.cardBack : ""} ${card?.tapped ? styles.tapped : ""} ${card?.onChain ? styles.onChain : ""} ${!card && !faceDown ? styles.missingCard : ""}`}
       title={faceDown ? "Carta oculta" : cardName(card)}
-      aria-label={faceDown ? "Carta oculta" : cardName(card)}
+      aria-label={`${faceDown ? "Carta oculta" : cardName(card)}${summary ? `. ${summary}` : ""}`}
+      tabIndex={canPreview ? 0 : undefined}
+      onPointerEnter={(event) => { if (event.pointerType !== "touch") openPreview(event.currentTarget, false); }}
+      onPointerLeave={() => preview?.hideTransientPreview()}
+      onPointerUp={(event) => { if (event.pointerType === "touch") openPreview(event.currentTarget, true); }}
+      onFocus={(event) => openPreview(event.currentTarget, false)}
+      onBlur={() => preview?.hideTransientPreview()}
     >
-      {source && !failed ? <img src={source} alt={cardName(card)} onError={() => setFailed(true)} /> : !faceDown && <span>{label || cardName(card)}</span>}
-      {counters && !faceDown && <b className={styles.counter}>{counters}</b>}
-      {card?.isBroken && <b className={styles.broken}>×</b>}
+      {source ? <img className={imageStage === "full" ? styles.fallbackCrop : ""} src={source} alt={cardName(card)} onError={() => setImageFailure({ cardNumber, stage: imageStage === "square" ? "full" : "failed" })} /> : !faceDown && <span>{label || cardName(card)}</span>}
+      {card && !faceDown && <CardMarkers card={card} />}
+      {card?.isBroken && <b className={styles.broken}><Icon name="alertTriangle" size={13} /></b>}
     </figure>
   );
 }
 
-function ZonePile({ className, label, values, count, topCard, hidden = false, stacked = false }: { className: string; label: string; values?: Card[]; count?: string | number; topCard?: Card; hidden?: boolean; stacked?: boolean }) {
+function CardPreview({ preview, onClose }: { preview: PreviewState | null; onClose: () => void }) {
+  const [failedCardNumber, setFailedCardNumber] = useState<string | null>(null);
+  if (!preview?.card.cardNumber || failedCardNumber === preview.card.cardNumber) return null;
+  return (
+    <div className={`${styles.previewLayer} ${styles[preview.side]}`}>
+      {preview.persistent && <button className={styles.previewBackdrop} type="button" aria-label="Fechar prévia da carta" onClick={onClose} />}
+      <figure className={styles.cardPreview} role="dialog" aria-label={`Prévia de ${cardName(preview.card)}`}>
+        <img src={fullCardImageUrl(preview.card.cardNumber)} alt={cardName(preview.card)} onError={() => setFailedCardNumber(preview.card.cardNumber ?? null)} />
+      </figure>
+    </div>
+  );
+}
+
+function ZonePile({ className, label, values, count, topCard, hidden = false, stacked = false, hoverCount = false, hideCount = false }: { className: string; label: string; values?: Card[]; count?: string | number; topCard?: Card; hidden?: boolean; stacked?: boolean; hoverCount?: boolean; hideCount?: boolean }) {
   const zoneCards = list(values);
   const total = count ?? zoneCards.length;
   const card = topCard ?? zoneCards.at(-1);
   const occupied = Number(total) > 0 || Boolean(card);
   const showStack = stacked && zoneCards.length > 1;
   return (
-    <section className={`${styles.zone} ${className}`} aria-label={`${label}: ${total}`}>
+    <section className={`${styles.zone} ${hoverCount ? styles.hoverCount : ""} ${className}`} aria-label={`${label}: ${total}`}>
       <div className={`${styles.zoneCard} ${showStack ? styles.stackedZoneCards : ""}`}>
         {occupied ? showStack ? zoneCards.map((zoneCard, index) => (
           <div className={styles.stackedCard} style={{ top: `${index * 24}px`, zIndex: index + 1 }} key={`${zoneCard.cardNumber}-${index}`}>
@@ -169,7 +240,7 @@ function ZonePile({ className, label, values, count, topCard, hidden = false, st
           </div>
         )) : <CardView card={card} hidden={hidden} /> : <div className={styles.zoneGhost}>{label}</div>}
       </div>
-      {occupied && <b>{total}</b>}
+      {occupied && !hideCount && <b>{total}</b>}
     </section>
   );
 }
@@ -201,7 +272,7 @@ function HeroCluster({ equipment, health, opponent }: { equipment?: Card[]; heal
       <div className={styles.leftWeapon}>{leftWeapon && <CardView card={leftWeapon} />}</div>
       <div className={styles.heroCenter}>
         <CardView card={hero} variant="hero" label="Herói" />
-        <b className={styles.heroLife} aria-label={`Vida: ${health ?? "desconhecida"}`}><span aria-hidden="true">♥</span>{health ?? "—"}</b>
+        <b className={styles.heroLife} aria-label={`Vida: ${health ?? "desconhecida"}`}><Icon name="heart" size={13} />{health ?? "—"}</b>
       </div>
       <div className={styles.rightWeapon}>{rightWeapon && <CardView card={rightWeapon} />}</div>
     </section>
@@ -231,7 +302,7 @@ function Permanents({ values, opponent }: { values: Card[]; opponent: boolean })
   return (
     <section className={`${styles.permanents} ${opponent ? styles.opponentPermanents : styles.playerPermanents}`} aria-label="Permanentes e itens">
       {values.slice(0, 7).map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} />)}
-      {values.length > 7 && <b>+{values.length - 7}</b>}
+      {values.length > 7 && <b aria-label={`Mais ${values.length - 7} permanentes`}><Icon name="plus" size={12} /><span>{values.length - 7}</span></b>}
     </section>
   );
 }
@@ -243,7 +314,7 @@ function CombatChain({ chain }: { chain?: Chain | null }) {
     <section className={styles.combatChain} aria-label="Combat chain">
       <small>Combat chain</small>
       <div className={styles.attackCard}><CardView card={chain.attackingCard} variant="combat" /><b>{chain.totalPower ?? "—"}<span>ATK</span></b></div>
-      <i>›</i>
+      <Icon className={styles.chainArrow} name="chevronRight" size={21} />
       <div className={styles.reactions}>{reactions.map((card, index) => <CardView key={`${card.cardNumber}-${index}`} card={card} variant="combat" />)}{!reactions.length && <span>Sem defesa</span>}</div>
       <div className={styles.chainInfo}><strong>{chain.totalDefense ?? 0} DEF</strong><span>Alvo: {chain.attackTarget || "—"}</span><div>{chain.goAgain && <em>Go again</em>}{chain.dominate && <em>Dominate</em>}{chain.overpower && <em>Overpower</em>}</div></div>
     </section>
@@ -267,6 +338,17 @@ export default function TalisharTable() {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+
+  const showPreview = useCallback((card: Card, element: HTMLElement, persistent: boolean) => {
+    const bounds = element.getBoundingClientRect();
+    setPreview({ card, frameIndex: index, persistent, side: bounds.left > window.innerWidth / 2 ? "left" : "right" });
+  }, [index]);
+  const hideTransientPreview = useCallback(() => {
+    setPreview((value) => value?.persistent ? value : null);
+  }, []);
+  const closePreview = useCallback(() => setPreview(null), []);
+  const previewContext = useMemo(() => ({ showPreview, hideTransientPreview }), [showPreview, hideTransientPreview]);
 
   useEffect(() => {
     const replayId = new URLSearchParams(window.location.search).get("replay");
@@ -309,6 +391,10 @@ export default function TalisharTable() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!frames.length || event.target instanceof HTMLInputElement) return;
+      if (event.key === "Escape") {
+        closePreview();
+        return;
+      }
       if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
       if (event.key === "ArrowRight") setIndex((value) => Math.min(frames.length - 1, value + 1));
       if (event.key === " ") {
@@ -318,7 +404,7 @@ export default function TalisharTable() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [frames.length]);
+  }, [frames.length, closePreview]);
 
   if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para seus replays</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div role="status" aria-live="polite"><BrandSymbol className={styles.loadingMark} /><p>Montando a mesa…</p></div></main>;
@@ -332,15 +418,17 @@ export default function TalisharTable() {
   const result = replayResult(replay?.match ?? { frames: [] });
 
   return (
-    <main className={styles.replay}>
-      <section className={styles.table}>
+    <PreviewContext.Provider value={previewContext}>
+      <main className={styles.replay}>
+        <div className={styles.tableWorkspace}>
+          <section className={styles.table}>
         <div className={styles.opponentMat} />
         <div className={styles.playerMat} />
         <Hand values={current.opponentHand} opponent />
-        <ZonePile className={styles.opponentBanish} label="Banido" values={current.opponentBanish} />
-        <ZonePile className={styles.opponentDeck} label="Deck" count={current.opponentDeckCount ?? 0} topCard={current.opponentDeckCard} hidden />
-        <ZonePile className={styles.opponentPitch} label="Pitch" values={current.opponentPitch} stacked />
-        <ZonePile className={styles.opponentGraveyard} label="Cemitério" values={current.opponentDiscard} />
+        <ZonePile className={styles.opponentBanish} label="Banido" values={current.opponentBanish} hoverCount />
+        <ZonePile className={styles.opponentDeck} label="Deck" count={current.opponentDeckCount ?? 0} topCard={current.opponentDeckCard} hidden hoverCount />
+        <ZonePile className={styles.opponentPitch} label="Pitch" values={current.opponentPitch} stacked hideCount />
+        <ZonePile className={styles.opponentGraveyard} label="Cemitério" values={current.opponentDiscard} hoverCount />
         <Arsenal values={current.opponentArse} opponent />
         <HeroCluster equipment={opponentEquipment} health={current.opponentHealth} opponent />
         <EquipmentCluster equipment={opponentEquipment} opponent />
@@ -351,25 +439,30 @@ export default function TalisharTable() {
         <HeroCluster equipment={playerEquipment} health={current.playerHealth} opponent={false} />
         <Arsenal values={current.playerArse} opponent={false} />
         <Hand values={current.playerHand} opponent={false} />
-        <ZonePile className={styles.playerGraveyard} label="Cemitério" values={current.playerDiscard} />
-        <ZonePile className={styles.playerPitch} label="Pitch" values={current.playerPitch} stacked />
-        <ZonePile className={styles.playerDeck} label="Deck" count={current.playerDeckCount ?? 0} topCard={current.playerDeckCard} hidden={!current.playerDeckCard || current.playerDeckCard.cardNumber === "CardBack"} />
-        <ZonePile className={styles.playerBanish} label="Banido" values={current.playerBanish} />
+        <div className={styles.playerZoneColumn}>
+          <ZonePile className={styles.playerGraveyard} label="Cemitério" values={current.playerDiscard} hoverCount />
+          <ZonePile className={styles.playerDeck} label="Deck" count={current.playerDeckCount ?? 0} topCard={current.playerDeckCard} hidden={!current.playerDeckCard || current.playerDeckCard.cardNumber === "CardBack"} hoverCount />
+          <ZonePile className={styles.playerBanish} label="Banido" values={current.playerBanish} hoverCount />
+        </div>
+        <ZonePile className={styles.playerPitch} label="Pitch" values={current.playerPitch} stacked hideCount />
 
         <CombatChain chain={current.activeChainLink} />
         <ActionDisplay card={actionCard} />
         {isFinal && <div className={`${styles.result} ${styles[result]}`}><small>Partida encerrada</small><strong>{result === "victory" ? "Você venceu" : result === "defeat" ? "Oponente venceu" : "Resultado indisponível"}</strong></div>}
 
-      </section>
+          </section>
 
-      <section className={styles.timeline} aria-label="Controles do replay">
+          <aside className={styles.sidebar} aria-label="Barra lateral da mesa" />
+        </div>
+
+        <section className={styles.timeline} aria-label="Controles do replay">
         <div className={styles.transport}>
-          <Link className={styles.backButton} href="/me" aria-label="Voltar para seus replays" title="Voltar para seus replays">←</Link>
-          <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot">↞</button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior">‹</button>
-          <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"}>{playing ? "Ⅱ" : "▶"}</button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot">›</button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot">↠</button>
+          <Link className={styles.backButton} href="/me" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
+          <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
+          <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot" title="Próximo snapshot"><TransportIcon name="next" /></button>
+          <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot" title="Último snapshot"><TransportIcon name="last" /></button>
         </div>
         <div className={styles.scrubber}>
           <div className={styles.turns}>{markers.map((marker, markerIndex) => {
@@ -380,7 +473,9 @@ export default function TalisharTable() {
           <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
         </div>
         <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
-      </section>
-    </main>
+        </section>
+        <CardPreview preview={preview?.frameIndex === index ? preview : null} onClose={closePreview} />
+      </main>
+    </PreviewContext.Provider>
   );
 }

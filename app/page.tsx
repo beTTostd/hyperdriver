@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import Brand from "./components/brand";
+import Icon from "./components/ui-icons";
 import { getCurrentUser } from "../lib/auth";
 import styles from "./landing.module.css";
 
@@ -15,7 +16,7 @@ export default async function LandingPage() {
       <nav className={styles.nav}>
         <Brand subtitle="Game intelligence" />
         <div className={styles.navActions}>
-          <Link className={styles.navCta} href={appLink}>Acessar plataforma <span aria-hidden="true">↗</span></Link>
+          <Link className={styles.navCta} href={appLink}>Acessar plataforma <Icon name="arrowUpRight" size={14} /></Link>
         </div>
       </nav>
       <section className={styles.hero}>
@@ -25,8 +26,8 @@ export default async function LandingPage() {
           <h1>Acompanhe<br />seus jogos.<br /><em>Evolua a cada partida.</em></h1>
           <p className={styles.lead}>Transforme suas sessões em decisões melhores com estatísticas claras, histórico organizado e uma visão precisa do seu desempenho.</p>
           <div className={styles.heroActions}>
-            <Link className={styles.primaryCta} href={appLink}>Acompanhar meus jogos <span aria-hidden="true">→</span></Link>
-            <Link className={styles.textCta} href="#recursos">Conheça a plataforma <span aria-hidden="true">↓</span></Link>
+            <Link className={styles.primaryCta} href={appLink}>Acompanhar meus jogos <Icon name="arrowRight" size={16} /></Link>
+            <Link className={styles.textCta} href="#recursos">Conheça a plataforma <Icon name="arrowDown" size={15} /></Link>
           </div>
         </div>
         <div className={styles.signalPanel} aria-label="Visão geral das estatísticas">

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import Icon from "../components/ui-icons";
 import styles from "../auth.module.css";
 
 export default function SetupPasswordForm({ token }: { token: string }) {
@@ -38,7 +39,7 @@ export default function SetupPasswordForm({ token }: { token: string }) {
     return (
       <div>
         <p className={styles.success} role="status">Senha criada. Você já pode entrar no Hyperdriver.</p>
-        <Link className={styles.link} href="/login">Ir para o login →</Link>
+        <Link className={styles.link} href="/login">Ir para o login <Icon name="arrowRight" size={15} /></Link>
       </div>
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Icon from "../components/ui-icons";
 import styles from "../auth.module.css";
 
 type User = {
@@ -139,7 +140,7 @@ export default function AdminPanel({
             <strong>Link de senha para {invite.username}</strong>
             <p className={styles.hint}>Este link substitui qualquer convite anterior, é válido por duas horas e só pode ser usado uma vez.</p>
             <code>{invite.url}</code>
-            <button className={styles.copy} type="button" onClick={copyInvite}>{copied ? "Copiado" : "Copiar link"}</button>
+            <button className={styles.copy} type="button" onClick={copyInvite}><Icon name="clipboard" size={14} />{copied ? "Copiado" : "Copiar link"}</button>
           </div>
         )}
       </div>
@@ -163,7 +164,7 @@ export default function AdminPanel({
                   onClick={() => regeneratePasswordLink(user)}
                   disabled={pendingAction !== null}
                 >
-                  {pendingAction?.id === user.id && pendingAction.type === "link" ? "Gerando…" : "Gerar link de senha"}
+                  <Icon name="key" size={14} />{pendingAction?.id === user.id && pendingAction.type === "link" ? "Gerando…" : "Gerar link de senha"}
                 </button>
                 <button
                   className={styles.deleteUserButton}
@@ -172,7 +173,7 @@ export default function AdminPanel({
                   disabled={pendingAction !== null || user.id === currentUserId}
                   title={user.id === currentUserId ? "Não é possível apagar a conta atual" : `Apagar ${user.username}`}
                 >
-                  {pendingAction?.id === user.id && pendingAction.type === "delete" ? "Apagando…" : "Apagar"}
+                  <Icon name="trash" size={14} />{pendingAction?.id === user.id && pendingAction.type === "delete" ? "Apagando…" : "Apagar"}
                 </button>
               </div>
             </li>

@@ -225,6 +225,9 @@
 
 .passwordLinkButton,
 .deleteUserButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 32px;
   padding: 6px 9px;
   border: 1px solid var(--line-strong);
@@ -275,6 +278,9 @@
 }
 
 .copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 10px;
   border: 1px solid rgba(184, 220, 255, 0.6);
   color: #b8dcff;

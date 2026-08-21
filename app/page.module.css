@@ -307,8 +307,8 @@
   border-color: var(--paper);
 }
 
-.openReplay span,
-.analyseReplay span {
+.openReplay :global(.uiIcon),
+.analyseReplay :global(.uiIcon) {
   font-family: var(--font-mono);
   font-size: 15px;
 }
