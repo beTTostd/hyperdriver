@@ -336,6 +336,7 @@
 }
 
 .artImage {
+  position: relative;
   display: block;
   aspect-ratio: 1;
   overflow: hidden;
@@ -344,9 +345,22 @@
 }
 
 .artImage img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.artImageFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--signal-red);
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 900;
 }
 
 .artMeta {
@@ -399,6 +413,46 @@
   text-align: center;
 }
 
+.catalogError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--signal-red);
+  color: var(--paper);
+  background: rgba(255, 77, 61, 0.1);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.catalogError button {
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid var(--signal-red);
+  color: var(--paper);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.catalogError button:hover {
+  color: var(--carbon);
+  background: var(--signal-red);
+}
+
+.refineHint {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(67, 166, 255, 0.35);
+  color: var(--muted);
+  background: rgba(67, 166, 255, 0.07);
+  font-size: 10px;
+}
+
 @media (max-width: 680px) {
   .profileCard {
     grid-template-columns: 1fr;
@@ -434,5 +488,10 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 5px;
+  }
+
+  .catalogError {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

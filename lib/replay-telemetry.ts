@@ -46,9 +46,47 @@ function visibleCardNumber(card: ReplayCard | undefined) {
   return value && value !== "CardBack" && value !== "NONE00" ? value : "";
 }
 
-function equipmentCardNumbers(document: ReplayDocument) {
+function payloadSignature(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) {
+    return `[${value.map(payloadSignature).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${payloadSignature(entry)}`)
+      .join(",")}}`;
+  }
+  return `${typeof value}:${JSON.stringify(value)}`;
+}
+
+function canonicalFrames(frames: ReplayFrame[]) {
+  const canonical: ReplayFrame[] = [];
+  const signatures: string[] = [];
+  const positions = new Map<string, number>();
+
+  for (const frame of frames) {
+    const signature = payloadSignature(frame.payload);
+    const previousIndex = positions.get(signature);
+    if (previousIndex !== undefined) {
+      for (const removed of signatures.splice(previousIndex + 1)) {
+        positions.delete(removed);
+      }
+      canonical.splice(previousIndex + 1);
+      continue;
+    }
+
+    positions.set(signature, canonical.length);
+    signatures.push(signature);
+    canonical.push(frame);
+  }
+
+  return canonical;
+}
+
+function equipmentCardNumbers(frames: ReplayFrame[]) {
   const cards = new Set<string>();
-  for (const frame of document.match.frames) {
+  for (const frame of frames) {
     for (const card of frame.payload.playerEquipment ?? []) {
       const value = visibleCardNumber(card);
       if (value && card.slot !== "Hero") cards.add(value);
@@ -117,9 +155,10 @@ function mergeSegment(cycle: TelemetryCycle, segment: TurnSegment) {
 }
 
 export function calculateReplayTelemetry(document: ReplayDocument): TelemetryCycle[] {
+  const frames = canonicalFrames(document.match.frames);
   const segments: TurnSegment[] = [];
   const segmentByKey = new Map<string, TurnSegment>();
-  const playerEquipment = equipmentCardNumbers(document);
+  const playerEquipment = equipmentCardNumbers(frames);
   let active: ActiveAttack | null = null;
 
   const commitAttack = () => {
@@ -136,7 +175,7 @@ export function calculateReplayTelemetry(document: ReplayDocument): TelemetryCyc
     active = null;
   };
 
-  for (const frame of document.match.frames) {
+  for (const frame of frames) {
     const key = turnKey(frame);
     if (!segmentByKey.has(key)) {
       const segment = emptySegment(frame);

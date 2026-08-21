@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { createServer as createHttpServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -21,11 +22,50 @@ let baseUrl;
 let serverOutput = "";
 let cookie;
 let databaseDirectory;
+let catalogServer;
+let catalogRequests = [];
 
 const developmentPreviewMeta =
   /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
 
 before(async () => {
+  catalogServer = createHttpServer((request, response) => {
+    const url = new URL(request.url, "http://catalog.test");
+    const name = url.searchParams.get("name") || "";
+    catalogRequests.push(url);
+
+    if (name === "failure") {
+      response.writeHead(503, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "unavailable" }));
+      return;
+    }
+
+    const cards = name === "many"
+      ? Array.from({ length: 100 }, (_, index) => ({
+          name: `Card ${String(index).padStart(3, "0")}`,
+          color: "blue",
+        }))
+      : [
+          { name: "Zulu", color: "blue" },
+          { name: "Éclair & Élan+ / O'Clock", color: "blue" },
+          { name: "Alpha", color: "yellow" },
+          { name: "Éclair & Élan+ / O'Clock", color: "red" },
+          { name: "Alpha", color: "red" },
+          { name: "Alpha", color: "blue" },
+          { name: "Zulu", color: "blue" },
+        ];
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      data: cards,
+      meta: { total: name === "many" ? 125 : cards.length },
+    }));
+  });
+  catalogServer.listen(0, "127.0.0.1");
+  await once(catalogServer, "listening");
+  const catalogAddress = catalogServer.address();
+  assert.notEqual(catalogAddress, null);
+  assert.equal(typeof catalogAddress, "object");
+
   const port = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
   databaseDirectory = mkdtempSync(join(tmpdir(), "hyperdriver-test-"));
@@ -58,6 +98,7 @@ before(async () => {
         APP_URL: baseUrl,
         DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
         UPLOADS_DIR: join(databaseDirectory, "uploads"),
+        CARD_CATALOG_API_URL: `http://127.0.0.1:${catalogAddress.port}/cards`,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -81,9 +122,14 @@ before(async () => {
 });
 
 after(async () => {
-  if (!application || application.exitCode !== null) return;
-  application.kill("SIGTERM");
-  await once(application, "exit");
+  if (application && application.exitCode === null) {
+    application.kill("SIGTERM");
+    await once(application, "exit");
+  }
+  if (catalogServer) {
+    catalogServer.close();
+    await once(catalogServer, "close");
+  }
   if (databaseDirectory) rmSync(databaseDirectory, { recursive: true, force: true });
 });
 
@@ -339,6 +385,83 @@ test("allows authenticated users to choose a FAB card avatar", async () => {
     body: JSON.stringify({ cardId: "not a card" }),
   });
   assert.equal(invalid.status, 400);
+
+  const catalogCardId = "eclair_and_elan_plus_oclock_red";
+  const catalogUpdate = await fetch(new URL("/api/profile/avatar", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ cardId: catalogCardId }),
+  });
+  assert.equal(catalogUpdate.status, 200);
+  assert.deepEqual(await catalogUpdate.json(), { ok: true, avatarCardId: catalogCardId });
+  const afterCatalogUpdate = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  assert.match(await afterCatalogUpdate.text(), /eclair_and_elan_plus_oclock_red_cropped\.webp/);
+});
+
+test("validates and authenticates avatar catalog searches", async () => {
+  const initialRequestCount = catalogRequests.length;
+  const anonymous = await fetch(new URL("/api/profile/avatar-options?name=alpha", baseUrl));
+  assert.equal(anonymous.status, 401);
+
+  const tooShort = await fetch(new URL("/api/profile/avatar-options?name=a", baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(tooShort.status, 400);
+
+  const tooLong = await fetch(new URL(`/api/profile/avatar-options?name=${"a".repeat(81)}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(tooLong.status, 400);
+  assert.equal(catalogRequests.length, initialRequestCount);
+});
+
+test("normalizes, groups, sorts and caches avatar catalog results", async () => {
+  const searchUrl = new URL("/api/profile/avatar-options?name=normalization", baseUrl);
+  const response = await fetch(searchUrl, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    options: [
+      { id: "alpha_red", label: "Alpha" },
+      { id: "eclair_and_elan_plus_oclock_red", label: "Éclair & Élan+ / O'Clock" },
+      { id: "zulu_blue", label: "Zulu" },
+    ],
+    hasMore: false,
+  });
+
+  const repeated = await fetch(searchUrl, { headers: { cookie } });
+  assert.equal(repeated.status, 200);
+  assert.equal(catalogRequests.filter((url) => url.searchParams.get("name") === "normalization").length, 1);
+});
+
+test("reports truncated and unavailable avatar catalog searches", async () => {
+  const many = await fetch(new URL("/api/profile/avatar-options?name=many", baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(many.status, 200);
+  const manyPayload = await many.json();
+  assert.deepEqual(Object.keys(manyPayload).sort(), ["hasMore", "options"]);
+  assert.equal(manyPayload.options.length, 100);
+  assert.equal(manyPayload.hasMore, true);
+
+  const failure = await fetch(new URL("/api/profile/avatar-options?name=failure", baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(failure.status, 502);
+});
+
+test("keeps the avatar picker responsive across catalog states", () => {
+  const source = readFileSync(join(projectRoot, "app/perfil/editar/profile-editor.tsx"), "utf8");
+  assert.match(source, /SEARCH_DELAY_MS = 300/);
+  assert.match(source, /SEARCH_CACHE_LIMIT = 20/);
+  assert.match(source, /RESULTS_PER_PAGE = 24/);
+  assert.match(source, /new AbortController\(\)/);
+  assert.match(source, /Tentar novamente/);
+  assert.match(source, /Nenhuma arte encontrada/);
+  assert.match(source, /Digite mais letras para refinar a busca/);
+  assert.match(source, /loading="lazy"/);
+  assert.match(source, /decoding="async"/);
+  assert.match(source, /onError=/);
+  assert.doesNotMatch(source, /setCards\(\[\]\)/);
 });
 
 test("serves the bundled replay fixture", async () => {
@@ -417,11 +540,23 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const adminLibrary = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
   const adminHtml = await adminLibrary.text();
   assert.match(adminHtml, /Alpha Hero/);
+  assert.match(adminHtml, /alpha_hero_cropped\.webp/);
+  assert.match(adminHtml, /beta_hero_cropped\.webp/);
   assert.match(adminHtml, /Modo de jogo/);
   assert.match(adminHtml, /Classic Constructed/);
   assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
-  assert.match(adminHtml, new RegExp(`/table\\?replay=${uploaded.replayId}`));
+  assert.match(adminHtml, new RegExp(`/table/${uploaded.replayId}`));
+  assert.doesNotMatch(adminHtml, /\/table\?replay=/);
   assert.match(adminHtml, new RegExp(`/telemetry/${uploaded.replayId}`));
+  assert.match(adminHtml, />Análise <svg/);
+  assert.doesNotMatch(adminHtml, /Análise da partida/);
+  assert.doesNotMatch(adminHtml, /Ver telemetria/);
+
+  const replayTable = await fetch(new URL(`/table/${uploaded.replayId}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(replayTable.status, 200);
+  assert.match(await replayTable.text(), /Montando a mesa/);
 
   const stored = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
@@ -468,6 +603,27 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(detailedTelemetryHtml, /data-tooltip="Bloqueado por carta: 3"/);
   assert.match(detailedTelemetryHtml, /data-tooltip="Dano oferecido: 6"/);
   assert.doesNotMatch(detailedTelemetryHtml, /Início parcial|Fim parcial/);
+
+  const rollbackDocument = rollbackTelemetryReplayDocument("7b2f1374-6c58-4f50-b070-2d69906825dd");
+  const rollbackUpload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(rollbackDocument),
+  });
+  assert.equal(rollbackUpload.status, 201);
+  const rollbackReplay = await rollbackUpload.json();
+  const rollbackTelemetry = await fetch(
+    new URL(`/telemetry/${rollbackReplay.replayId}`, baseUrl),
+    { headers: { cookie } },
+  );
+  assert.equal(rollbackTelemetry.status, 200);
+  const rollbackTelemetryHtml = await rollbackTelemetry.text();
+  assert.match(rollbackTelemetryHtml, /T(?:<!-- -->)?2/);
+  assert.match(rollbackTelemetryHtml, /data-tooltip="Dano recebido: 11"/);
+  assert.match(rollbackTelemetryHtml, /data-tooltip="Bloqueado por equipamento: 2"/);
+  assert.match(rollbackTelemetryHtml, /data-tooltip="Dano oferecido: 7"/);
+  assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Dano recebido: 33"/);
+  assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Bloqueado por equipamento: 6"/);
 
   const anonymousTelemetry = await fetch(
     new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
@@ -530,14 +686,14 @@ function telemetryReplayDocument(id) {
     { slot: "Hero", cardNumber: "alpha_hero", controller: "1" },
     { slot: "Head", cardNumber: "test_helmet", controller: "1" },
   ];
-  const frame = (sequence, turnNo, turnPlayer, activeChainLink, turnPhase = "A") => ({
+  const frame = (sequence, turnNo, turnPlayer, activeChainLink, turnPhase = "A", playerHealth = "20") => ({
     sequence,
     receivedAt: `2026-08-20T12:00:${String(sequence).padStart(2, "0")}.000Z`,
     payload: {
       turnNo: String(turnNo),
       turnPlayer: String(turnPlayer),
       turnPhase: { turnPhase },
-      playerHealth: turnPhase === "OVER" ? "0" : "20",
+      playerHealth: turnPhase === "OVER" ? "0" : playerHealth,
       opponentHealth: "20",
       playerEquipment: equipment,
       opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero", controller: "2" }],
@@ -571,10 +727,74 @@ function telemetryReplayDocument(id) {
         ])),
         frame(6, 1, 2, null),
         frame(7, 1, 2, attack(2, "overblock_attack_red", 3, 4, [{ cardNumber: "test_helmet", controller: "1" }])),
-        frame(8, 1, 2, null),
+        frame(8, 1, 2, null, "A", "17"),
         frame(9, 1, 1, attack(1, "player_attack_red", 6, 0)),
         frame(10, 1, 1, null),
         frame(11, 2, 2, attack(2, "lethal_attack_red", 4, 1, [{ cardNumber: "last_block_blue", controller: "1" }]), "OVER"),
+      ],
+    },
+  };
+}
+
+function rollbackTelemetryReplayDocument(id) {
+  const equipment = [
+    { slot: "Hero", cardNumber: "alpha_hero", controller: "1" },
+    { slot: "Head", cardNumber: "test_helmet", controller: "1" },
+  ];
+  const opponentEquipment = [{ slot: "Hero", cardNumber: "beta_hero", controller: "2" }];
+  const attack = (controller, cardNumber, totalPower, totalDefense, reactions = []) => ({
+    attackingCard: { controller: String(controller), cardNumber },
+    totalPower,
+    totalDefense,
+    reactions,
+  });
+  const frame = (sequence, payload) => ({
+    sequence,
+    receivedAt: `2026-08-20T12:00:${String(sequence).padStart(2, "0")}.000Z`,
+    payload,
+  });
+  const payload = (turnNo, turnPlayer, playerHealth, activeChainLink, turnPhase = "A") => ({
+    turnNo: String(turnNo),
+    turnPlayer: String(turnPlayer),
+    turnPhase: { turnPhase },
+    playerHealth: String(playerHealth),
+    opponentHealth: "20",
+    playerEquipment: equipment,
+    opponentEquipment,
+    activeChainLink,
+  });
+  const rollbackPoint = payload(2, 2, 20, null);
+  const opponentAttack = attack(2, "repeated_attack_red", 13, 0);
+  const opponentBlock = attack(2, "repeated_attack_red", 13, 2, [
+    { cardNumber: "test_helmet", controller: "1" },
+  ]);
+
+  return {
+    schemaVersion: "0.1.0",
+    exportedAt: "2026-08-20T12:01:00.000Z",
+    match: {
+      id,
+      schemaVersion: "0.1.0",
+      status: "finished",
+      startedAt: "2026-08-20T12:00:00.000Z",
+      endedAt: "2026-08-20T12:01:00.000Z",
+      frames: [
+        frame(1, payload(1, 1, 20, null)),
+        frame(2, payload(2, 2, 20, null)),
+        frame(3, payload(2, 2, 20, opponentAttack)),
+        frame(4, payload(2, 2, 20, opponentBlock)),
+        frame(5, payload(2, 2, 9, null)),
+        frame(6, { ...rollbackPoint, turnPlayer: "2", turnNo: "2" }),
+        frame(7, payload(2, 2, 20, opponentAttack)),
+        frame(8, payload(2, 2, 20, opponentBlock)),
+        frame(9, payload(2, 2, 20, opponentBlock)),
+        frame(10, payload(2, 2, 9, null)),
+        frame(11, { ...rollbackPoint, turnPlayer: "2", turnNo: "2" }),
+        frame(12, payload(2, 2, 20, opponentAttack)),
+        frame(13, payload(2, 2, 20, opponentBlock)),
+        frame(14, payload(2, 2, 9, null)),
+        frame(15, payload(2, 1, 9, attack(1, "player_attack_red", 7, 0))),
+        frame(16, payload(2, 1, 9, null, "OVER")),
       ],
     },
   };

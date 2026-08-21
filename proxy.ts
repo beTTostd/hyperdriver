@@ -11,6 +11,7 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.svg" ||
     pathname.startsWith("/api/auth/") ||
+    pathname === "/api/profile/avatar-options" ||
     pathname.startsWith("/api/replays")
   ) {
     return NextResponse.next();

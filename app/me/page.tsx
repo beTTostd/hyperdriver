@@ -2,7 +2,7 @@ import Link from "next/link";
 import AuthenticatedHeader from "../components/authenticated-header";
 import Icon from "../components/ui-icons";
 import { requireUser } from "../../lib/auth";
-import { cardImageUrl } from "../../lib/card-avatars";
+import { cardArtImageUrl } from "../../lib/card-avatars";
 import { listUserReplays } from "../../lib/replays";
 import styles from "../page.module.css";
 
@@ -71,11 +71,11 @@ export default async function ProfilePage() {
                   <span className={styles.cardIndex}>RPL / {String(index + 1).padStart(3, "0")}</span>
                   <div className={styles.matchArt} aria-label={`${playerHero} contra ${opponentHero}`}>
                     <figure className={styles.heroCard}>
-                      {replay.playerHeroId ? <img src={cardImageUrl(replay.playerHeroId)} alt={playerHero} /> : <Icon name="imageOff" size={24} />}
+                      {replay.playerHeroId ? <img src={cardArtImageUrl(replay.playerHeroId)} alt={playerHero} /> : <Icon name="imageOff" size={24} />}
                     </figure>
                     <span className={styles.versus}>VS</span>
                     <figure className={`${styles.heroCard} ${styles.opponentCard}`}>
-                      {replay.opponentHeroId ? <img src={cardImageUrl(replay.opponentHeroId)} alt={opponentHero} /> : <Icon name="imageOff" size={24} />}
+                      {replay.opponentHeroId ? <img src={cardArtImageUrl(replay.opponentHeroId)} alt={opponentHero} /> : <Icon name="imageOff" size={24} />}
                     </figure>
                   </div>
                   <div className={styles.replayInfo}>
@@ -90,8 +90,8 @@ export default async function ProfilePage() {
                     </dl>
                   </div>
                   <div className={styles.replayActions}>
-                    <Link className={styles.openReplay} href={`/table?replay=${replay.sourceMatchId}`}>Abrir replay <Icon name="arrowRight" size={15} /></Link>
-                    <Link className={styles.analyseReplay} href={`/telemetry/${replay.sourceMatchId}`}>Ver telemetria <Icon name="arrowUpRight" size={15} /></Link>
+                    <Link className={styles.openReplay} href={`/table/${replay.sourceMatchId}`}>Abrir replay <Icon name="arrowRight" size={15} /></Link>
+                    <Link className={styles.analyseReplay} href={`/telemetry/${replay.sourceMatchId}`}>Análise <Icon name="chart" size={15} /></Link>
                   </div>
                 </article>
               );

@@ -333,7 +333,7 @@ function ActionDisplay({ card }: { card?: Card }) {
   );
 }
 
-export default function TalisharTable() {
+export default function TalisharTable({ replayId }: { replayId?: string } = {}) {
   const [replay, setReplay] = useState<Replay | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -351,9 +351,10 @@ export default function TalisharTable() {
   const previewContext = useMemo(() => ({ showPreview, hideTransientPreview }), [showPreview, hideTransientPreview]);
 
   useEffect(() => {
-    const replayId = new URLSearchParams(window.location.search).get("replay");
-    const endpoint = replayId && isReplayId(replayId)
-      ? `/api/replays/${replayId}`
+    const legacyReplayId = new URLSearchParams(window.location.search).get("replay");
+    const requestedReplayId = replayId ?? legacyReplayId;
+    const endpoint = requestedReplayId && isReplayId(requestedReplayId)
+      ? `/api/replays/${requestedReplayId}`
       : "/api/replays/recorded-match";
     fetch(endpoint)
       .then((response) => {
@@ -364,7 +365,7 @@ export default function TalisharTable() {
         setReplay(data);
       })
       .catch((reason: Error) => setError(reason.message));
-  }, []);
+  }, [replayId]);
 
   const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
   const currentFrame = frames[index];

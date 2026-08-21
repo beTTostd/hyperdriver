@@ -79,19 +79,20 @@
 }
 
 .replayCard {
+  --art-width: 220px;
   --result-color: var(--signal-red);
   --result-wash: rgba(255, 77, 61, 0.055);
   --result-tint: rgba(255, 77, 61, 0.09);
   position: relative;
   display: grid;
-  grid-template-columns: 185px minmax(0, 1fr) 174px;
+  grid-template-columns: var(--art-width) minmax(0, 1fr) 164px;
   align-items: center;
-  gap: clamp(20px, 3.6vw, 48px);
-  min-height: 224px;
+  gap: clamp(12px, 1.5vw, 18px);
+  min-height: 160px;
   overflow: hidden;
-  padding: 26px clamp(20px, 3vw, 36px);
+  padding: 0 clamp(14px, 2vw, 22px) 0 0;
   border: 1px solid var(--line-strong);
-  background: linear-gradient(90deg, var(--result-wash), transparent 38%), var(--panel);
+  background: var(--panel);
 }
 
 .replayCard.victory {
@@ -104,6 +105,15 @@
   --result-color: var(--signal-red);
   --result-wash: rgba(255, 77, 61, 0.055);
   --result-tint: rgba(255, 77, 61, 0.09);
+}
+
+.replayCard::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 0 var(--art-width);
+  background: linear-gradient(90deg, var(--result-wash), transparent 46%);
+  content: "";
+  pointer-events: none;
 }
 
 .replayCard::after {
@@ -119,6 +129,7 @@
 
 .cardIndex {
   position: absolute;
+  z-index: 2;
   top: 10px;
   right: 12px;
   color: #5e6368;
@@ -129,38 +140,45 @@
 
 .matchArt {
   position: relative;
-  display: flex;
-  height: 168px;
-  align-items: center;
-  justify-content: center;
+  z-index: 1;
+  width: var(--art-width);
+  height: 100%;
+  min-height: 158px;
+  align-self: stretch;
+  overflow: hidden;
+  border-right: 1px solid var(--line-strong);
+  background: #181b1d;
 }
 
 .matchArt::before {
   position: absolute;
-  inset: 12px 0;
-  border-right: 1px solid rgba(255, 77, 61, 0.3);
-  border-left: 1px solid rgba(255, 77, 61, 0.3);
-  transform: skewX(-10deg);
+  z-index: 3;
+  top: -14px;
+  bottom: -14px;
+  left: 50%;
+  width: 4px;
+  background: var(--signal-red);
+  box-shadow: 0 0 0 1px rgba(9, 10, 11, 0.45);
+  transform: translateX(-50%) rotate(10deg);
   content: "";
 }
 
 .heroCard {
-  position: relative;
-  z-index: 2;
-  width: 84px;
-  height: 117px;
+  position: absolute;
+  z-index: 1;
+  inset: 0 46% 0 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid var(--paper);
   background: #181b1d;
-  box-shadow: 10px 12px 0 rgba(0, 0, 0, 0.26);
-  transform: rotate(-4deg);
+  clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%);
 }
 
 .heroCard img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center 20%;
+  filter: saturate(0.9) contrast(1.06);
 }
 
 .heroCard > span {
@@ -174,31 +192,37 @@
 }
 
 .opponentCard {
-  z-index: 1;
-  margin-left: -25px;
-  border-color: #676c70;
-  transform: rotate(5deg) translateY(5px);
+  inset: 0 0 0 46%;
+  clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
 }
 
 .versus {
   position: absolute;
-  z-index: 3;
-  bottom: 5px;
+  z-index: 4;
+  top: 50%;
   left: 50%;
-  padding: 6px 8px;
+  padding: 5px 7px 4px;
+  border: 1px solid var(--signal-red);
   color: var(--carbon);
   background: var(--paper);
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.06em;
-  transform: translateX(-50%) skewX(-10deg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.48);
+  transform: translate(-50%, -50%) skewX(-10deg);
 }
 
 .statusRow {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.replayInfo,
+.replayActions {
+  position: relative;
+  z-index: 1;
 }
 
 .statusRow time {
@@ -220,10 +244,10 @@
 }
 
 .replayInfo h3 {
-  margin: 15px 0 10px;
+  margin: 10px 0 7px;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: clamp(27px, 3vw, 39px);
+  font-size: clamp(25px, 2.7vw, 34px);
   font-weight: 900;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -241,7 +265,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px 25px;
-  margin: 20px 0 0;
+  margin: 12px 0 0;
 }
 
 .metadata div {
@@ -274,7 +298,7 @@
 .openReplay,
 .analyseReplay {
   display: flex;
-  min-height: 45px;
+  min-height: 39px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -315,12 +339,24 @@
 
 @media (max-width: 790px) {
   .replayCard {
-    grid-template-columns: 140px minmax(0, 1fr);
+    --art-width: 180px;
+    grid-template-columns: var(--art-width) minmax(0, 1fr);
+    gap: 0 14px;
+  }
+
+  .matchArt {
+    grid-row: 1 / span 2;
   }
 
   .replayActions {
-    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-column: 2;
     grid-template-columns: 1fr 1fr;
+    padding-bottom: 16px;
+  }
+
+  .replayInfo {
+    padding: 16px 0 8px;
   }
 }
 
@@ -330,23 +366,42 @@
   }
 
   .replayCard {
-    grid-template-columns: 1fr;
+    --art-width: clamp(130px, 38vw, 170px);
+    grid-template-columns: var(--art-width) minmax(0, 1fr);
+    gap: 0 10px;
+    padding-right: 10px;
   }
 
   .matchArt {
-    height: 150px;
+    min-height: 100%;
   }
 
   .replayInfo {
-    text-align: center;
+    min-width: 0;
   }
 
   .statusRow,
   .metadata {
-    justify-content: center;
+    gap: 8px;
   }
 
   .replayActions {
     grid-template-columns: 1fr;
+    padding-bottom: 12px;
+  }
+
+  .replayInfo h3 {
+    margin-top: 9px;
+    font-size: clamp(21px, 7vw, 28px);
+  }
+
+  .metadata {
+    margin-top: 9px;
+  }
+
+  .openReplay,
+  .analyseReplay {
+    padding-inline: 10px;
+    font-size: 9px;
   }
 }

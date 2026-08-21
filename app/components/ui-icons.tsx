@@ -5,6 +5,7 @@ export type IconName =
   | "arrowDown"
   | "arrowRight"
   | "arrowUpRight"
+  | "chart"
   | "check"
   | "chevronDown"
   | "chevronRight"
@@ -36,6 +37,7 @@ export default function Icon({ name, size = 16, className, ...props }: IconProps
     case "arrowDown": content = <path d="M12 4v15m-6-6 6 6 6-6" />; break;
     case "arrowRight": content = <path d="M4 12h15m-6-6 6 6-6 6" />; break;
     case "arrowUpRight": content = <path d="M5 19 19 5m-8 0h8v8" />; break;
+    case "chart": content = <><path d="M4 20V10h4v10M10 20V4h4v16M16 20v-7h4v7M3 20h18" /></>; break;
     case "check": content = <path d="m5 12 4 4L19 6" />; break;
     case "chevronDown": content = <path d="m6 9 6 6 6-6" />; break;
     case "chevronRight": content = <path d="m9 5 7 7-7 7" />; break;
