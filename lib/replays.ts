@@ -251,19 +251,24 @@ export async function listUserReplays(userId: number): Promise<ReplayMetadata[]>
 
   return Promise.all(replayList.map(async (replay) => {
     try {
-      const document = JSON.parse(await readFile(replayPath(replay.storageKey), "utf8")) as ReplayDocument;
-      const result = replayResult(document.match);
-      if (result === "unknown" || result === replay.result) return replay;
-      return getDb()
-        .update(replays)
-        .set({ result })
-        .where(eq(replays.id, replay.id))
-        .returning()
-        .get() ?? { ...replay, result };
+      const raw = await readFile(replayPath(replay.storageKey), "utf8");
+      return refreshReplayResult(replay, raw);
     } catch {
       return replay;
     }
   }));
+}
+
+async function refreshReplayResult(replay: ReplayMetadata, raw: string) {
+  const document = JSON.parse(raw) as ReplayDocument;
+  const result = replayResult(document.match);
+  if (result === "unknown" || result === replay.result) return replay;
+  return getDb()
+    .update(replays)
+    .set({ result })
+    .where(eq(replays.id, replay.id))
+    .returning()
+    .get() ?? { ...replay, result };
 }
 
 export function findUserReplay(userId: number, replayId: string): ReplayMetadata | null {
@@ -285,9 +290,16 @@ export function findUserReplay(userId: number, replayId: string): ReplayMetadata
 export async function readUserReplay(userId: number, replayId: string) {
   const replay = findUserReplay(userId, replayId);
   if (!replay) return null;
+  const raw = await readFile(replayPath(replay.storageKey), "utf8");
+  let metadata = replay;
+  try {
+    metadata = await refreshReplayResult(replay, raw);
+  } catch {
+    // Keep serving the replay when an older file cannot be parsed for metadata refresh.
+  }
   return {
-    metadata: replay,
-    raw: await readFile(replayPath(replay.storageKey), "utf8"),
+    metadata,
+    raw,
   };
 }
 

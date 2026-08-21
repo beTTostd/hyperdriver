@@ -99,3 +99,56 @@ test("identifies a lethal final attack as a player victory", () => {
 
   assert.equal(replayResult(replay), "victory");
 });
+
+test("uses the final turn player for surrender results", () => {
+  const frame = (turnPlayer) => ({
+    payload: {
+      turnPhase: { turnPhase: "OVER" },
+      playerHealth: "20",
+      opponentHealth: "20",
+      turnPlayer,
+    },
+  });
+
+  assert.equal(replayResult({ frames: [frame("1")] }), "victory");
+  assert.equal(replayResult({ frames: [frame("2")] }), "defeat");
+});
+
+test("keeps explicit, health and lethal attack results ahead of surrender fallback", () => {
+  const overFrame = (payload = {}, indicators = {}) => ({
+    indicators,
+    payload: {
+      turnPhase: { turnPhase: "OVER" },
+      playerHealth: "20",
+      opponentHealth: "20",
+      turnPlayer: "2",
+      ...payload,
+    },
+  });
+
+  assert.equal(replayResult({
+    summary: { winner: "1" },
+    frames: [overFrame({}, { winner: "2" })],
+  }), "defeat");
+  assert.equal(replayResult({ frames: [overFrame({ playerHealth: "0" })] }), "defeat");
+  assert.equal(replayResult({ frames: [overFrame({
+    opponentHealth: "5",
+    activeChainLink: {
+      attackingCard: { controller: "1" },
+      totalPower: 5,
+      totalDefense: 0,
+    },
+  })] }), "victory");
+});
+
+test("keeps incomplete final results unknown", () => {
+  assert.equal(replayResult({
+    frames: [{
+      payload: {
+        turnPhase: { turnPhase: "OVER" },
+        playerHealth: "20",
+        opponentHealth: "20",
+      },
+    }],
+  }), "unknown");
+});

@@ -267,6 +267,11 @@ function finalFrame(match) {
   }) ?? match?.frames?.at(-1);
 }
 
+function isOverFrame(frame) {
+  const phase = frame?.payload?.turnPhase?.turnPhase;
+  return typeof phase === "string" && phase.trim().toUpperCase() === "OVER";
+}
+
 function pendingAttackResult(frame) {
   const attack = frame?.payload?.activeChainLink;
   const controller = String(attack?.attackingCard?.controller ?? "");
@@ -298,6 +303,8 @@ export function replayResult(match) {
   if (attackResult && targetHealth !== null && targetHealth > 0 && damage >= targetHealth) {
     return attackResult;
   }
+
+  if (isOverFrame(frame)) return winnerResult(frame?.payload?.turnPlayer) ?? "unknown";
 
   return "unknown";
 }
