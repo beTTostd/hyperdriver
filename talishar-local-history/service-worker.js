@@ -7,11 +7,26 @@ import {
   isFinished,
   normalizeCompletion,
 } from "./replay-state.js";
+import {
+  createKeyedTaskQueue,
+  isValidImportedCandidate,
+  matchesToPrune,
+  MAX_BRIDGE_PAYLOAD_BYTES,
+  MAX_FRAME_BYTES,
+  MAX_IMPORT_BYTES,
+  MAX_MATCH_BYTES,
+  MAX_STORED_MATCHES,
+  MAX_TOTAL_BYTES,
+  utf8Size,
+  UUID_PATTERN,
+} from "./extension-policy.js";
 
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
 const SCHEMA_VERSION = "0.2.0";
+const CAPTURE_ERROR_KEY = "captureError";
+const enqueueCapture = createKeyedTaskQueue();
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -51,6 +66,40 @@ async function listMatches() {
   return withStore("readonly", (store) => store.getAll());
 }
 
+async function enforceRetention(protectedId = null, reservedSlots = 0, incomingBytes = 0) {
+  const matches = await listMatches();
+  const projected = [
+    ...matches,
+    ...Array.from({ length: reservedSlots }, (_, index) => ({
+      id: `__reserved-${index}`,
+      status: "recording",
+    })),
+  ];
+  const ids = matchesToPrune(projected, protectedId, incomingBytes);
+  await Promise.all(ids.map(deleteMatch));
+  const remaining = matches.filter((match) => !ids.includes(match.id));
+  const remainingBytes = remaining.reduce(
+    (total, match) => total + (Number(match.capturedBytes) || utf8Size(JSON.stringify(match))),
+    incomingBytes,
+  );
+  if (
+    matches.length + reservedSlots - ids.length > MAX_STORED_MATCHES ||
+    remainingBytes > MAX_TOTAL_BYTES
+  ) {
+    throw new Error("O limite de armazenamento local foi atingido. Exporte ou apague uma gravação antes de continuar.");
+  }
+}
+
+async function setCaptureError(message) {
+  await chrome.storage.local.set({
+    [CAPTURE_ERROR_KEY]: { at: new Date().toISOString(), message },
+  });
+}
+
+async function clearCaptureError() {
+  await chrome.storage.local.remove(CAPTURE_ERROR_KEY);
+}
+
 function gameMode(match) {
   const frame = match.frames.find((item) => {
     const value = item.payload?.initialLoad?.gameFormat;
@@ -66,8 +115,9 @@ function sanitize(value, seen = new WeakSet()) {
 
   if (Array.isArray(value)) return value.map((item) => sanitize(item, seen));
 
-  const cleaned = {};
+  const cleaned = Object.create(null);
   for (const [key, item] of Object.entries(value)) {
+    if (["__proto__", "constructor", "prototype"].includes(key)) continue;
     if (/^(authkey|auth_key|token|cookie|password|sessionid|session_id)$/i.test(key)) {
       cleaned[key] = "[REDACTED]";
     } else {
@@ -86,22 +136,34 @@ function parseAndSanitize(raw) {
 }
 
 function parseImportedMatch(raw) {
-  const document = compactReplayDocument(parseAndSanitize(raw));
-  if (!document || typeof document !== "object" || Array.isArray(document) || "rawText" in document) {
+  if (typeof raw !== "string" || utf8Size(raw) > MAX_IMPORT_BYTES) {
+    throw new Error("O replay excede o limite de 50 MB.");
+  }
+
+  let parsed;
+  try {
+    parsed = sanitize(JSON.parse(raw));
+  } catch {
     throw new Error("O arquivo não contém JSON válido.");
   }
+
+  const rawCandidate = parsed?.match && typeof parsed.match === "object" && !Array.isArray(parsed.match)
+    ? parsed.match
+    : parsed;
+  if (!isValidImportedCandidate(rawCandidate)) {
+    throw new Error("O JSON não parece ser um replay válido do Talishar.");
+  }
+
+  const document = compactReplayDocument(parsed);
 
   const candidate = document.match && typeof document.match === "object" && !Array.isArray(document.match)
     ? document.match
     : document;
-  if (typeof candidate.id !== "string" || !candidate.id || !Array.isArray(candidate.frames) || candidate.frames.length === 0) {
-    throw new Error("O JSON não parece ser um replay do Talishar.");
-  }
 
   const match = {
     ...candidate,
     schemaVersion: candidate.schemaVersion || document.schemaVersion || SCHEMA_VERSION,
-    status: candidate.status || "recording",
+    status: "recording",
     frames: candidate.frames,
     summary: {
       turn: null,
@@ -113,16 +175,24 @@ function parseImportedMatch(raw) {
     syncError: null,
     exportedAt: candidate.exportedAt || document.exportedAt || null
   };
-  return normalizeCompletion(match);
+  const normalized = normalizeCompletion(match);
+  normalized.capturedBytes = utf8Size(JSON.stringify(normalized));
+  if (normalized.capturedBytes > MAX_MATCH_BYTES) {
+    throw new Error("O replay compactado excede o limite local de 40 MB.");
+  }
+  return normalized;
 }
 
 async function importMatch(raw) {
   const match = parseImportedMatch(raw);
   const existing = await getMatch(match.id);
   const existingIsCurrent = existing
+    && Array.isArray(existing.frames)
     && existing.frames.length >= match.frames.length
     && (existing.status === "finished" || match.status !== "finished");
   if (existingIsCurrent) return { imported: false, id: match.id };
+  const existingBytes = Number(existing?.capturedBytes) || (existing ? utf8Size(JSON.stringify(existing)) : 0);
+  await enforceRetention(match.id, existing ? 0 : 1, Math.max(0, match.capturedBytes - existingBytes));
   await putMatch(match);
   return { imported: true, id: match.id };
 }
@@ -158,39 +228,62 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
       activePlayer: null,
       winner: null
     },
-    exportedAt: null
+    exportedAt: null,
+    capturedBytes: 0
   };
 }
 
-async function ensureMatch(message) {
-  let pageSessionId = message.pageSessionId;
+async function ensureMatch(message, rotateFinished = true) {
+  let pageSessionId = typeof message.pageSessionId === "string" && UUID_PATTERN.test(message.pageSessionId)
+    ? message.pageSessionId
+    : crypto.randomUUID();
   const existing = await getMatch(pageSessionId);
   if (existing && existing.status !== "finished") {
     const compacted = compactReplayMatch(existing);
     await putMatch(compacted);
     return compacted;
   }
+  if (existing?.status === "finished" && !rotateFinished) return compactReplayMatch(existing);
   if (existing?.status === "finished") pageSessionId = crypto.randomUUID();
+  await enforceRetention(pageSessionId, !existing || existing.status === "finished" ? 1 : 0);
   const match = makeMatch(pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
   await putMatch(match);
   return match;
 }
 
 async function recordFrame(message) {
-  const match = await ensureMatch(message);
+  if (typeof message.pageSessionId !== "string" || !UUID_PATTERN.test(message.pageSessionId)) {
+    throw new Error("A sessão de captura é inválida.");
+  }
+  const match = await ensureMatch(message, false);
   if (match.status === "finished") return;
+
+  if (typeof message.payload !== "string" || utf8Size(message.payload) > MAX_BRIDGE_PAYLOAD_BYTES) {
+    throw new Error("Uma atualização do Talishar excedeu o limite de captura de 5 MB.");
+  }
 
   const payload = compactReplayPayload(parseAndSanitize(message.payload));
   const indicator = indicators(payload);
   const frame = {
     sequence: match.frames.length + 1,
     receivedAt: message.receivedAt || new Date().toISOString(),
-    endpoint: message.endpoint,
+    endpoint: "/GetUpdateSSE.php",
     indicators: indicator,
     payload
   };
 
+  const frameBytes = utf8Size(JSON.stringify(frame));
+  if (frameBytes > MAX_FRAME_BYTES) {
+    throw new Error("Um snapshot compactado excedeu o limite local de 512 KB.");
+  }
+  const capturedBytes = Number(match.capturedBytes) || utf8Size(JSON.stringify(match));
+  if (capturedBytes + frameBytes > MAX_MATCH_BYTES) {
+    throw new Error("A partida atingiu o limite local de 40 MB. Exporte ou apague gravações antigas.");
+  }
+  await enforceRetention(match.id, 0, frameBytes);
+
   match.frames.push(frame);
+  match.capturedBytes = capturedBytes + frameBytes;
   match.updatedAt = frame.receivedAt;
   match.summary = {
     turn: indicator.turn ?? match.summary.turn,
@@ -232,16 +325,41 @@ async function exportMatch(match) {
   return { filename: fileName(match) };
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+function senderOrigin(sender) {
+  const url = sender?.url || sender?.tab?.url;
+  if (typeof url === "string" && url.startsWith(`chrome-extension://${chrome.runtime.id}/`)) {
+    return `chrome-extension://${chrome.runtime.id}`;
+  }
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isTrustedMessage(message, sender) {
+  const origin = senderOrigin(sender);
+  if (["capture-session-start", "capture-frame"].includes(message?.type)) {
+    return origin === "https://talishar.net";
+  }
+  if (["list-sync-pending", "get-sync-match", "mark-match-synced", "mark-sync-error"].includes(message?.type)) {
+    return ["https://hyperdriver.com.br", "https://beta.hyperdriver.com.br"].includes(origin);
+  }
+  return origin === `chrome-extension://${chrome.runtime.id}`;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (!message?.type) return;
+    if (!isTrustedMessage(message, sender)) throw new Error("Origem da mensagem não autorizada.");
     if (message.type === "capture-session-start") {
       const match = await ensureMatch(message);
+      await clearCaptureError();
       sendResponse({ ok: true, pageSessionId: match.id });
       return;
     }
     if (message.type === "capture-frame") {
-      await recordFrame(message);
+      await enqueueCapture(message.pageSessionId, () => recordFrame(message));
       sendResponse({ ok: true });
       return;
     }
@@ -256,9 +374,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "list-matches") {
       const matches = (await listMatches())
         .map((match) => normalizeCompletion(compactReplayMatch(match)))
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+        .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
       await Promise.all(matches.map(putMatch));
-      sendResponse({ ok: true, matches: matches.map((match) => ({
+      const captureState = await chrome.storage.local.get(CAPTURE_ERROR_KEY);
+      sendResponse({ ok: true, captureError: captureState[CAPTURE_ERROR_KEY] || null, matches: matches.map((match) => ({
         id: match.id,
         status: match.status,
         startedAt: match.startedAt,
@@ -329,6 +448,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await deleteMatch(message.id);
       sendResponse({ ok: true });
     }
-  })().catch((error) => sendResponse({ ok: false, error: error.message }));
+  })().catch(async (error) => {
+    if (message?.type === "capture-frame") await setCaptureError(error.message).catch(() => undefined);
+    sendResponse({ ok: false, error: error.message });
+  });
   return true;
 });

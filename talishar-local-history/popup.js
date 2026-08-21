@@ -70,12 +70,15 @@ function render(matches) {
     const exportButton = document.createElement("button");
     exportButton.textContent = "Baixar JSON";
     exportButton.addEventListener("click", async () => {
+      exportButton.disabled = true;
       try {
         await send({ type: "export-match", id: match.id });
         setStatus("JSON baixado em Downloads/Talishar Local History.");
         await load();
       } catch (error) {
         setStatus(error.message, true);
+      } finally {
+        exportButton.disabled = false;
       }
     });
     const deleteButton = document.createElement("button");
@@ -83,8 +86,15 @@ function render(matches) {
     deleteButton.textContent = "Apagar";
     deleteButton.addEventListener("click", async () => {
       if (!confirm("Apagar este histórico local? O arquivo já baixado não será removido.")) return;
-      await send({ type: "delete-match", id: match.id });
-      await load();
+      deleteButton.disabled = true;
+      try {
+        await send({ type: "delete-match", id: match.id });
+        await load();
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        deleteButton.disabled = false;
+      }
     });
     actions.append(exportButton, deleteButton);
     item.append(title, metadata, syncState, actions);
@@ -96,7 +106,10 @@ async function load() {
   try {
     const response = await send({ type: "list-matches" });
     render(response.matches);
-    setStatus("");
+    setStatus(
+      response.captureError?.message || "",
+      Boolean(response.captureError),
+    );
   } catch (error) {
     setStatus(error.message, true);
   }

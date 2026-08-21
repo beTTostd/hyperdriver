@@ -192,6 +192,7 @@ export function compactReplayMatch(match) {
     "result",
     "exportedAt",
     "gameFormat",
+    "capturedBytes",
   ]) || {};
   if (match.capture) {
     compacted.capture = compactRecord(match.capture, ["source", "startedAt", "pageUrl", "privacy"]);

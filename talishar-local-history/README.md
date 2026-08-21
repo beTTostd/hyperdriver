@@ -11,6 +11,8 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 - Permite baixar ou apagar cada partida pelo popup da extensão.
 - Permite importar um ou vários JSONs já salvos pelo popup da extensão.
 - Permite solicitar a sincronização de todos os replays pendentes de uma vez.
+- Serializa snapshots da mesma partida para evitar perda de quadros em rajadas de eventos.
+- Descarta atualizações recebidas depois que a partida já foi concluída.
 - Ao abrir `hyperdriver.com.br` ou `beta.hyperdriver.com.br` autenticado, envia automaticamente partidas completas ainda não sincronizadas.
 - Mantém a cópia local e o arquivo baixado depois do envio.
 
@@ -31,6 +33,9 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 
 - A extensão acessa somente Talishar e os dois domínios oficiais do Hyperdriver declarados no manifesto.
 - Partidas incompletas não são enviadas; falhas de autenticação ou conexão mantêm o replay pendente no navegador.
+- Importações são limitadas a 50 MB e validadas antes de entrar no histórico local.
+- A extensão mantém no máximo 100 partidas e 200 MB de replays compactados. Ao atingir um limite, remove apenas partidas concluídas que já foram exportadas ou sincronizadas; nunca remove silenciosamente um replay sem cópia.
+- Atualizações da página passam por validação de origem, endpoint, tamanho e frequência antes de serem encaminhadas ao armazenamento.
 - O upload usa a sessão já aberta no site e passa a pertencer à conta autenticada na primeira sincronização bem-sucedida.
 - Não são solicitadas permissões de histórico, cookies, abas ou acesso genérico a todos os sites.
 - Campos conhecidos como `authKey`, `token`, `cookie`, `password` e IDs de sessão são redigidos antes do armazenamento.
