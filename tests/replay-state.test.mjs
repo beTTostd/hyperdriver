@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   compactReplayDocument,
   compactReplayPayload,
+  replayResult,
 } from "../talishar-local-history/replay-state.js";
 
 test("compacts Talishar payloads to the state used by the replay", () => {
@@ -78,4 +79,23 @@ test("compacts imported replay envelopes as well", () => {
   assert.equal(compacted.match.chatLog, undefined);
   assert.equal(compacted.match.frames[0].payload.chatLog, undefined);
   assert.deepEqual(compacted.match.frames[0].payload.turnPhase, { turnPhase: "OVER" });
+});
+
+test("identifies a lethal final attack as a player victory", () => {
+  const replay = {
+    frames: [{
+      payload: {
+        turnPhase: { turnPhase: "OVER" },
+        playerHealth: "9",
+        opponentHealth: "5",
+        activeChainLink: {
+          attackingCard: { controller: "1" },
+          totalPower: 5,
+          totalDefense: 0,
+        },
+      },
+    }],
+  };
+
+  assert.equal(replayResult(replay), "victory");
 });

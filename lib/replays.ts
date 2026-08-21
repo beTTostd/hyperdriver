@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { replays } from "../db/schema";
-import { compactReplayDocument } from "../talishar-local-history/replay-state.js";
+import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -154,13 +154,7 @@ function extractedMetadata(document: ReplayDocument) {
   const finalFrame = [...match.frames].reverse().find(
     (frame) => frame.payload.turnPhase?.turnPhase === "OVER",
   ) ?? last;
-  const playerHealth = numeric(finalFrame.payload.playerHealth);
-  const opponentHealth = numeric(finalFrame.payload.opponentHealth);
-  const result = playerHealth !== null && playerHealth <= 0
-    ? "defeat"
-    : opponentHealth !== null && opponentHealth <= 0
-      ? "victory"
-      : "unknown";
+  const result = replayResult(match);
 
   return {
     schemaVersion: document.schemaVersion,
@@ -242,13 +236,29 @@ export async function saveReplayUpload(userId: number, raw: string) {
   }
 }
 
-export function listUserReplays(userId: number): ReplayMetadata[] {
-  return getDb()
+export async function listUserReplays(userId: number): Promise<ReplayMetadata[]> {
+  const replayList = getDb()
     .select()
     .from(replays)
     .where(eq(replays.userId, userId))
     .orderBy(desc(replays.startedAt), desc(replays.uploadedAt))
     .all();
+
+  return Promise.all(replayList.map(async (replay) => {
+    try {
+      const document = JSON.parse(await readFile(replayPath(replay.storageKey), "utf8")) as ReplayDocument;
+      const result = replayResult(document.match);
+      if (result === "unknown" || result === replay.result) return replay;
+      return getDb()
+        .update(replays)
+        .set({ result })
+        .where(eq(replays.id, replay.id))
+        .returning()
+        .get() ?? { ...replay, result };
+    } catch {
+      return replay;
+    }
+  }));
 }
 
 export function findUserReplay(userId: number, replayId: string): ReplayMetadata | null {

@@ -244,6 +244,63 @@ export function isCompleteMatch(match) {
   return match.frames.some((frame) => isFinished(frame.indicators || indicators(frame.payload)));
 }
 
+function numeric(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function winnerResult(value) {
+  if (value === 1 || value === "1") return "victory";
+  if (value === 2 || value === "2") return "defeat";
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (["player", "you", "self", "local"].includes(normalized)) return "victory";
+  if (["opponent", "enemy", "other"].includes(normalized)) return "defeat";
+  return null;
+}
+
+function finalFrame(match) {
+  return [...(Array.isArray(match?.frames) ? match.frames : [])].reverse().find((frame) => {
+    const phase = frame?.payload?.turnPhase?.turnPhase;
+    return typeof phase === "string" && phase.toUpperCase() === "OVER";
+  }) ?? match?.frames?.at(-1);
+}
+
+function pendingAttackResult(frame) {
+  const attack = frame?.payload?.activeChainLink;
+  const controller = String(attack?.attackingCard?.controller ?? "");
+  const power = numeric(attack?.totalPower);
+  const defense = numeric(attack?.totalDefense);
+  if (!power || !["1", "2"].includes(controller)) return null;
+  const damage = Math.max(0, power - (defense ?? 0));
+  if (damage <= 0) return null;
+  return controller === "1" ? "victory" : "defeat";
+}
+
+export function replayResult(match) {
+  const frame = finalFrame(match);
+  const winner = winnerResult(frame?.indicators?.winner)
+    ?? winnerResult(match?.summary?.winner);
+  if (winner) return winner;
+
+  const playerHealth = numeric(frame?.payload?.playerHealth);
+  const opponentHealth = numeric(frame?.payload?.opponentHealth);
+  if (playerHealth !== null && playerHealth <= 0) return "defeat";
+  if (opponentHealth !== null && opponentHealth <= 0) return "victory";
+
+  const attack = frame?.payload?.activeChainLink;
+  const attackResult = pendingAttackResult(frame);
+  const power = numeric(attack?.totalPower);
+  const defense = numeric(attack?.totalDefense);
+  const damage = power !== null ? Math.max(0, power - (defense ?? 0)) : 0;
+  const targetHealth = attackResult === "victory" ? opponentHealth : playerHealth;
+  if (attackResult && targetHealth !== null && targetHealth > 0 && damage >= targetHealth) {
+    return attackResult;
+  }
+
+  return "unknown";
+}
+
 export function normalizeCompletion(match) {
   if (!isCompleteMatch(match) || match.status === "finished") return match;
   const finalFrame = [...match.frames].reverse().find((frame) => isFinished(frame.indicators || indicators(frame.payload)));

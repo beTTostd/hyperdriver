@@ -26,15 +26,23 @@ type BuiltAvatarOption = CardAvatarOption & {
   colorRank: number;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const name = new URL(request.url).searchParams.get("name")?.trim() || "";
+
   try {
-    const firstPage = await fetchPage(0);
+    const firstPage = await fetchPage(0, name);
+
+    if (name) {
+      const options = buildOptions([firstPage], false);
+      return NextResponse.json({ options, total: options.length });
+    }
+
     const total = Math.max(firstPage.meta?.total || firstPage.data.length, firstPage.data.length);
     const offsets = Array.from(
       { length: Math.ceil(total / PAGE_SIZE) - 1 },
       (_, index) => (index + 1) * PAGE_SIZE,
     );
-    const pages = await Promise.all(offsets.map(fetchPage));
+    const pages = await Promise.all(offsets.map((offset) => fetchPage(offset)));
     const options = buildOptions([firstPage, ...pages]);
 
     return NextResponse.json({ options, total: options.length });
@@ -46,8 +54,11 @@ export async function GET() {
   }
 }
 
-async function fetchPage(offset: number): Promise<CatalogResponse & { data: CatalogCard[] }> {
-  const response = await fetch(`${CARD_API_URL}?limit=${PAGE_SIZE}&offset=${offset}`, {
+async function fetchPage(offset: number, name = ""): Promise<CatalogResponse & { data: CatalogCard[] }> {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+  if (name) params.set("name", name);
+
+  const response = await fetch(`${CARD_API_URL}?${params}`, {
     headers: { accept: "application/json" },
     next: { revalidate: 86_400 },
   });
@@ -57,7 +68,7 @@ async function fetchPage(offset: number): Promise<CatalogResponse & { data: Cata
   return { ...payload, data: Array.isArray(payload.data) ? payload.data : [] };
 }
 
-function buildOptions(pages: CatalogResponse[]): CardAvatarOption[] {
+function buildOptions(pages: CatalogResponse[], includeFallbacks = true): CardAvatarOption[] {
   const options = new Map<string, BuiltAvatarOption>();
 
   for (const card of pages.flatMap((page) => page.data || [])) {
@@ -73,10 +84,12 @@ function buildOptions(pages: CatalogResponse[]): CardAvatarOption[] {
     options.set(groupId, { id, label: card.name, colorRank });
   }
 
-  for (const fallback of CARD_AVATAR_OPTIONS) {
-    const groupId = fallback.id.replace(/_(red|yellow|blue)$/, "");
-    const color = fallback.id.match(/_(red|yellow|blue)$/)?.[1] || "";
-    if (!options.has(groupId)) options.set(groupId, { ...fallback, colorRank: avatarColorRank(color) });
+  if (includeFallbacks) {
+    for (const fallback of CARD_AVATAR_OPTIONS) {
+      const groupId = fallback.id.replace(/_(red|yellow|blue)$/, "");
+      const color = fallback.id.match(/_(red|yellow|blue)$/)?.[1] || "";
+      if (!options.has(groupId)) options.set(groupId, { ...fallback, colorRank: avatarColorRank(color) });
+    }
   }
 
   return [...options.values()].map(({ id, label }) => ({ id, label })).sort((a, b) => {

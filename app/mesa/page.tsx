@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BrandSymbol } from "../components/brand";
+import { replayResult } from "../../talishar-local-history/replay-state.js";
 import styles from "./page.module.css";
 
 type Card = {
@@ -63,7 +64,7 @@ type Payload = {
 };
 
 type Frame = { sequence: number; receivedAt: string; payload: Payload };
-type Replay = { match: { startedAt?: string; frames: Frame[] } };
+type Replay = { match: { startedAt?: string; frames: Frame[]; summary?: { winner?: string | number }; } };
 type EquipmentKey = "playerEquipment" | "opponentEquipment";
 
 const isReplayId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) || /^\d+$/.test(value);
@@ -328,6 +329,7 @@ export default function TalisharTable() {
   const playerEquipment = completeFirstEquipment(current.playerEquipment, playerSetupEquipment, index === 0);
   const actionCard = !current.activeChainLink?.attackingCard && current.lastPlayedCard?.cardNumber && !attackCards.has(current.lastPlayedCard.cardNumber) ? current.lastPlayedCard : undefined;
   const isFinal = current.turnPhase?.turnPhase === "OVER";
+  const result = replayResult(replay?.match ?? { frames: [] });
 
   return (
     <main className={styles.replay}>
@@ -356,12 +358,13 @@ export default function TalisharTable() {
 
         <CombatChain chain={current.activeChainLink} />
         <ActionDisplay card={actionCard} />
-        {isFinal && <div className={styles.result}><small>Partida encerrada</small><strong>Oponente venceu · 2 × 0</strong></div>}
+        {isFinal && <div className={`${styles.result} ${styles[result]}`}><small>Partida encerrada</small><strong>{result === "victory" ? "Você venceu" : result === "defeat" ? "Oponente venceu" : "Resultado indisponível"}</strong></div>}
 
       </section>
 
       <section className={styles.timeline} aria-label="Controles do replay">
         <div className={styles.transport}>
+          <Link className={styles.backButton} href="/me" aria-label="Voltar para seus replays" title="Voltar para seus replays">←</Link>
           <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot">↞</button>
           <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior">‹</button>
           <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"}>{playing ? "Ⅱ" : "▶"}</button>
@@ -372,7 +375,7 @@ export default function TalisharTable() {
           <div className={styles.turns}>{markers.map((marker, markerIndex) => {
             const next = markers[markerIndex + 1]?.index ?? frames.length;
             const selected = index >= marker.index && index < next;
-            return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.key} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
+            return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
           })}</div>
           <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
         </div>

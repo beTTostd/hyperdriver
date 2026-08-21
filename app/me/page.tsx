@@ -13,6 +13,10 @@ function cardName(cardId: string | null) {
     .join(" ");
 }
 
+function firstName(name: string) {
+  return name.trim().split(/\s+/)[0];
+}
+
 function resultLabel(result: string) {
   if (result === "victory") return "Vitória";
   if (result === "defeat") return "Derrota";
@@ -35,7 +39,7 @@ function gameModeLabel(gameMode: string | null) {
 
 export default async function ProfilePage() {
   const currentUser = await requireUser("/me");
-  const replayList = listUserReplays(currentUser.id);
+  const replayList = await listUserReplays(currentUser.id);
   return (
     <main className={styles.page}>
       <AuthenticatedHeader
@@ -58,6 +62,8 @@ export default async function ProfilePage() {
             {replayList.map((replay, index) => {
               const playerHero = cardName(replay.playerHeroId);
               const opponentHero = cardName(replay.opponentHeroId);
+              const playerHeroFirstName = firstName(playerHero);
+              const opponentHeroFirstName = firstName(opponentHero);
               const startedAt = new Date(replay.startedAt);
               return (
                 <article className={`${styles.replayCard} ${styles[replay.result] ?? ""}`} key={replay.id}>
@@ -76,7 +82,7 @@ export default async function ProfilePage() {
                       <span className={styles.finished}>{resultLabel(replay.result)}</span>
                       <time dateTime={startedAt.toISOString()}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(startedAt)}</time>
                     </div>
-                    <h3>{playerHero} <span>vs.</span> {opponentHero}</h3>
+                    <h3>{playerHeroFirstName} <span>vs.</span> {opponentHeroFirstName}</h3>
                     <dl className={styles.metadata}>
                       <div><dt>Turno final</dt><dd>{replay.finalTurn ?? "—"}</dd></div>
                       <div><dt>Modo de jogo</dt><dd>{gameModeLabel(replay.gameMode)}</dd></div>

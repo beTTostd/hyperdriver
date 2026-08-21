@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CARD_AVATAR_OPTIONS,
@@ -23,19 +23,10 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cards, setCards] = useState<readonly CardAvatarOption[]>(CARD_AVATAR_OPTIONS);
-  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [isLoadingCards, setIsLoadingCards] = useState(false);
   const [visibleCardCount, setVisibleCardCount] = useState(96);
 
-  const filteredCards = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase();
-    if (!normalizedSearch) return cards;
-    return cards.filter((card) =>
-      `${card.label} ${card.id.replace(/_(red|yellow|blue)$/, "")}`.toLocaleLowerCase().includes(normalizedSearch),
-    );
-  }, [cards, search]);
-
-  const visibleCards = filteredCards.slice(0, visibleCardCount);
-  const isLoadingCards = isModalOpen && !catalogLoaded && !error;
+  const visibleCards = cards.slice(0, visibleCardCount);
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -55,32 +46,56 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
   }, [isModalOpen, pendingCardId]);
 
   useEffect(() => {
-    if (!isModalOpen || catalogLoaded) return;
+    if (!isModalOpen) return;
 
-    let cancelled = false;
-    fetch("/api/profile/avatar-options")
-      .then(async (response) => {
-        const data = await response.json() as { options?: CardAvatarOption[]; error?: string };
-        if (!response.ok || !Array.isArray(data.options)) {
-          throw new Error(data.error || "Não foi possível carregar as cartas.");
-        }
-        if (!cancelled) {
+    const normalizedSearch = search.trim();
+    if (!normalizedSearch) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      fetch(`/api/profile/avatar-options?name=${encodeURIComponent(normalizedSearch)}`, { signal: controller.signal })
+        .then(async (response) => {
+          const data = await response.json() as { options?: CardAvatarOption[]; error?: string };
+          if (!response.ok || !Array.isArray(data.options)) {
+            throw new Error(data.error || "Não foi possível buscar as cartas.");
+          }
           setCards(data.options);
-          setCatalogLoaded(true);
-        }
-      })
-      .catch((requestError) => {
-        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar as cartas.");
-      });
+        })
+        .catch((requestError) => {
+          if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+          if (requestError instanceof Error && requestError.name === "AbortError") return;
+          setCards([]);
+          setError(requestError instanceof Error ? requestError.message : "Não foi possível buscar as cartas.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsLoadingCards(false);
+        });
+    }, 250);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [catalogLoaded, isModalOpen]);
+  }, [isModalOpen, search]);
+
+  function changeSearch(value: string) {
+    const normalizedSearch = value.trim();
+    setSearch(value);
+    setVisibleCardCount(96);
+    setError(null);
+    if (normalizedSearch) {
+      setCards([]);
+      setIsLoadingCards(true);
+    } else {
+      setCards(CARD_AVATAR_OPTIONS);
+      setIsLoadingCards(false);
+    }
+  }
 
   function openModal() {
     setError(null);
     setSearch("");
+    setCards(CARD_AVATAR_OPTIONS);
     setVisibleCardCount(96);
     setIsModalOpen(true);
   }
@@ -183,18 +198,18 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                 autoFocus
                 type="search"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por nome ou ID"
+                onChange={(event) => changeSearch(event.target.value)}
+                placeholder="Buscar por nome"
                 aria-label="Buscar artes"
               />
             </label>
 
             <div className={styles.resultsHeader}>
-              <span>{filteredCards.length} {filteredCards.length === 1 ? "arte encontrada" : "artes encontradas"}</span>
-              <span>{isLoadingCards ? "Carregando catálogo completo…" : "Selecione uma para aplicar"}</span>
+              <span>{cards.length} {cards.length === 1 ? "arte encontrada" : "artes encontradas"}</span>
+              <span>{isLoadingCards ? "Buscando no catálogo…" : search.trim() ? "Selecione uma para aplicar" : "Digite um nome para buscar"}</span>
             </div>
 
-            {filteredCards.length > 0 ? (
+            {cards.length > 0 ? (
               <>
                 <div className={styles.artGrid}>
                   {visibleCards.map((card) => {
@@ -220,18 +235,20 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                     );
                   })}
                 </div>
-                {visibleCards.length < filteredCards.length && (
+                {visibleCards.length < cards.length && (
                   <button
                     className={styles.loadMoreButton}
                     type="button"
                     onClick={() => setVisibleCardCount((count) => count + 96)}
                   >
-                    Carregar mais cartas ({filteredCards.length - visibleCards.length} restantes)
+                    Carregar mais cartas ({cards.length - visibleCards.length} restantes)
                   </button>
                 )}
               </>
             ) : (
-              <p className={styles.emptyState}>Nenhuma arte encontrada para “{search}”.</p>
+              <p className={styles.emptyState} role={isLoadingCards ? "status" : undefined}>
+                {isLoadingCards ? "Buscando artes…" : `Nenhuma arte encontrada para “${search}”.`}
+              </p>
             )}
           </section>
         </div>
