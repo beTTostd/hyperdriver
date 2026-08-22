@@ -129,7 +129,13 @@
       throw error;
     }
 
-    if (syncHelpers.shouldReload(window.location.pathname, result.uploaded, result.interrupted)) {
+    if (syncHelpers.shouldReload(
+      window.location.pathname,
+      result.uploaded,
+      result.interrupted,
+      result.processed > 0,
+      result.errors.length > 0,
+    )) {
       window.location.reload();
     }
     return result.uploaded;

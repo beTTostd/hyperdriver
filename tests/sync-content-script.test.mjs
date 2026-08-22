@@ -43,6 +43,8 @@ test("recognizes only /replays as the list page eligible for reload", () => {
   assert.equal(isReplayLibraryPathname("/table/abc"), false);
   assert.equal(isReplayLibraryPathname("/telemetry/abc"), false);
   assert.equal(shouldReload("/replays", 1), true);
+  assert.equal(shouldReload("/replays", 0, false, true), true);
+  assert.equal(shouldReload("/replays", 0, false, true, true), false);
   assert.equal(shouldReload("/me", 1), false);
   assert.equal(shouldReload("/table/abc", 1), false);
   assert.equal(shouldReload("/telemetry/abc", 1), false);

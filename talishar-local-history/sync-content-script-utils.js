@@ -15,8 +15,8 @@
     return pathname === "/replays";
   }
 
-  function shouldReload(pathname, uploaded, interrupted = false) {
-    return uploaded > 0 && !interrupted && isReplayLibraryPathname(pathname);
+  function shouldReload(pathname, uploaded, interrupted = false, completed = false, hasErrors = false) {
+    return (uploaded > 0 || completed) && !interrupted && !hasErrors && isReplayLibraryPathname(pathname);
   }
 
   async function readResponseBody(response) {
