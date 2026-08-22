@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const token = createSession(user.id);
   const response = NextResponse.json({
     ok: true,
-    redirectTo: safeRelativePath(typeof body?.returnTo === "string" ? body.returnTo : "/me"),
+    redirectTo: safeRelativePath(typeof body?.returnTo === "string" ? body.returnTo : "/replays"),
   });
   response.cookies.set({
     name: SESSION_COOKIE,

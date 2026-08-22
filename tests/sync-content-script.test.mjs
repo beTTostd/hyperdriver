@@ -34,17 +34,19 @@ test("calculates simulated upload progress from completed replays", () => {
   assert.equal(progressPercentage(2, 0), 0);
 });
 
-test("recognizes only /me as the list page eligible for reload", () => {
-  const { isMePathname, shouldReload } = loadSyncHelpers();
+test("recognizes only /replays as the list page eligible for reload", () => {
+  const { isReplayLibraryPathname, shouldReload } = loadSyncHelpers();
 
-  assert.equal(isMePathname("/me"), true);
-  assert.equal(isMePathname("/me/"), false);
-  assert.equal(isMePathname("/table/abc"), false);
-  assert.equal(isMePathname("/telemetry/abc"), false);
-  assert.equal(shouldReload("/me", 1), true);
+  assert.equal(isReplayLibraryPathname("/replays"), true);
+  assert.equal(isReplayLibraryPathname("/replays/"), false);
+  assert.equal(isReplayLibraryPathname("/me"), false);
+  assert.equal(isReplayLibraryPathname("/table/abc"), false);
+  assert.equal(isReplayLibraryPathname("/telemetry/abc"), false);
+  assert.equal(shouldReload("/replays", 1), true);
+  assert.equal(shouldReload("/me", 1), false);
   assert.equal(shouldReload("/table/abc", 1), false);
   assert.equal(shouldReload("/telemetry/abc", 1), false);
-  assert.equal(shouldReload("/me", 1, true), false);
+  assert.equal(shouldReload("/replays", 1, true), false);
 });
 
 test("continues sequential uploads after a failed replay", async () => {

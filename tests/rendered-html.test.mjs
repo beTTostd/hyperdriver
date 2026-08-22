@@ -149,20 +149,25 @@ test("renders development preview metadata", async () => {
   assert.doesNotMatch(html, /Flesh and Blood|Talishar/);
 });
 
-test("redirects authenticated users from the landing page to their profile", async () => {
+test("redirects authenticated users from the landing page to the replay library", async () => {
   const response = await fetch(new URL("/", baseUrl), {
     headers: { cookie },
     redirect: "manual",
   });
-  const legacyResponse = await fetch(new URL("/replays", baseUrl), {
+  const legacyResponse = await fetch(new URL("/me", baseUrl), {
     headers: { cookie },
     redirect: "manual",
   });
+  const replayLibrary = await fetch(new URL("/replays", baseUrl), {
+    headers: { cookie },
+  });
 
   assert.equal(response.status, 307);
-  assert.equal(new URL(response.headers.get("location"), baseUrl).pathname, "/me");
+  assert.equal(new URL(response.headers.get("location"), baseUrl).pathname, "/replays");
   assert.equal(legacyResponse.status, 307);
-  assert.equal(new URL(legacyResponse.headers.get("location"), baseUrl).pathname, "/me");
+  assert.equal(new URL(legacyResponse.headers.get("location"), baseUrl).pathname, "/replays");
+  assert.equal(replayLibrary.status, 200);
+  assert.match(await replayLibrary.text(), /Replays recentes/);
 });
 
 test("requires authentication and supports one-time user invitations", async () => {
@@ -252,7 +257,7 @@ test("requires authentication and supports one-time user invitations", async () 
   });
   assert.equal(userAdminPage.status, 307);
   assert.equal(new URL(userAdminPage.headers.get("location"), baseUrl).pathname, "/");
-  const userProfilePage = await fetch(new URL("/me", baseUrl), {
+  const userProfilePage = await fetch(new URL("/replays", baseUrl), {
     headers: { cookie: userCookie },
   });
   assert.equal(userProfilePage.status, 200);
@@ -291,7 +296,7 @@ test("requires authentication and supports one-time user invitations", async () 
     redirect: "manual",
   });
   assert.equal(expiredSession.status, 307);
-  assert.match(expiredSession.headers.get("location") ?? "", /\/login/);
+  assert.equal(new URL(expiredSession.headers.get("location"), baseUrl).pathname, "/replays");
   const oldPasswordLogin = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -330,13 +335,16 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.equal(deletedLogin.status, 401);
 });
 
-test("renders the replay route and removes the legacy telemetry route", async () => {
-  const [tableResponse, legacyTelemetryResponse, invalidTelemetryResponse] = await Promise.all([
+test("renders canonical replay routes and validates legacy redirects", async () => {
+  const [tableResponse, legacyTelemetryResponse, invalidTelemetryResponse, invalidTableResponse, invalidCanonicalTelemetryResponse, invalidCanonicalTableResponse] = await Promise.all([
     fetch(new URL("/table", baseUrl), { headers: { cookie } }),
     fetch(new URL("/valor", baseUrl), { headers: { cookie } }),
     fetch(new URL("/telemetry/not-a-replay", baseUrl), { headers: { cookie } }),
+    fetch(new URL("/table/not-a-replay", baseUrl), { headers: { cookie } }),
+    fetch(new URL("/replays/not-a-replay", baseUrl), { headers: { cookie } }),
+    fetch(new URL("/replays/not-a-replay/table", baseUrl), { headers: { cookie } }),
   ]);
-  const replayLibraryResponse = await fetch(new URL("/me", baseUrl), {
+  const replayLibraryResponse = await fetch(new URL("/replays", baseUrl), {
     headers: { cookie },
   });
   const editProfileResponse = await fetch(new URL("/me/profile", baseUrl), {
@@ -347,6 +355,9 @@ test("renders the replay route and removes the legacy telemetry route", async ()
   assert.match(await tableResponse.text(), /Montando a mesa/);
   assert.equal(legacyTelemetryResponse.status, 404);
   assert.equal(invalidTelemetryResponse.status, 404);
+  assert.equal(invalidTableResponse.status, 404);
+  assert.equal(invalidCanonicalTelemetryResponse.status, 404);
+  assert.equal(invalidCanonicalTableResponse.status, 404);
   assert.equal(replayLibraryResponse.status, 200);
   const replayLibraryHtml = await replayLibraryResponse.text();
   assert.match(replayLibraryHtml, /Replays recentes/);
@@ -364,7 +375,7 @@ test("renders the replay route and removes the legacy telemetry route", async ()
 });
 
 test("allows authenticated users to choose a FAB card avatar", async () => {
-  const initial = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  const initial = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   const initialHtml = await initial.text();
   assert.match(initialHtml, /dash_io_cropped\.webp/);
 
@@ -376,7 +387,7 @@ test("allows authenticated users to choose a FAB card avatar", async () => {
   assert.equal(updated.status, 200);
   assert.deepEqual(await updated.json(), { ok: true, avatarCardId: "crown_of_providence" });
 
-  const afterUpdate = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  const afterUpdate = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   assert.match(await afterUpdate.text(), /crown_of_providence_cropped\.webp/);
 
   const invalid = await fetch(new URL("/api/profile/avatar", baseUrl), {
@@ -394,7 +405,7 @@ test("allows authenticated users to choose a FAB card avatar", async () => {
   });
   assert.equal(catalogUpdate.status, 200);
   assert.deepEqual(await catalogUpdate.json(), { ok: true, avatarCardId: catalogCardId });
-  const afterCatalogUpdate = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  const afterCatalogUpdate = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   assert.match(await afterCatalogUpdate.text(), /eclair_and_elan_plus_oclock_red_cropped\.webp/);
 });
 
@@ -537,26 +548,36 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).replayId, uploaded.replayId);
 
-  const adminLibrary = await fetch(new URL("/me", baseUrl), { headers: { cookie } });
+  const adminLibrary = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   const adminHtml = await adminLibrary.text();
   assert.match(adminHtml, /Alpha Hero/);
   assert.match(adminHtml, /alpha_hero_cropped\.webp/);
   assert.match(adminHtml, /beta_hero_cropped\.webp/);
   assert.match(adminHtml, /Modo de jogo/);
   assert.match(adminHtml, /Classic Constructed/);
+  assert.match(adminHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
   assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
-  assert.match(adminHtml, new RegExp(`/table/${uploaded.replayId}`));
+  assert.match(adminHtml, new RegExp(`/replays/${uploaded.replayId}/table`));
+  assert.doesNotMatch(adminHtml, new RegExp(`/table/${uploaded.replayId}`));
   assert.doesNotMatch(adminHtml, /\/table\?replay=/);
-  assert.match(adminHtml, new RegExp(`/telemetry/${uploaded.replayId}`));
+  assert.match(adminHtml, new RegExp(`/replays/${uploaded.replayId}`));
+  assert.doesNotMatch(adminHtml, new RegExp(`/telemetry/${uploaded.replayId}`));
   assert.match(adminHtml, />Análise <svg/);
   assert.doesNotMatch(adminHtml, /Análise da partida/);
   assert.doesNotMatch(adminHtml, /Ver telemetria/);
 
-  const replayTable = await fetch(new URL(`/table/${uploaded.replayId}`, baseUrl), {
+  const replayTable = await fetch(new URL(`/replays/${uploaded.replayId}/table`, baseUrl), {
     headers: { cookie },
   });
   assert.equal(replayTable.status, 200);
   assert.match(await replayTable.text(), /Montando a mesa/);
+
+  const legacyTable = await fetch(new URL(`/table/${uploaded.replayId}`, baseUrl), {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(legacyTable.status, 307);
+  assert.equal(new URL(legacyTable.headers.get("location"), baseUrl).pathname, `/replays/${uploaded.replayId}/table`);
 
   const stored = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
@@ -565,7 +586,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const storedDocument = await stored.json();
   assert.equal(storedDocument.match.id, "4f37f7bb-2747-4f0c-8a7e-1ec3dcae6a01");
   assert.equal(storedDocument.match.frames[0].payload.chatLog, undefined);
-  const telemetry = await fetch(new URL(`/telemetry/${uploaded.replayId}`, baseUrl), {
+  const telemetry = await fetch(new URL(`/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie },
   });
   const telemetryHtml = await telemetry.text();
@@ -585,6 +606,13 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(telemetryHtml, /data-tooltip="Dano oferecido: 7"/);
   assert.doesNotMatch(telemetryHtml, /Início parcial|Fim parcial/);
 
+  const legacyTelemetry = await fetch(new URL(`/telemetry/${uploaded.replayId}`, baseUrl), {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(legacyTelemetry.status, 307);
+  assert.equal(new URL(legacyTelemetry.headers.get("location"), baseUrl).pathname, `/replays/${uploaded.replayId}`);
+
   const telemetryDocument = telemetryReplayDocument("6684ca31-240a-44df-ae6f-5185878bcbf2");
   const telemetryUpload = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
@@ -594,7 +622,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.equal(telemetryUpload.status, 201);
   const telemetryReplay = await telemetryUpload.json();
   const detailedTelemetry = await fetch(
-    new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
+    new URL(`/replays/${telemetryReplay.replayId}`, baseUrl),
     { headers: { cookie } },
   );
   assert.equal(detailedTelemetry.status, 200);
@@ -620,7 +648,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.equal(rollbackUpload.status, 201);
   const rollbackReplay = await rollbackUpload.json();
   const rollbackTelemetry = await fetch(
-    new URL(`/telemetry/${rollbackReplay.replayId}`, baseUrl),
+    new URL(`/replays/${rollbackReplay.replayId}`, baseUrl),
     { headers: { cookie } },
   );
   assert.equal(rollbackTelemetry.status, 200);
@@ -634,28 +662,93 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.doesNotMatch(rollbackTelemetryHtml, /data-tooltip="Vida ganha:/);
 
   const anonymousTelemetry = await fetch(
-    new URL(`/telemetry/${telemetryReplay.replayId}`, baseUrl),
+    new URL(`/replays/${telemetryReplay.replayId}`, baseUrl),
     { redirect: "manual" },
   );
   assert.equal(anonymousTelemetry.status, 307);
-  assert.match(anonymousTelemetry.headers.get("location") ?? "", /\/login\?returnTo=/);
+  assert.match(anonymousTelemetry.headers.get("location") ?? "", /\/login\?returnTo=%2Freplays%2F/);
 
   const isolatedCookie = await createTestUser("isolated-user");
-  const isolatedLibrary = await fetch(new URL("/me", baseUrl), {
+  const isolatedLibrary = await fetch(new URL("/replays", baseUrl), {
     headers: { cookie: isolatedCookie },
   });
-  assert.doesNotMatch(await isolatedLibrary.text(), /Alpha Hero/);
+  const isolatedLibraryHtml = await isolatedLibrary.text();
+  assert.doesNotMatch(isolatedLibraryHtml, /Alpha Hero/);
+  assert.doesNotMatch(isolatedLibraryHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
   const privateReplay = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie: isolatedCookie },
   });
   assert.equal(privateReplay.status, 404);
-  const privateTelemetry = await fetch(new URL(`/telemetry/${uploaded.replayId}`, baseUrl), {
+  const privateTelemetry = await fetch(new URL(`/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie: isolatedCookie },
   });
   assert.equal(privateTelemetry.status, 404);
 });
 
-function replayDocument(id, complete) {
+test("lets admins list and open replays owned by different users", async () => {
+  const alphaCookie = await createTestUser("partidas-alpha");
+  const betaCookie = await createTestUser("partidas-beta");
+  const alphaReplayId = "a1111111-1111-4111-8111-111111111111";
+  const betaReplayId = "b2222222-2222-4222-8222-222222222222";
+
+  for (const [userCookie, replayId, startedAt] of [
+    [alphaCookie, alphaReplayId, "2026-08-20T12:00:00.000Z"],
+    [betaCookie, betaReplayId, "2026-08-21T12:00:00.000Z"],
+  ]) {
+    const upload = await fetch(new URL("/api/replays", baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: userCookie },
+      body: JSON.stringify(replayDocument(replayId, true, startedAt)),
+    });
+    assert.equal(upload.status, 201);
+  }
+
+  const adminPage = await fetch(new URL("/admin/partidas", baseUrl), { headers: { cookie } });
+  assert.equal(adminPage.status, 200);
+  const adminHtml = await adminPage.text();
+  assert.match(adminHtml, /Todas as partidas/);
+  assert.match(adminHtml, /partidas-alpha/);
+  assert.match(adminHtml, /partidas-beta/);
+  assert.ok(adminHtml.indexOf("partidas-beta") < adminHtml.indexOf("partidas-alpha"));
+  assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}/table`));
+  assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}`));
+
+  const userAdminPage = await fetch(new URL("/admin/partidas", baseUrl), {
+    headers: { cookie: alphaCookie },
+    redirect: "manual",
+  });
+  assert.equal(userAdminPage.status, 307);
+  assert.equal(new URL(userAdminPage.headers.get("location"), baseUrl).pathname, "/");
+
+  const adminTable = await fetch(new URL(`/replays/${alphaReplayId}/table`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(adminTable.status, 200);
+  assert.match(await adminTable.text(), /Montando a mesa/);
+
+  const adminReplayData = await fetch(new URL(`/api/replays/${alphaReplayId}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(adminReplayData.status, 200);
+  assert.equal((await adminReplayData.json()).match.id, alphaReplayId);
+
+  const adminAnalysis = await fetch(new URL(`/replays/${alphaReplayId}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(adminAnalysis.status, 200);
+  assert.match(await adminAnalysis.text(), /Análise da/);
+
+  const userReplayData = await fetch(new URL(`/api/replays/${alphaReplayId}`, baseUrl), {
+    headers: { cookie: betaCookie },
+  });
+  assert.equal(userReplayData.status, 404);
+  const userAnalysis = await fetch(new URL(`/replays/${alphaReplayId}`, baseUrl), {
+    headers: { cookie: betaCookie },
+  });
+  assert.equal(userAnalysis.status, 404);
+});
+
+function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
   return {
     schemaVersion: "0.1.0",
     exportedAt: "2026-08-20T12:01:00.000Z",
@@ -663,7 +756,7 @@ function replayDocument(id, complete) {
       id,
       schemaVersion: "0.1.0",
       status: complete ? "finished" : "recording",
-      startedAt: "2026-08-20T12:00:00.000Z",
+      startedAt,
       endedAt: complete ? "2026-08-20T12:01:00.000Z" : null,
       frames: [{
         sequence: 1,

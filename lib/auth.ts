@@ -107,7 +107,7 @@ export function findUserBySessionToken(token: string): AuthUser | null {
   };
 }
 
-export async function requireUser(returnTo = "/me"): Promise<AuthUser> {
+export async function requireUser(returnTo = "/replays"): Promise<AuthUser> {
   const user = await getCurrentUser();
   if (user) return user;
   redirect(loginPath(returnTo));
@@ -119,7 +119,7 @@ export async function requireAdmin(returnTo = "/admin"): Promise<AuthUser> {
   return user;
 }
 
-export function loginPath(returnTo = "/me"): string {
+export function loginPath(returnTo = "/replays"): string {
   const safeReturnTo = safeRelativePath(returnTo);
   return `/login?returnTo=${encodeURIComponent(safeReturnTo)}`;
 }

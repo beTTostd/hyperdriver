@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
+import ReplayLibraryPage from "./replay-library";
 
-export default function LegacyReplaysPage() {
-  redirect("/me");
-}
+export default ReplayLibraryPage;

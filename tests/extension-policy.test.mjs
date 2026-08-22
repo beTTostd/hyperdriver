@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  canAppendCaptureFrame,
+  captureMatchesPage,
   createKeyedTaskQueue,
   isValidImportedCandidate,
   matchesToPrune,
   MAX_STORED_MATCHES,
   MAX_TOTAL_BYTES,
 } from "../talishar-local-history/extension-policy.js";
+
+test("does not append repeated snapshots after a match is finished", () => {
+  assert.equal(canAppendCaptureFrame({ status: "recording" }), true);
+  assert.equal(canAppendCaptureFrame({ status: "finished" }), false);
+});
+
+test("associates a capture id with one Talishar game URL", () => {
+  const match = { capture: { pageUrl: "/game/play/2026809" } };
+  assert.equal(captureMatchesPage(match, "/game/play/2026809"), true);
+  assert.equal(captureMatchesPage(match, "/game/play/2026810"), false);
+});
 
 test("serializes capture tasks for the same match", async () => {
   const enqueue = createKeyedTaskQueue();
@@ -69,6 +82,21 @@ test("retention removes only old finished matches that have a safe copy", () => 
     sync: null,
   }));
   assert.deepEqual(matchesToPrune(withoutCopies), []);
+});
+
+test("retention protects a match synchronized with either environment", () => {
+  const matches = Array.from({ length: MAX_STORED_MATCHES + 1 }, (_, index) => ({
+    id: `match-${index}`,
+    status: "finished",
+    updatedAt: new Date(2026, 0, index + 1).toISOString(),
+    sync: index === 0 ? {
+      targets: {
+        "https://beta.hyperdriver.com.br": { uploadedAt: "2026-02-01T00:00:00.000Z" },
+      },
+    } : null,
+  }));
+
+  assert.deepEqual(matchesToPrune(matches), ["match-0"]);
 });
 
 test("retention also enforces the total replay byte budget", () => {

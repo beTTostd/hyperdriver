@@ -407,7 +407,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [frames.length, closePreview]);
 
-  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/me">Voltar para seus replays</Link></div></main>;
+  if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/replays">Voltar para seus replays</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div role="status" aria-live="polite"><BrandSymbol className={styles.loadingMark} /><p>Montando a mesa…</p></div></main>;
 
   const opponentPermanents = [...list(current.opponentPermanents), ...list(current.opponentItems), ...list(current.opponentAuras), ...list(current.opponentAllies)];
@@ -458,7 +458,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
 
         <section className={styles.timeline} aria-label="Controles do replay">
         <div className={styles.transport}>
-          <Link className={styles.backButton} href="/me" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
+          <Link className={styles.backButton} href="/replays" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
           <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
           <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
           <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>

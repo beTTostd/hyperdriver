@@ -4,8 +4,16 @@ import {
   compactReplayDocument,
   compactReplayPayload,
   indicators,
+  isReplaySyncedToOrigin,
+  markReplaySynced,
+  markReplaySyncError,
+  replaySyncProgress,
+  replaySyncState,
   replayResult,
 } from "../talishar-local-history/replay-state.js";
+
+const betaOrigin = "https://beta.hyperdriver.com.br";
+const productionOrigin = "https://hyperdriver.com.br";
 
 test("compacts Talishar payloads to the state used by the replay", () => {
   const compacted = compactReplayPayload({
@@ -82,6 +90,56 @@ test("compacts imported replay envelopes as well", () => {
   assert.equal(compacted.match.chatLog, undefined);
   assert.equal(compacted.match.frames[0].payload.chatLog, undefined);
   assert.deepEqual(compacted.match.frames[0].payload.turnPhase, { turnPhase: "OVER" });
+});
+
+test("migrates legacy synchronization only to its recorded origin", () => {
+  const legacy = {
+    sync: {
+      uploadedAt: "2026-08-20T12:00:00.000Z",
+      origin: betaOrigin,
+      username: "driver",
+      replayId: "remote-id",
+    },
+    syncError: { at: "2026-08-20T12:01:00.000Z", message: "Falhou." },
+  };
+
+  const state = replaySyncState(legacy);
+  assert.equal(state.targets[betaOrigin].replayId, "remote-id");
+  assert.equal(state.targets[productionOrigin], undefined);
+  assert.equal(state.errors[betaOrigin].message, "Falhou.");
+  assert.equal(isReplaySyncedToOrigin(legacy, betaOrigin), true);
+  assert.equal(isReplaySyncedToOrigin(legacy, productionOrigin), false);
+});
+
+test("tracks synchronization and errors independently per environment", () => {
+  const match = {};
+  markReplaySyncError(match, betaOrigin, "Beta indisponível.", "2026-08-20T12:00:00.000Z");
+  markReplaySynced(match, productionOrigin, {
+    username: "driver",
+    replayId: "production-id",
+  }, "2026-08-20T12:01:00.000Z");
+
+  assert.equal(match.sync.errors[betaOrigin].message, "Beta indisponível.");
+  assert.equal(match.sync.errors[productionOrigin], undefined);
+  assert.equal(match.sync.targets[betaOrigin], undefined);
+  assert.equal(match.sync.targets[productionOrigin].replayId, "production-id");
+  assert.deepEqual(replaySyncProgress(match), { synced: 1, total: 2 });
+
+  markReplaySynced(match, betaOrigin, {
+    username: "driver",
+    replayId: "beta-id",
+  }, "2026-08-20T12:02:00.000Z");
+  assert.equal(match.sync.errors[betaOrigin], undefined);
+  assert.deepEqual(replaySyncProgress(match), { synced: 2, total: 2 });
+});
+
+test("reports popup synchronization progress for zero, one and two targets", () => {
+  const match = {};
+  assert.deepEqual(replaySyncProgress(match), { synced: 0, total: 2 });
+  markReplaySynced(match, betaOrigin, {}, "2026-08-20T12:00:00.000Z");
+  assert.deepEqual(replaySyncProgress(match), { synced: 1, total: 2 });
+  markReplaySynced(match, productionOrigin, {}, "2026-08-20T12:01:00.000Z");
+  assert.deepEqual(replaySyncProgress(match), { synced: 2, total: 2 });
 });
 
 test("identifies a lethal final attack as a player victory", () => {

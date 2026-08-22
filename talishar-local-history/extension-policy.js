@@ -27,6 +27,14 @@ export function createKeyedTaskQueue() {
   };
 }
 
+export function canAppendCaptureFrame(match) {
+  return match?.status !== "finished";
+}
+
+export function captureMatchesPage(match, pageUrl) {
+  return Boolean(match && match.capture?.pageUrl === pageUrl);
+}
+
 export function isValidImportedCandidate(candidate) {
   return Boolean(
     candidate &&
@@ -59,7 +67,11 @@ export function matchesToPrune(matches, protectedId = null, incomingBytes = 0) {
     .filter((match) => (
       match.id !== protectedId &&
       match.status === "finished" &&
-      (match.exportedAt || match.sync?.uploadedAt)
+      (
+        match.exportedAt ||
+        match.sync?.uploadedAt ||
+        Object.values(match.sync?.targets || {}).some((target) => target?.uploadedAt)
+      )
     ))
     .sort((a, b) => String(a.updatedAt || a.startedAt || "").localeCompare(String(b.updatedAt || b.startedAt || "")));
   const ids = [];

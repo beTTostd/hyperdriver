@@ -7,9 +7,9 @@ import styles from "./landing.module.css";
 
 export default async function LandingPage() {
   const currentUser = await getCurrentUser();
-  if (currentUser) redirect("/me");
+  if (currentUser) redirect("/replays");
 
-  const appLink = "/login?returnTo=%2Fme";
+  const appLink = "/login?returnTo=%2Freplays";
 
   return (
     <main className={styles.page}>

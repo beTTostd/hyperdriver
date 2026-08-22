@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hyperdriver — Histórico Talishar",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Captura partidas do Talishar e sincroniza replays completos com o Hyperdriver.",
   "permissions": ["downloads", "storage"],
   "icons": {
@@ -38,7 +38,7 @@
     },
     {
       "matches": ["https://talishar.net/*"],
-      "js": ["content-script.js"],
+      "js": ["capture-session-utils.js", "content-script.js"],
       "run_at": "document_start"
     },
     {

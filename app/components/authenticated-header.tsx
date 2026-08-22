@@ -1,6 +1,7 @@
 import Brand from "./brand";
 import Icon from "./ui-icons";
 import AuthControls from "./auth-controls";
+import Link from "next/link";
 import styles from "./authenticated-header.module.css";
 
 type AuthenticatedHeaderProps = {
@@ -19,7 +20,12 @@ export default function AuthenticatedHeader({
   return (
     <header className={styles.header}>
       <div className={styles.headerLeft}>
-        <Brand subtitle={null} />
+        <Brand href="/replays" subtitle={null} />
+        {isAdmin && (
+          <Link className={styles.adminPartidasLink} href="/admin/partidas">
+            Partidas
+          </Link>
+        )}
         <a
           className={styles.installButton}
           href={extensionUrl}

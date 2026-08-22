@@ -5,9 +5,16 @@ import {
   indicators,
   isCompleteMatch,
   isFinished,
+  isReplaySyncedToOrigin,
+  markReplaySynced,
+  markReplaySyncError,
   normalizeCompletion,
+  normalizeReplaySync,
+  SYNC_ORIGINS,
 } from "./replay-state.js";
 import {
+  canAppendCaptureFrame,
+  captureMatchesPage,
   createKeyedTaskQueue,
   isValidImportedCandidate,
   matchesToPrune,
@@ -171,11 +178,11 @@ function parseImportedMatch(raw) {
       winner: null,
       ...(candidate.summary || {})
     },
-    sync: null,
-    syncError: null,
+    sync: candidate.sync,
+    syncError: candidate.syncError,
     exportedAt: candidate.exportedAt || document.exportedAt || null
   };
-  const normalized = normalizeCompletion(match);
+  const normalized = normalizeReplaySync(normalizeCompletion(match));
   normalized.capturedBytes = utf8Size(JSON.stringify(normalized));
   if (normalized.capturedBytes > MAX_MATCH_BYTES) {
     throw new Error("O replay compactado excede o limite local de 40 MB.");
@@ -229,23 +236,23 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
       winner: null
     },
     exportedAt: null,
+    sync: { targets: {}, errors: {} },
     capturedBytes: 0
   };
 }
 
-async function ensureMatch(message, rotateFinished = true) {
+async function ensureMatch(message) {
   let pageSessionId = typeof message.pageSessionId === "string" && UUID_PATTERN.test(message.pageSessionId)
     ? message.pageSessionId
     : crypto.randomUUID();
   const existing = await getMatch(pageSessionId);
-  if (existing && existing.status !== "finished") {
+  if (captureMatchesPage(existing, message.pageUrl)) {
     const compacted = compactReplayMatch(existing);
     await putMatch(compacted);
     return compacted;
   }
-  if (existing?.status === "finished" && !rotateFinished) return compactReplayMatch(existing);
-  if (existing?.status === "finished") pageSessionId = crypto.randomUUID();
-  await enforceRetention(pageSessionId, !existing || existing.status === "finished" ? 1 : 0);
+  if (existing) pageSessionId = crypto.randomUUID();
+  await enforceRetention(pageSessionId, 1);
   const match = makeMatch(pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
   await putMatch(match);
   return match;
@@ -255,8 +262,8 @@ async function recordFrame(message) {
   if (typeof message.pageSessionId !== "string" || !UUID_PATTERN.test(message.pageSessionId)) {
     throw new Error("A sessão de captura é inválida.");
   }
-  const match = await ensureMatch(message, false);
-  if (match.status === "finished") return;
+  const match = await ensureMatch(message);
+  if (!canAppendCaptureFrame(match)) return;
 
   if (typeof message.payload !== "string" || utf8Size(message.payload) > MAX_BRIDGE_PAYLOAD_BYTES) {
     throw new Error("Uma atualização do Talishar excedeu o limite de captura de 5 MB.");
@@ -344,7 +351,7 @@ function isTrustedMessage(message, sender) {
     return origin === "https://talishar.net";
   }
   if (["list-sync-pending", "get-sync-match", "mark-match-synced", "mark-sync-error"].includes(message?.type)) {
-    return ["https://hyperdriver.com.br", "https://beta.hyperdriver.com.br"].includes(origin);
+    return SYNC_ORIGINS.includes(origin);
   }
   return origin === `chrome-extension://${chrome.runtime.id}`;
 }
@@ -394,17 +401,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === "list-sync-pending") {
+      const origin = senderOrigin(sender);
       const matches = (await listMatches()).map((match) => normalizeCompletion(compactReplayMatch(match)));
       await Promise.all(matches.map(putMatch));
       sendResponse({
         ok: true,
-        ids: matches.filter((match) => match.status === "finished" && !match.sync?.uploadedAt).map((match) => match.id)
+        ids: matches.filter((match) => (
+          match.status === "finished" && !isReplaySyncedToOrigin(match, origin)
+        )).map((match) => match.id)
       });
       return;
     }
     if (message.type === "get-sync-match") {
+      const origin = senderOrigin(sender);
       const match = compactReplayMatch(await getMatch(message.id));
-      if (!match || !isCompleteMatch(match) || match.sync?.uploadedAt) {
+      if (!match || !isCompleteMatch(match) || isReplaySyncedToOrigin(match, origin)) {
         sendResponse({ ok: true, document: null });
         return;
       }
@@ -417,23 +428,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === "mark-match-synced") {
+      const origin = senderOrigin(sender);
       const match = compactReplayMatch(await getMatch(message.id));
       if (!match) throw new Error("Partida não encontrada.");
-      match.sync = {
-        uploadedAt: new Date().toISOString(),
-        origin: message.origin,
+      markReplaySynced(match, origin, {
         username: message.username,
         replayId: message.replayId
-      };
-      match.syncError = null;
+      });
       await putMatch(match);
       sendResponse({ ok: true });
       return;
     }
     if (message.type === "mark-sync-error") {
+      const origin = senderOrigin(sender);
       const match = compactReplayMatch(await getMatch(message.id));
       if (!match) throw new Error("Partida não encontrada.");
-      match.syncError = { at: new Date().toISOString(), message: message.error };
+      markReplaySyncError(match, origin, message.error);
       await putMatch(match);
       sendResponse({ ok: true });
       return;

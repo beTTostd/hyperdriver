@@ -11,12 +11,12 @@
     return Math.round((safeCompleted / safeTotal) * 100);
   }
 
-  function isMePathname(pathname) {
-    return pathname === "/me";
+  function isReplayLibraryPathname(pathname) {
+    return pathname === "/replays";
   }
 
   function shouldReload(pathname, uploaded, interrupted = false) {
-    return uploaded > 0 && !interrupted && isMePathname(pathname);
+    return uploaded > 0 && !interrupted && isReplayLibraryPathname(pathname);
   }
 
   async function readResponseBody(response) {
@@ -109,7 +109,7 @@
   }
 
   globalThis.__hyperdriverSync = Object.freeze({
-    isMePathname,
+    isReplayLibraryPathname,
     progressPercentage,
     shouldReload,
     synchronizePendingReplays,

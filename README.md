@@ -107,7 +107,12 @@ essa variável deixa de ser obrigatória e não altera a senha já cadastrada.
 
 A extensão mantém cada replay no navegador, permite baixar o JSON pelo popup e
 sincroniza partidas completas quando o usuário abre o Hyperdriver autenticado.
+Beta e produção têm estados de sincronização independentes: enviar uma partida
+para um ambiente não impede o envio posterior para o outro. Atualizar uma mesma
+URL `/game/play/<id>` concluída também reutiliza a captura local, sem duplicá-la.
 Os arquivos enviados ficam em `UPLOADS_DIR`; o SQLite guarda somente metadados e
-o vínculo com o proprietário. A biblioteca `/me`, a mesa e a telemetria filtram
-sempre pela conta autenticada. Os replays não são enviados ao CDN do Talishar; a
-interface busca nesse CDN apenas as imagens públicas das cartas.
+o vínculo com o proprietário. A biblioteca `/replays`, a análise em
+`/replays/<id>` e a mesa em `/replays/<id>/table` filtram sempre pela conta
+autenticada. `/me`, `/table/<id>` e `/telemetry/<id>` permanecem como aliases
+de compatibilidade. Os replays não são enviados ao CDN do Talishar; a interface
+busca nesse CDN apenas as imagens públicas das cartas.

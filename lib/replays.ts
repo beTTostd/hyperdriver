@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { replays } from "../db/schema";
+import { replays, users } from "../db/schema";
 import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
@@ -61,6 +61,9 @@ export type ReplayDocument = {
 };
 
 export type ReplayMetadata = typeof replays.$inferSelect;
+export type AdminReplayMetadata = ReplayMetadata & {
+  username: string;
+};
 
 export class ReplayUploadError extends Error {
   constructor(message: string, public status: number) {
@@ -260,6 +263,24 @@ export async function listUserReplays(userId: number): Promise<ReplayMetadata[]>
   }));
 }
 
+export async function listAdminReplays(): Promise<AdminReplayMetadata[]> {
+  const replayList = getDb()
+    .select({ replay: replays, username: users.username })
+    .from(replays)
+    .innerJoin(users, eq(users.id, replays.userId))
+    .orderBy(desc(replays.startedAt), desc(replays.uploadedAt))
+    .all();
+
+  return Promise.all(replayList.map(async ({ replay, username }) => {
+    try {
+      const raw = await readFile(replayPath(replay.storageKey), "utf8");
+      return { ...(await refreshReplayResult(replay, raw)), username };
+    } catch {
+      return { ...replay, username };
+    }
+  }));
+}
+
 async function refreshReplayResult(replay: ReplayMetadata, raw: string) {
   const document = JSON.parse(raw) as ReplayDocument;
   const result = replayResult(document.match);
@@ -291,6 +312,32 @@ export function findUserReplay(userId: number, replayId: string): ReplayMetadata
 export async function readUserReplay(userId: number, replayId: string) {
   const replay = findUserReplay(userId, replayId);
   if (!replay) return null;
+  return readReplay(replay);
+}
+
+export function findAdminReplay(replayId: string): ReplayMetadata | null {
+  const database = getDb();
+  const bySourceId = database
+    .select()
+    .from(replays)
+    .where(eq(replays.sourceMatchId, replayId))
+    .get();
+  if (bySourceId) return bySourceId;
+  if (!/^\d+$/.test(replayId)) return null;
+  return database
+    .select()
+    .from(replays)
+    .where(eq(replays.id, Number(replayId)))
+    .get() ?? null;
+}
+
+export async function readAdminReplay(replayId: string) {
+  const replay = findAdminReplay(replayId);
+  if (!replay) return null;
+  return readReplay(replay);
+}
+
+async function readReplay(replay: ReplayMetadata) {
   const raw = await readFile(replayPath(replay.storageKey), "utf8");
   let metadata = replay;
   try {

@@ -17,7 +17,7 @@ export default async function LoginPage({
           <h1>Entre<br /><em>no jogo</em></h1>
           <p className={styles.description}>Use suas credenciais para acessar os replays e a telemetria do Hyperdriver.</p>
         </header>
-        <LoginForm returnTo={params.returnTo || "/me"} />
+        <LoginForm returnTo={params.returnTo || "/replays"} />
       </section>
     </main>
   );

@@ -5,19 +5,25 @@
   const CAPTURE_ERROR_KEY = "captureError";
   const MAX_BRIDGE_PAYLOAD_BYTES = 5 * 1024 * 1024;
   const MAX_FRAMES_PER_MINUTE = 240;
-  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const sessionHelpers = globalThis.__talisharCaptureSession;
+  if (!sessionHelpers) return;
   const isGamePage = window.location.pathname === "/game" || window.location.pathname.startsWith("/game/");
   if (!isGamePage) return;
-  const SESSION_STORAGE_KEY = "talishar-local-history-session";
+  const LEGACY_SESSION_STORAGE_KEY = "talishar-local-history-session";
   const pageUrl = window.location.pathname;
-  let pageSessionId = crypto.randomUUID();
+  const sessionStorageKey = `${LEGACY_SESSION_STORAGE_KEY}:${pageUrl}`;
+  let storedSession = null;
   let captureErrorActive = false;
   try {
-    const stored = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "null");
-    if (stored?.pageUrl === pageUrl && typeof stored.id === "string" && UUID_PATTERN.test(stored.id)) pageSessionId = stored.id;
+    storedSession = JSON.parse(
+      sessionStorage.getItem(sessionStorageKey) ||
+      sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY) ||
+      "null",
+    );
   } catch {
     // A fresh session is sufficient when sessionStorage is unavailable.
   }
+  let pageSessionId = sessionHelpers.pageSessionId(storedSession, pageUrl);
 
   async function reportCaptureError(error) {
     captureErrorActive = true;
@@ -36,7 +42,7 @@
     if (!response?.ok) throw new Error(response?.error || "Não foi possível iniciar a captura.");
     if (response?.pageSessionId) pageSessionId = response.pageSessionId;
     try {
-      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ id: pageSessionId, pageUrl }));
+      sessionStorage.setItem(sessionStorageKey, JSON.stringify({ id: pageSessionId, pageUrl }));
     } catch {
       // Capturing can continue without persisting the session id.
     }
@@ -78,6 +84,7 @@
         const response = await chrome.runtime.sendMessage({
           type: "capture-frame",
           pageSessionId,
+          pageUrl,
           endpoint: "/GetUpdateSSE.php",
           payload: data.payload,
           receivedAt: new Date().toISOString()

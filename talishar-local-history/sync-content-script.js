@@ -118,7 +118,6 @@
         markSynced: (id, response) => send({
           type: "mark-match-synced",
           id,
-          origin: window.location.origin,
           username: response.username,
           replayId: response.replayId
         }),

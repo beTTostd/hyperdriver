@@ -70,6 +70,77 @@ function isScalar(value) {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
+export const SYNC_ORIGINS = Object.freeze([
+  "https://beta.hyperdriver.com.br",
+  "https://hyperdriver.com.br",
+]);
+
+function compactSyncEntry(value) {
+  return compactRecord(value, ["uploadedAt", "username", "replayId"]);
+}
+
+function compactSyncError(value) {
+  return compactRecord(value, ["at", "message"]);
+}
+
+export function replaySyncState(match) {
+  const sync = match?.sync && typeof match.sync === "object" && !Array.isArray(match.sync)
+    ? match.sync
+    : {};
+  const targets = {};
+  const errors = {};
+
+  for (const origin of SYNC_ORIGINS) {
+    const target = compactSyncEntry(sync.targets?.[origin]);
+    if (target?.uploadedAt) targets[origin] = target;
+    const error = compactSyncError(sync.errors?.[origin]);
+    if (error?.message) errors[origin] = error;
+  }
+
+  if (sync.uploadedAt && SYNC_ORIGINS.includes(sync.origin) && !targets[sync.origin]) {
+    targets[sync.origin] = compactSyncEntry(sync);
+  }
+  if (match?.syncError?.message && SYNC_ORIGINS.includes(sync.origin) && !errors[sync.origin]) {
+    errors[sync.origin] = compactSyncError(match.syncError);
+  }
+
+  return { targets, errors };
+}
+
+export function normalizeReplaySync(match) {
+  if (!match || typeof match !== "object" || Array.isArray(match)) return match;
+  match.sync = replaySyncState(match);
+  delete match.syncError;
+  return match;
+}
+
+export function replaySyncProgress(match) {
+  const { targets } = replaySyncState(match);
+  return {
+    synced: SYNC_ORIGINS.filter((origin) => Boolean(targets[origin]?.uploadedAt)).length,
+    total: SYNC_ORIGINS.length,
+  };
+}
+
+export function isReplaySyncedToOrigin(match, origin) {
+  return SYNC_ORIGINS.includes(origin) && Boolean(replaySyncState(match).targets[origin]?.uploadedAt);
+}
+
+export function markReplaySynced(match, origin, details, uploadedAt = new Date().toISOString()) {
+  if (!SYNC_ORIGINS.includes(origin)) return false;
+  normalizeReplaySync(match);
+  match.sync.targets[origin] = compactSyncEntry({ ...details, uploadedAt });
+  delete match.sync.errors[origin];
+  return true;
+}
+
+export function markReplaySyncError(match, origin, message, at = new Date().toISOString()) {
+  if (!SYNC_ORIGINS.includes(origin)) return false;
+  normalizeReplaySync(match);
+  match.sync.errors[origin] = compactSyncError({ at, message });
+  return true;
+}
+
 function compactCard(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const card = {};
@@ -201,12 +272,7 @@ export function compactReplayMatch(match) {
   if (match.summary) {
     compacted.summary = compactRecord(match.summary, ["turn", "activePlayer", "winner"]);
   }
-  if (match.sync) {
-    compacted.sync = compactRecord(match.sync, ["uploadedAt", "origin", "username", "replayId"]);
-  }
-  if (match.syncError) {
-    compacted.syncError = compactRecord(match.syncError, ["at", "message"]);
-  }
+  compacted.sync = replaySyncState(match);
   compacted.frames = Array.isArray(match.frames) ? match.frames.map(compactReplayFrame) : [];
   return compacted;
 }

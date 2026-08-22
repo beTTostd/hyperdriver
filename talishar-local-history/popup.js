@@ -1,3 +1,5 @@
+import { replaySyncProgress, replaySyncState, SYNC_ORIGINS } from "./replay-state.js";
+
 const statusElement = document.querySelector("#status");
 const matchesElement = document.querySelector("#matches");
 const importButton = document.querySelector("#import-button");
@@ -48,23 +50,41 @@ function render(matches) {
     metadata.textContent = `${formatDate(match.startedAt)} · ${match.frameCount} snapshots`;
     const syncState = document.createElement("span");
     syncState.className = "sync-state";
-    if (match.sync?.uploadedAt) {
-      syncState.textContent = "Sincronizado";
-      syncState.title = `Enviado para ${match.sync.username || "sua conta"}`;
-    } else if (match.exportedAt) {
-      syncState.textContent = "Baixado";
-      syncState.title = "JSON salvo em Downloads/Talishar Local History.";
-    } else if (match.status === "recording") {
+    const progress = replaySyncProgress(match);
+    const perOriginSync = replaySyncState(match);
+    const synchronizedTargets = SYNC_ORIGINS
+      .filter((origin) => perOriginSync.targets[origin]?.uploadedAt)
+      .map((origin) => new URL(origin).hostname);
+    const errors = SYNC_ORIGINS
+      .map((origin) => perOriginSync.errors[origin])
+      .filter((error) => error?.message);
+    if (match.status === "recording") {
       syncState.classList.add("recording");
       syncState.textContent = "Gravando";
-    } else if (match.syncError?.message) {
+    } else if (progress.synced === 0 && errors.length) {
       syncState.classList.add("error");
       syncState.textContent = "Erro";
-      syncState.title = match.syncError.message;
-    } else {
+      syncState.title = errors.map((error) => error.message).join(" ");
+    } else if (progress.synced === 0 && match.exportedAt) {
+      syncState.textContent = "Baixado";
+      syncState.title = "JSON salvo em Downloads/Talishar Local History.";
+    } else if (progress.synced === 0) {
       syncState.classList.add("ready");
       syncState.textContent = "Pronto";
-      syncState.title = "Abra o Hyperdriver autenticado para sincronizar.";
+      syncState.title = "Abra cada ambiente do Hyperdriver autenticado para sincronizar.";
+    } else {
+      syncState.textContent = `Sincronizado ${progress.synced}/${progress.total}`;
+      const details = [];
+      if (synchronizedTargets.length) details.push(`Enviado para ${synchronizedTargets.join(" e ")}.`);
+      if (match.exportedAt) details.push("JSON salvo em Downloads/Talishar Local History.");
+      if (errors.length) {
+        syncState.classList.add("error");
+        details.push(errors.map((error) => error.message).join(" "));
+      } else if (progress.synced < progress.total) {
+        syncState.classList.add("ready");
+        details.push("Abra cada ambiente do Hyperdriver autenticado para sincronizar.");
+      }
+      syncState.title = details.join(" ");
     }
     const actions = document.createElement("div");
     const exportButton = document.createElement("button");

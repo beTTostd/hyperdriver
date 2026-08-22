@@ -13,7 +13,9 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 - Permite solicitar a sincronização de todos os replays pendentes de uma vez.
 - Serializa snapshots da mesma partida para evitar perda de quadros em rajadas de eventos.
 - Descarta atualizações recebidas depois que a partida já foi concluída.
-- Ao abrir `hyperdriver.com.br` ou `beta.hyperdriver.com.br` autenticado, envia automaticamente partidas completas ainda não sincronizadas.
+- Reutiliza a mesma gravação ao atualizar `/game/play/{id}`; outro ID de partida inicia uma captura nova.
+- Ao abrir `hyperdriver.com.br` ou `beta.hyperdriver.com.br` autenticado, envia automaticamente partidas completas ainda não sincronizadas naquele ambiente.
+- Mostra no popup quantos dos dois ambientes já receberam cada partida (`Sincronizado 1/2` ou `2/2`); antes do primeiro envio, usa os estados `Pronto`, `Baixado` ou `Erro`.
 - Mantém a cópia local e o arquivo baixado depois do envio.
 
 ## Como instalar no Chrome
@@ -32,7 +34,7 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 ## Privacidade e sincronização
 
 - A extensão acessa somente Talishar e os dois domínios oficiais do Hyperdriver declarados no manifesto.
-- Partidas incompletas não são enviadas; falhas de autenticação ou conexão mantêm o replay pendente no navegador.
+- Partidas incompletas não são enviadas; cada ambiente mantém seu próprio estado de upload e de erro, portanto uma falha no beta não bloqueia a produção (nem o inverso).
 - Importações são limitadas a 50 MB e validadas antes de entrar no histórico local.
 - A extensão mantém no máximo 100 partidas e 200 MB de replays compactados. Ao atingir um limite, remove apenas partidas concluídas que já foram exportadas ou sincronizadas; nunca remove silenciosamente um replay sem cópia.
 - Atualizações da página passam por validação de origem, endpoint, tamanho e frequência antes de serem encaminhadas ao armazenamento.
@@ -47,4 +49,4 @@ O Talishar não publica um contrato estável para o formato dos eventos. Por iss
 
 ## Estrutura do JSON
 
-Cada arquivo contém `schemaVersion`, informações da captura, status, resumo e a sequência de snapshots compactos recebidos. Isso reduz o armazenamento e evita transportar logs de chat ou dados de interface que não participam do replay.
+Cada arquivo contém `schemaVersion`, informações da captura, status, resumo e a sequência de snapshots compactos recebidos. O campo `match.sync.targets` registra separadamente os envios para `https://beta.hyperdriver.com.br` e `https://hyperdriver.com.br`; o formato antigo com um único `sync` é migrado ao ser lido. Isso reduz o armazenamento e evita transportar logs de chat ou dados de interface que não participam do replay.

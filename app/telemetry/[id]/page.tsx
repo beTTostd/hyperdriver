@@ -1,10 +1,10 @@
 import type { CSSProperties } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import AuthenticatedHeader from "../../components/authenticated-header";
 import { requireUser } from "../../../lib/auth";
 import { cardArtImageUrl } from "../../../lib/card-avatars";
 import { calculateReplayTelemetry, type TelemetryCycle } from "../../../lib/replay-telemetry";
-import { readUserReplay, type ReplayDocument } from "../../../lib/replays";
+import { readAdminReplay, readUserReplay, type ReplayDocument } from "../../../lib/replays";
 import styles from "./page.module.css";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -55,11 +55,13 @@ function resultLabel(result: string) {
   return "Encerrada";
 }
 
-export default async function TelemetryPage({ params }: PageProps) {
+export async function ReplayTelemetryPage({ params }: PageProps) {
   const { id } = await params;
-  const currentUser = await requireUser(`/telemetry/${id}`);
+  const currentUser = await requireUser(`/replays/${id}`);
   if (!REPLAY_ID_PATTERN.test(id)) notFound();
-  const stored = await readUserReplay(currentUser.id, id);
+  const stored = currentUser.role === "admin"
+    ? await readAdminReplay(id)
+    : await readUserReplay(currentUser.id, id);
   if (!stored) notFound();
 
   const replay = JSON.parse(stored.raw) as ReplayDocument;
@@ -208,4 +210,10 @@ export default async function TelemetryPage({ params }: PageProps) {
       </div>
     </main>
   );
+}
+
+export default async function LegacyTelemetryPage({ params }: PageProps) {
+  const { id } = await params;
+  if (!REPLAY_ID_PATTERN.test(id)) notFound();
+  redirect(`/replays/${id}`);
 }

@@ -16,6 +16,21 @@
   gap: 24px;
 }
 
+.adminPartidasLink {
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 150ms ease;
+}
+
+.adminPartidasLink:hover {
+  color: var(--signal-red);
+}
+
 .installButton {
   display: inline-flex;
   min-height: 34px;
