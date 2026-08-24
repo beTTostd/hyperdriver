@@ -73,6 +73,9 @@ function safeRelativePath(value: string): string {
 
 function canonicalReturnTo(pathname: string, search: string): string {
   if (pathname === "/me") return `/replays${search}`;
+  if (pathname === "/mesa") return `/table${search}`;
+  if (pathname === "/admin/partidas") return `/admin/replays${search}`;
+  if (pathname === "/perfil/editar") return `/me/profile${search}`;
 
   const tableMatch = pathname.match(/^\/table\/([^/]+)$/);
   if (tableMatch && REPLAY_ID_PATTERN.test(tableMatch[1])) {

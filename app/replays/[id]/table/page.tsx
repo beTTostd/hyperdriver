@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import TalisharTable from "../../../mesa/page";
+import TalisharTable from "../../../table/replay-table";
 import { requireUser } from "../../../../lib/auth";
 import { findAdminReplay, findUserReplay } from "../../../../lib/replays";
 

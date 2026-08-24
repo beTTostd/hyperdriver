@@ -430,6 +430,11 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   const editProfileResponse = await fetch(new URL("/me/profile", baseUrl), {
     headers: { cookie },
   });
+  const [legacyTablePage, legacyProfilePage, legacyPasswordPage] = await Promise.all([
+    fetch(new URL("/mesa", baseUrl), { headers: { cookie }, redirect: "manual" }),
+    fetch(new URL("/perfil/editar", baseUrl), { headers: { cookie }, redirect: "manual" }),
+    fetch(new URL("/primeira-senha", baseUrl), { redirect: "manual" }),
+  ]);
 
   assert.equal(tableResponse.status, 200);
   assert.match(await tableResponse.text(), /Montando a mesa/);
@@ -452,6 +457,12 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   assert.match(editProfileHtml, /Nome de usuário/);
   assert.match(editProfileHtml, /Alterar foto/);
   assert.doesNotMatch(editProfileHtml, /Replays/);
+  assert.equal(legacyTablePage.status, 307);
+  assert.equal(new URL(legacyTablePage.headers.get("location"), baseUrl).pathname, "/table");
+  assert.equal(legacyProfilePage.status, 307);
+  assert.equal(new URL(legacyProfilePage.headers.get("location"), baseUrl).pathname, "/me/profile");
+  assert.equal(legacyPasswordPage.status, 307);
+  assert.equal(new URL(legacyPasswordPage.headers.get("location"), baseUrl).pathname, "/set-password");
 });
 
 test("allows authenticated users to choose a FAB card avatar", async () => {
@@ -634,7 +645,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(adminHtml, /beta_hero_cropped\.webp/);
   assert.match(adminHtml, /Modo de jogo/);
   assert.match(adminHtml, /Classic Constructed/);
-  assert.match(adminHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
+  assert.match(adminHtml, /href="\/admin\/replays"[^>]*>Partidas/);
   assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
   assert.match(adminHtml, new RegExp(`/replays/${uploaded.replayId}/table`));
   assert.doesNotMatch(adminHtml, new RegExp(`/table/${uploaded.replayId}`));
@@ -753,7 +764,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   });
   const isolatedLibraryHtml = await isolatedLibrary.text();
   assert.doesNotMatch(isolatedLibraryHtml, /Alpha Hero/);
-  assert.doesNotMatch(isolatedLibraryHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
+  assert.doesNotMatch(isolatedLibraryHtml, /href="\/admin\/replays"[^>]*>Partidas/);
   const privateReplay = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie: isolatedCookie },
   });
@@ -782,7 +793,7 @@ test("lets admins list and open replays owned by different users", async () => {
     assert.equal(upload.status, 201);
   }
 
-  const adminPage = await fetch(new URL("/admin/partidas", baseUrl), { headers: { cookie } });
+  const adminPage = await fetch(new URL("/admin/replays", baseUrl), { headers: { cookie } });
   assert.equal(adminPage.status, 200);
   const adminHtml = await adminPage.text();
   assert.match(adminHtml, /Todas as partidas/);
@@ -791,8 +802,16 @@ test("lets admins list and open replays owned by different users", async () => {
   assert.ok(adminHtml.indexOf("partidas-beta") < adminHtml.indexOf("partidas-alpha"));
   assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}/table`));
   assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}`));
+  assert.doesNotMatch(adminHtml, /href="\/admin\/partidas"/);
 
-  const userAdminPage = await fetch(new URL("/admin/partidas", baseUrl), {
+  const legacyAdminPage = await fetch(new URL("/admin/partidas", baseUrl), {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(legacyAdminPage.status, 307);
+  assert.equal(new URL(legacyAdminPage.headers.get("location"), baseUrl).pathname, "/admin/replays");
+
+  const userAdminPage = await fetch(new URL("/admin/replays", baseUrl), {
     headers: { cookie: alphaCookie },
     redirect: "manual",
   });
