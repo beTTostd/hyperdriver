@@ -98,6 +98,7 @@ type TelemetryTurn = Record<TelemetryMetricKey | DamageMetricKey, number> & {
   player: "1" | "2";
 };
 type LiveReplayValue = {
+  localPlayer: "1" | "2";
   turns: TelemetryTurn[];
   currentTurn: TelemetryTurn | null;
   turnValue: number;
@@ -405,13 +406,14 @@ function LiveValuePanel({
             const blocked = turn.attackEquipmentBlocked + turn.attackCardBlocked;
             const offered = turn.dealtDamage + blocked;
             const selected = turn.key === currentTurn?.key;
+            const isLocalPlayer = turn.player === liveValue.localPlayer;
             return (
               <div className={`${styles.valueRow} ${selected ? styles.currentValueRow : ""}`} key={turn.key} aria-current={selected ? "true" : undefined}>
-                <span className={styles.valueTurn}><strong>T{turn.turn}</strong><small>{turn.player === "1" ? "Você" : "Opo."}</small></span>
+                <span className={styles.valueTurn}><strong>T{turn.turn}</strong><small>{isLocalPlayer ? "Você" : "Opo."}</small></span>
                 <div className={styles.valueTrack} role="img" aria-label={`Turno ${turn.turn}: dano oferecido ${offered}, dano causado ${turn.dealtDamage}, dano bloqueado ${blocked}`}>
                   {damageMetrics.map((metric) => turn[metric.key] > 0 && (
                     <i
-                      className={`${styles.valueSegment} ${styles[metric.key === "dealtDamage" && turn.player === "1" ? "metricPlayerDamage" : metric.className]}`}
+                      className={`${styles.valueSegment} ${styles[metric.key === "dealtDamage" && isLocalPlayer ? "metricPlayerDamage" : metric.className]}`}
                       key={metric.key}
                       style={{ width: `${turn[metric.key] / scale * 100}%` }}
                       title={`${metric.label}: ${turn[metric.key]}`}

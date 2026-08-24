@@ -1,13 +1,16 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { cardArtImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
 import Icon from "../components/ui-icons";
+import CardImage from "../components/card-image";
 import styles from "../auth.module.css";
 
 type User = {
   id: number;
   username: string;
   role: "admin" | "user";
+  avatarCardId: string | null;
   isActive: boolean;
   hasPassword: boolean;
   lastLoginAt: number | null;
@@ -52,7 +55,7 @@ export default function AdminPanel({
         setError(data.error || "Não foi possível criar o usuário.");
         return;
       }
-      setUsers((current) => [{ id: data.id!, username: data.username!, role: data.role!, isActive: true, hasPassword: false, lastLoginAt: null }, ...current]);
+      setUsers((current) => [{ id: data.id!, username: data.username!, role: data.role!, avatarCardId: null, isActive: true, hasPassword: false, lastLoginAt: null }, ...current]);
       setInvite({ url: data.setupUrl, expiresAt: data.expiresAt, username: data.username });
       setUsername("");
     } catch {
@@ -149,12 +152,24 @@ export default function AdminPanel({
         <ul className={styles.userList}>
           {users.map((user) => (
             <li className={styles.userRow} key={user.id}>
-              <div>
-                <strong>{user.username}</strong>
-                <span>{user.hasPassword ? "Senha definida" : "Aguardando primeira senha"}</span>
-                <span>
-                  Último login: {user.lastLoginAt ? formatLoginDate(user.lastLoginAt) : "Nunca acessou"}
+              <div className={styles.userIdentity}>
+                <span className={styles.userAvatar} aria-hidden="true">
+                  <span className={styles.userAvatarFallback}>{user.username.slice(0, 1).toUpperCase()}</span>
+                  <CardImage
+                    src={cardArtImageUrl(user.avatarCardId || DEFAULT_CARD_AVATAR)}
+                    alt=""
+                    width={96}
+                    height={96}
+                    onError={(event) => event.currentTarget.remove()}
+                  />
                 </span>
+                <div>
+                  <strong>{user.username}</strong>
+                  <span>{user.hasPassword ? "Senha definida" : "Aguardando primeira senha"}</span>
+                  <span>
+                    Último login: {user.lastLoginAt ? formatLoginDate(user.lastLoginAt) : "Nunca acessou"}
+                  </span>
+                </div>
               </div>
               <div className={styles.userActions}>
                 <span className={styles.role}>{user.role}</span>

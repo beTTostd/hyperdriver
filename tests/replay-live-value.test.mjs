@@ -38,6 +38,7 @@ test("builds current-turn and match value from only the visible replay frames", 
   ];
 
   const firstTurn = calculateLiveReplayValue(frames, 1);
+  assert.equal(firstTurn.localPlayer, "1");
   assert.equal(firstTurn.turnValue, 6);
   assert.equal(firstTurn.matchValue, 6);
   assert.equal(firstTurn.currentTurn.turn, "1");
@@ -59,6 +60,7 @@ test("builds current-turn and match value from only the visible replay frames", 
 
 test("returns zero values before the replay has a visible frame", () => {
   assert.deepEqual(calculateLiveReplayValue([], 0), {
+    localPlayer: "1",
     turns: [],
     currentTurn: null,
     turnValue: 0,
@@ -98,6 +100,7 @@ test("calculates telemetry from the local player two perspective", () => {
   ];
 
   const result = calculateLiveReplayValue(frames);
+  assert.equal(result.localPlayer, "2");
   assert.equal(result.turns[0].receivedDamage, 5);
   assert.equal(result.turns[0].equipmentBlocked, 3);
   assert.equal(result.turns[1].offeredDamage, 6);
