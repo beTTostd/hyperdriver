@@ -77,6 +77,7 @@ export const replays = sqliteTable(
     endedAt: integer("ended_at"),
     finalTurn: integer("final_turn"),
     frameCount: integer("frame_count").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
     uploadedAt: integer("uploaded_at").notNull().default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
@@ -86,10 +87,53 @@ export const replays = sqliteTable(
   ],
 );
 
+export const replayMetrics = sqliteTable(
+  "replay_metrics",
+  {
+    replayId: integer("replay_id")
+      .primaryKey()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    receivedDamage: integer("received_damage").notNull().default(0),
+    equipmentBlocked: integer("equipment_blocked").notNull().default(0),
+    cardBlocked: integer("card_blocked").notNull().default(0),
+    offeredDamage: integer("offered_damage").notNull().default(0),
+    lifeGained: integer("life_gained").notNull().default(0),
+    cycleCount: integer("cycle_count").notNull().default(0),
+    calculatedAt: integer("calculated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+);
+
+export const rateLimitEvents = sqliteTable(
+  "rate_limit_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    bucket: text("bucket").notNull(),
+    identity: text("identity").notNull(),
+    occurredAt: integer("occurred_at").notNull(),
+  },
+  (table) => [
+    index("rate_limit_events_lookup_idx").on(table.bucket, table.identity, table.occurredAt),
+    index("rate_limit_events_expiry_idx").on(table.occurredAt),
+  ],
+);
+
+export const uploadLeases = sqliteTable(
+  "upload_leases",
+  {
+    id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (table) => [index("upload_leases_user_expiry_idx").on(table.userId, table.expiresAt)],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   passwordSetupTokens: many(passwordSetupTokens),
   sessions: many(sessions),
   replays: many(replays),
+  uploadLeases: many(uploadLeases),
 }));
 
 export const passwordSetupTokensRelations = relations(
@@ -112,6 +156,24 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const replaysRelations = relations(replays, ({ one }) => ({
   user: one(users, {
     fields: [replays.userId],
+    references: [users.id],
+  }),
+  metrics: one(replayMetrics, {
+    fields: [replays.id],
+    references: [replayMetrics.replayId],
+  }),
+}));
+
+export const replayMetricsRelations = relations(replayMetrics, ({ one }) => ({
+  replay: one(replays, {
+    fields: [replayMetrics.replayId],
+    references: [replays.id],
+  }),
+}));
+
+export const uploadLeasesRelations = relations(uploadLeases, ({ one }) => ({
+  user: one(users, {
+    fields: [uploadLeases.userId],
     references: [users.id],
   }),
 }));

@@ -2,6 +2,8 @@
 .agents
 .codex
 .next
+.env*
+!.env.example
 .npm-cache
 data
 *.sqlite

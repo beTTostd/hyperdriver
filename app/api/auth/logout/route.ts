@@ -1,13 +1,14 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 import { deleteSession, secureCookie, SESSION_COOKIE } from "../../../../lib/auth";
+import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../lib/http";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+async function logout(request: Request) {
+  if (!validateMutationOrigin(request)) return originError();
   const cookieStore = await cookies();
   deleteSession(cookieStore.get(SESSION_COOKIE)?.value);
-  const response = NextResponse.json({ ok: true });
+  const response = privateJson({ ok: true });
   response.cookies.set({
     name: SESSION_COOKIE,
     value: "",
@@ -19,3 +20,5 @@ export async function POST() {
   });
   return response;
 }
+
+export const POST = withApiLogging("/api/auth/logout", logout);

@@ -6,5 +6,5 @@ export default async function FirstPasswordPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const token = (await searchParams).token || "";
-  redirect(token ? `/set-password?token=${encodeURIComponent(token)}` : "/set-password");
+  redirect(token ? `/set-password#token=${encodeURIComponent(token)}` : "/set-password");
 }

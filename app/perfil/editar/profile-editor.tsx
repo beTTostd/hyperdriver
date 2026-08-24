@@ -9,6 +9,7 @@ import {
   DEFAULT_CARD_AVATAR,
 } from "../../../lib/card-avatars";
 import Icon from "../../components/ui-icons";
+import CardImage from "../../components/card-image";
 import styles from "./page.module.css";
 
 const SEARCH_DELAY_MS = 300;
@@ -208,10 +209,11 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
         <div className={styles.avatarBlock}>
           <div className={styles.avatarFrame}>
             <span className={styles.avatarFallback} aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
-            <img
+            <CardImage
               src={cardArtImageUrl(selectedCardId)}
               alt={selectedCardLabel}
-              decoding="async"
+              width={320}
+              height={320}
               onError={(event) => { event.currentTarget.hidden = true; }}
             />
           </div>
@@ -317,11 +319,11 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
                           <span className={styles.artImageFallback} aria-hidden="true">
                             {card.label.slice(0, 1).toUpperCase()}
                           </span>
-                          <img
+                          <CardImage
                             src={cardArtImageUrl(card.id)}
                             alt=""
-                            loading="lazy"
-                            decoding="async"
+                            width={240}
+                            height={240}
                             onError={(event) => { event.currentTarget.hidden = true; }}
                           />
                         </span>

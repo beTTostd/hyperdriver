@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AuthenticatedHeader from "../components/authenticated-header";
 import Icon from "../components/ui-icons";
+import CardImage from "../components/card-image";
 import { requireUser, type AuthUser } from "../../lib/auth";
 import { cardArtImageUrl } from "../../lib/card-avatars";
 import { listUserReplays, type AdminReplayMetadata, type ReplayMetadata } from "../../lib/replays";
@@ -13,6 +14,8 @@ type ReplayLibraryProps = {
   replayList: ReplayListItem[];
   title: string;
   emptyDescription?: string;
+  nextCursor?: string | null;
+  paginationPath?: string;
 };
 
 function cardName(cardId: string | null) {
@@ -52,6 +55,8 @@ export function ReplayLibrary({
   replayList,
   title,
   emptyDescription = "Grave uma partida no Talishar e abra o Hyperdriver para enviar o histórico automaticamente.",
+  nextCursor = null,
+  paginationPath = "/replays",
 }: ReplayLibraryProps) {
   return (
     <main className={styles.page}>
@@ -83,11 +88,11 @@ export function ReplayLibrary({
                   <span className={styles.cardIndex}>RPL / {String(index + 1).padStart(3, "0")}</span>
                   <div className={styles.matchArt} aria-label={`${playerHero} contra ${opponentHero}`}>
                     <figure className={styles.heroCard}>
-                      {replay.playerHeroId ? <img src={cardArtImageUrl(replay.playerHeroId)} alt={playerHero} /> : <Icon name="imageOff" size={24} />}
+                      {replay.playerHeroId ? <CardImage src={cardArtImageUrl(replay.playerHeroId)} alt={playerHero} width={320} height={320} /> : <Icon name="imageOff" size={24} />}
                     </figure>
                     <span className={styles.versus}>VS</span>
                     <figure className={`${styles.heroCard} ${styles.opponentCard}`}>
-                      {replay.opponentHeroId ? <img src={cardArtImageUrl(replay.opponentHeroId)} alt={opponentHero} /> : <Icon name="imageOff" size={24} />}
+                      {replay.opponentHeroId ? <CardImage src={cardArtImageUrl(replay.opponentHeroId)} alt={opponentHero} width={320} height={320} /> : <Icon name="imageOff" size={24} />}
                     </figure>
                   </div>
                   <div className={styles.replayInfo}>
@@ -111,13 +116,31 @@ export function ReplayLibrary({
             })}
           </div>
         )}
+        {nextCursor && (
+          <Link className={styles.openReplay} href={`${paginationPath}?cursor=${encodeURIComponent(nextCursor)}`}>
+            Carregar mais replays <Icon name="arrowRight" size={15} />
+          </Link>
+        )}
       </section>
     </main>
   );
 }
 
-export default async function ReplayLibraryPage() {
+export default async function ReplayLibraryPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ cursor?: string | string[] }>;
+}) {
   const currentUser = await requireUser("/replays");
-  const replayList = await listUserReplays(currentUser.id);
-  return <ReplayLibrary currentUser={currentUser} replayList={replayList} title="Replays recentes" />;
+  const query = searchParams ? await searchParams : {};
+  const cursor = Array.isArray(query.cursor) ? query.cursor[0] : query.cursor;
+  const replayPage = await listUserReplays(currentUser.id, cursor);
+  return (
+    <ReplayLibrary
+      currentUser={currentUser}
+      replayList={replayPage.items}
+      nextCursor={replayPage.nextCursor}
+      title="Replays recentes"
+    />
+  );
 }

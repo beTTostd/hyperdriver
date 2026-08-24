@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cardArtImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
 import Icon from "./ui-icons";
+import CardImage from "./card-image";
 import styles from "./auth-controls.module.css";
 
 type AuthControlsProps = {
@@ -21,6 +23,7 @@ export default function AuthControls({
   const [pending, setPending] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const router = useRouter();
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +47,8 @@ export default function AuthControls({
   async function signOut() {
     setPending(true);
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.assign("/login");
+    router.push("/login");
+    router.refresh();
   }
 
   const visibleAvatar = avatarCardId || DEFAULT_CARD_AVATAR;
@@ -63,12 +67,21 @@ export default function AuthControls({
       >
         <span className={styles.avatar} aria-hidden="true">
           <span className={styles.avatarFallback}>{initials}</span>
-          <img src={cardArtImageUrl(visibleAvatar)} alt="" onError={(event) => event.currentTarget.remove()} />
+          <CardImage src={cardArtImageUrl(visibleAvatar)} alt="" width={128} height={128} onError={(event) => event.currentTarget.remove()} />
         </span>
         <span className={styles.profileName}>{username}</span>
         <Icon className={styles.chevron} name="chevronDown" size={16} />
       </button>
       <div className={styles.profileMenu} id={menuId} role="menu" hidden={!open}>
+          <Link
+            className={styles.statsLink}
+            href="/me/stats"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            Estatísticas
+            <Icon name="chart" size={14} />
+          </Link>
           {isAdmin && (
             <Link
               className={styles.adminLink}

@@ -1,16 +1,26 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Icon from "../components/ui-icons";
 import styles from "../auth.module.css";
 
-export default function SetupPasswordForm({ token }: { token: string }) {
+export default function SetupPasswordForm({ token: initialToken = "" }: { token?: string }) {
+  const tokenRef = useRef(initialToken);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const fragmentToken = hash.get("token") || initialToken;
+    tokenRef.current = fragmentToken;
+    if (window.location.hash) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }, [initialToken]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,7 +30,7 @@ export default function SetupPasswordForm({ token }: { token: string }) {
       const response = await fetch("/api/auth/setup-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token, password, confirmation }),
+        body: JSON.stringify({ token: tokenRef.current, password, confirmation }),
       });
       const data = await response.json() as { error?: string };
       if (!response.ok) {

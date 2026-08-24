@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import Link from "next/link";
 import Icon from "../components/ui-icons";
 import { BrandSymbol } from "../components/brand";
+import CardImage from "../components/card-image";
 import { replayResult } from "../../talishar-local-history/replay-state.js";
 import {
   cardMarkers,
@@ -205,7 +206,7 @@ function CardView({ card, hidden = false, variant = "normal", label }: { card?: 
       onFocus={(event) => openPreview(event.currentTarget, false)}
       onBlur={() => preview?.hideTransientPreview()}
     >
-      {source ? <img className={imageStage === "full" ? styles.fallbackCrop : ""} src={source} alt={cardName(card)} onError={() => setImageFailure({ cardNumber, stage: imageStage === "square" ? "full" : "failed" })} /> : !faceDown && <span>{label || cardName(card)}</span>}
+      {source ? <CardImage className={imageStage === "full" ? styles.fallbackCrop : ""} src={source} alt={cardName(card)} onError={() => setImageFailure({ cardNumber, stage: imageStage === "square" ? "full" : "failed" })} /> : !faceDown && <span>{label || cardName(card)}</span>}
       {card && !faceDown && <CardMarkers card={card} />}
       {card?.isBroken && <b className={styles.broken}><Icon name="alertTriangle" size={13} /></b>}
     </figure>
@@ -219,7 +220,7 @@ function CardPreview({ preview, onClose }: { preview: PreviewState | null; onClo
     <div className={`${styles.previewLayer} ${styles[preview.side]}`}>
       {preview.persistent && <button className={styles.previewBackdrop} type="button" aria-label="Fechar prévia da carta" onClick={onClose} />}
       <figure className={styles.cardPreview} role="dialog" aria-label={`Prévia de ${cardName(preview.card)}`}>
-        <img src={fullCardImageUrl(preview.card.cardNumber)} alt={cardName(preview.card)} onError={() => setFailedCardNumber(preview.card.cardNumber ?? null)} />
+        <CardImage src={fullCardImageUrl(preview.card.cardNumber)} alt={cardName(preview.card)} onError={() => setFailedCardNumber(preview.card.cardNumber ?? null)} />
       </figure>
     </div>
   );

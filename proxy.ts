@@ -7,21 +7,48 @@ const REPLAY_ID_PATTERN = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (
+  const nonce = btoa(crypto.randomUUID());
+  const requestId = request.headers.get("x-request-id")?.slice(0, 128) || crypto.randomUUID();
+  const requestHeaders = new Headers(request.headers);
+  const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("x-request-id", requestId);
+  requestHeaders.set("content-security-policy", contentSecurityPolicy);
+
+  const isPublic =
     publicPaths.has(pathname) ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.svg" ||
+    pathname.startsWith("/api/health/") ||
     pathname.startsWith("/api/auth/") ||
     pathname === "/api/profile/avatar-options" ||
-    pathname.startsWith("/api/replays")
-  ) {
-    return NextResponse.next();
+    pathname.startsWith("/api/replays");
+  const authenticated = request.cookies.has(SESSION_COOKIE);
+  let response: NextResponse;
+  if (isPublic || authenticated) {
+    response = NextResponse.next({ request: { headers: requestHeaders } });
+  } else {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("returnTo", safeRelativePath(canonicalReturnTo(pathname, request.nextUrl.search)));
+    response = NextResponse.redirect(loginUrl);
   }
-  if (request.cookies.has(SESSION_COOKIE)) return NextResponse.next();
 
-  const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("returnTo", safeRelativePath(canonicalReturnTo(pathname, request.nextUrl.search)));
-  return NextResponse.redirect(loginUrl);
+  response.headers.set("content-security-policy", contentSecurityPolicy);
+  response.headers.set("x-content-type-options", "nosniff");
+  response.headers.set("x-frame-options", "DENY");
+  response.headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  response.headers.set(
+    "referrer-policy",
+    pathname === "/set-password" || pathname === "/primeira-senha" ? "no-referrer" : "strict-origin-when-cross-origin",
+  );
+  response.headers.set("x-request-id", requestId);
+  if (process.env.NODE_ENV === "production") {
+    response.headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  }
+  if (authenticated || pathname.startsWith("/api/")) {
+    response.headers.set("cache-control", "private, no-store, max-age=0");
+  }
+  return response;
 }
 
 export const config = {
@@ -58,4 +85,24 @@ function canonicalReturnTo(pathname: string, search: string): string {
   }
 
   return `${pathname}${search}`;
+}
+
+function buildContentSecurityPolicy(nonce: string): string {
+  const development = process.env.NODE_ENV !== "production";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://images.talishar.net",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "media-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    development ? "" : "upgrade-insecure-requests",
+  ].filter(Boolean).join("; ");
 }
