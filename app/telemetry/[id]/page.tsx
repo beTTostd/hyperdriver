@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { notFound, redirect } from "next/navigation";
 import AuthenticatedHeader from "../../components/authenticated-header";
+import CardImage from "../../components/card-image";
 import { requireUser } from "../../../lib/auth";
 import { cardArtImageUrl } from "../../../lib/card-avatars";
 import { calculateReplayTelemetry, type TelemetryCycle } from "../../../lib/replay-telemetry";
@@ -98,7 +99,7 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
           <article className={styles.heroProfile}>
             <div className={styles.heroArt}>
               {metadata.playerHeroId
-                ? <img src={cardArtImageUrl(metadata.playerHeroId)} alt={playerHero} />
+                ? <CardImage src={cardArtImageUrl(metadata.playerHeroId)} alt={playerHero} width={320} height={320} />
                 : <span aria-hidden="true">?</span>}
             </div>
             <div className={styles.heroIdentity}>
@@ -116,7 +117,7 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
           <article className={`${styles.heroProfile} ${styles.opponentProfile}`}>
             <div className={styles.heroArt}>
               {metadata.opponentHeroId
-                ? <img src={cardArtImageUrl(metadata.opponentHeroId)} alt={opponentHero} />
+                ? <CardImage src={cardArtImageUrl(metadata.opponentHeroId)} alt={opponentHero} width={320} height={320} />
                 : <span aria-hidden="true">?</span>}
             </div>
             <div className={styles.heroIdentity}>

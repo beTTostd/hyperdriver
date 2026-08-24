@@ -8,6 +8,8 @@ uploads_dir="${UPLOADS_DIR:-/app/uploads}"
 mkdir -p "$database_dir" "$uploads_dir"
 
 node /app/scripts/migrate.mjs
+node /app/scripts/cleanup-quarantine.mjs
+node /app/scripts/backfill-replays.mjs
 node /app/scripts/seed.mjs
 
 # Bind mounts are commonly created as root on Linux. Make the persistent

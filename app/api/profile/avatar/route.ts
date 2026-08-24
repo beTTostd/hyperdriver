@@ -1,22 +1,23 @@
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
 import { getCurrentUser } from "../../../../lib/auth";
 import { isValidCardAvatar, normalizeCardAvatar } from "../../../../lib/card-avatars";
+import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../lib/http";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
+async function updateAvatar(request: Request) {
+  if (!validateMutationOrigin(request)) return originError();
   const currentUser = await getCurrentUser();
   if (!currentUser) {
-    return NextResponse.json({ error: "Você precisa estar autenticado." }, { status: 401 });
+    return privateJson({ error: "Você precisa estar autenticado." }, { status: 401 });
   }
 
   const body = await readBody(request);
   const avatarCardId = normalizeCardAvatar(body?.cardId);
   if (!isValidCardAvatar(avatarCardId)) {
-    return NextResponse.json({ error: "Use o ID de uma carta FAB válido." }, { status: 400 });
+    return privateJson({ error: "Use o ID de uma carta FAB válido." }, { status: 400 });
   }
 
   getDb()
@@ -25,8 +26,10 @@ export async function POST(request: Request) {
     .where(eq(users.id, currentUser.id))
     .run();
 
-  return NextResponse.json({ ok: true, avatarCardId });
+  return privateJson({ ok: true, avatarCardId });
 }
+
+export const POST = withApiLogging("/api/profile/avatar", updateAvatar);
 
 async function readBody(request: Request): Promise<Record<string, unknown> | null> {
   try {

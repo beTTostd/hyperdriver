@@ -5,7 +5,7 @@ import {
   fullCardImageUrl,
   markerSummary,
   squareCardImageUrl,
-} from "../app/mesa/card-presentation.js";
+} from "../app/table/card-presentation.js";
 
 test("builds square and full Talishar image URLs safely", () => {
   assert.equal(

@@ -1,12 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, lt, or, sum } from "drizzle-orm";
 import { getDb } from "../db";
-import { replays, users } from "../db/schema";
+import { replayMetrics, replays, users } from "../db/schema";
 import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
+import { calculateReplayTelemetry } from "./replay-telemetry";
+import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
+export const REPLAY_PAGE_SIZE = 25;
+const MAX_REPLAY_FRAMES = 20_000;
+const MAX_COLLECTION_LENGTH = 50_000;
+const MAX_STRING_LENGTH = 1024 * 1024;
+const MAX_DOCUMENT_DEPTH = 40;
+const MAX_OBJECT_KEYS = 10_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type ReplayCard = {
@@ -65,18 +71,14 @@ export type AdminReplayMetadata = ReplayMetadata & {
   username: string;
 };
 
+export type ReplayMetricTotals = Omit<typeof replayMetrics.$inferSelect, "replayId" | "calculatedAt">;
+export type ReplayStatsRecord = ReplayMetadata & { metrics: ReplayMetricTotals | null };
+export type ReplayPage<T> = { items: T[]; nextCursor: string | null };
+
 export class ReplayUploadError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(message: string, public status: number, public code?: string) {
     super(message);
   }
-}
-
-function uploadsDirectory() {
-  return resolve(process.env.UPLOADS_DIR || "data/uploads");
-}
-
-function replayPath(storageKey: string) {
-  return resolve(uploadsDirectory(), storageKey);
 }
 
 function parseTimestamp(value: unknown): number | null {
@@ -132,6 +134,8 @@ export function parseReplayDocument(raw: string): ReplayDocument {
     throw new ReplayUploadError("O arquivo enviado não contém JSON válido.", 400);
   }
 
+  validateStructuralLimits(value);
+
   const document = value as Partial<ReplayDocument>;
   const match = document?.match;
   if (
@@ -147,7 +151,7 @@ export function parseReplayDocument(raw: string): ReplayDocument {
   ) {
     throw new ReplayUploadError("A estrutura do replay é inválida.", 400);
   }
-  if (!parseTimestamp(match.startedAt)) {
+  if (parseTimestamp(match.startedAt) === null) {
     throw new ReplayUploadError("A data inicial do replay é inválida.", 400);
   }
   const compacted = compactReplayDocument(document as ReplayDocument) as ReplayDocument;
@@ -155,6 +159,49 @@ export function parseReplayDocument(raw: string): ReplayDocument {
     throw new ReplayUploadError("A partida ainda não foi concluída.", 422);
   }
   return compacted;
+}
+
+function validateStructuralLimits(value: unknown): void {
+  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+  while (pending.length) {
+    const current = pending.pop()!;
+    if (current.depth > MAX_DOCUMENT_DEPTH) {
+      throw new ReplayUploadError("O replay excede o limite de profundidade.", 400, "STRUCTURE_LIMIT");
+    }
+    if (typeof current.value === "string" && current.value.length > MAX_STRING_LENGTH) {
+      throw new ReplayUploadError("O replay contém uma string grande demais.", 400, "STRUCTURE_LIMIT");
+    }
+    if (
+      typeof current.value === "number" &&
+      (!Number.isFinite(current.value) || Math.abs(current.value) > Number.MAX_SAFE_INTEGER)
+    ) {
+      throw new ReplayUploadError("O replay contém um número fora do limite.", 400, "STRUCTURE_LIMIT");
+    }
+    if (!current.value || typeof current.value !== "object") continue;
+    if (Array.isArray(current.value) && current.value.length > MAX_COLLECTION_LENGTH) {
+      throw new ReplayUploadError("O replay contém uma lista grande demais.", 400, "STRUCTURE_LIMIT");
+    }
+    const entries = Object.values(current.value);
+    if (!Array.isArray(current.value) && entries.length > MAX_OBJECT_KEYS) {
+      throw new ReplayUploadError("O replay contém um objeto grande demais.", 400, "STRUCTURE_LIMIT");
+    }
+    for (const entry of entries) {
+      pending.push({ value: entry, depth: current.depth + 1 });
+    }
+  }
+
+  const document = value as Partial<ReplayDocument>;
+  if (Array.isArray(document.match?.frames) && document.match.frames.length > MAX_REPLAY_FRAMES) {
+    throw new ReplayUploadError("O replay excede o limite de frames.", 400, "STRUCTURE_LIMIT");
+  }
+  if (document.match?.endedAt !== undefined && document.match.endedAt !== null && parseTimestamp(document.match.endedAt) === null) {
+    throw new ReplayUploadError("O replay contém um timestamp inválido.", 400, "STRUCTURE_LIMIT");
+  }
+  for (const frame of document.match?.frames ?? []) {
+    if (frame.receivedAt !== undefined && parseTimestamp(frame.receivedAt) === null) {
+      throw new ReplayUploadError("O replay contém um timestamp inválido.", 400, "STRUCTURE_LIMIT");
+    }
+  }
 }
 
 function extractedMetadata(document: ReplayDocument) {
@@ -177,6 +224,25 @@ function extractedMetadata(document: ReplayDocument) {
     finalTurn: numeric(finalFrame.payload.turnNo),
     frameCount: match.frames.length,
   };
+}
+
+function extractedMetrics(document: ReplayDocument): ReplayMetricTotals {
+  const cycles = calculateReplayTelemetry(document);
+  return cycles.reduce<ReplayMetricTotals>((totals, cycle) => ({
+    receivedDamage: totals.receivedDamage + cycle.receivedDamage,
+    equipmentBlocked: totals.equipmentBlocked + cycle.equipmentBlocked,
+    cardBlocked: totals.cardBlocked + cycle.cardBlocked,
+    offeredDamage: totals.offeredDamage + cycle.offeredDamage,
+    lifeGained: totals.lifeGained + cycle.lifeGained,
+    cycleCount: totals.cycleCount + 1,
+  }), {
+    receivedDamage: 0,
+    equipmentBlocked: 0,
+    cardBlocked: 0,
+    offeredDamage: 0,
+    lifeGained: 0,
+    cycleCount: 0,
+  });
 }
 
 export async function saveReplayUpload(userId: number, raw: string) {
@@ -207,29 +273,39 @@ export async function saveReplayUpload(userId: number, raw: string) {
     return { replay: existing, duplicate: true };
   }
 
-  const directory = uploadsDirectory();
   const storageKey = `${randomUUID()}.json`;
-  const temporaryPath = resolve(directory, `.${storageKey}.tmp`);
-  const finalPath = replayPath(storageKey);
   const normalizedRaw = JSON.stringify(document);
-  await mkdir(directory, { recursive: true });
-  await writeFile(temporaryPath, normalizedRaw, { encoding: "utf8", flag: "wx" });
-  await rename(temporaryPath, finalPath);
+  const sizeBytes = Buffer.byteLength(normalizedRaw, "utf8");
+  const metrics = extractedMetrics(document);
+  assertQuota(userId, sizeBytes);
+  const storage = getReplayStorage();
+  await storage.writeAtomic(storageKey, normalizedRaw);
 
   try {
-    const replay = database
-      .insert(replays)
-      .values({
-        userId,
-        sourceMatchId: document.match.id,
-        storageKey,
-        ...extractedMetadata(document),
-      })
-      .returning()
-      .get();
+    const replay = database.transaction((transaction) => {
+      const usage = transaction
+        .select({ replayCount: count(), totalBytes: sum(replays.sizeBytes) })
+        .from(replays)
+        .where(eq(replays.userId, userId))
+        .get();
+      assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), sizeBytes);
+      const inserted = transaction
+        .insert(replays)
+        .values({
+          userId,
+          sourceMatchId: document.match.id,
+          storageKey,
+          sizeBytes,
+          ...extractedMetadata(document),
+        })
+        .returning()
+        .get();
+      transaction.insert(replayMetrics).values({ replayId: inserted.id, ...metrics }).run();
+      return inserted;
+    });
     return { replay, duplicate: false };
   } catch (error) {
-    await unlink(finalPath).catch(() => undefined);
+    await storage.delete(storageKey).catch(() => undefined);
     const concurrent = database
       .select()
       .from(replays)
@@ -245,52 +321,108 @@ export async function saveReplayUpload(userId: number, raw: string) {
   }
 }
 
-export async function listUserReplays(userId: number): Promise<ReplayMetadata[]> {
+function quotaLimit(name: string, fallback: number): number {
+  const configured = Number(process.env[name]);
+  return Number.isSafeInteger(configured) && configured > 0 ? configured : fallback;
+}
+
+function assertQuota(
+  userId: number,
+  incomingBytes: number,
+): void {
+  const usage = getDb()
+    .select({ replayCount: count(), totalBytes: sum(replays.sizeBytes) })
+    .from(replays)
+    .where(eq(replays.userId, userId))
+    .get();
+  assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), incomingBytes);
+}
+
+function assertQuotaUsage(replayCount: number, totalBytes: number, incomingBytes: number): void {
+  const maxBytes = quotaLimit("REPLAY_QUOTA_BYTES", 1024 * 1024 * 1024);
+  const maxReplays = quotaLimit("REPLAY_QUOTA_COUNT", 500);
+  if (replayCount >= maxReplays || totalBytes + incomingBytes > maxBytes) {
+    throw new ReplayUploadError("A quota de replays desta conta foi atingida.", 413, "REPLAY_QUOTA_EXCEEDED");
+  }
+}
+
+export async function listUserReplays(userId: number, cursor?: string | null): Promise<ReplayPage<ReplayMetadata>> {
+  const position = decodeCursor(cursor);
+  const condition = position
+    ? and(eq(replays.userId, userId), or(
+      lt(replays.startedAt, position.startedAt),
+      and(eq(replays.startedAt, position.startedAt), lt(replays.id, position.id)),
+    ))
+    : eq(replays.userId, userId);
   const replayList = getDb()
     .select()
     .from(replays)
-    .where(eq(replays.userId, userId))
-    .orderBy(desc(replays.startedAt), desc(replays.uploadedAt))
+    .where(condition)
+    .orderBy(desc(replays.startedAt), desc(replays.id))
+    .limit(REPLAY_PAGE_SIZE + 1)
     .all();
-
-  return Promise.all(replayList.map(async (replay) => {
-    try {
-      const raw = await readFile(replayPath(replay.storageKey), "utf8");
-      return refreshReplayResult(replay, raw);
-    } catch {
-      return replay;
-    }
-  }));
+  return pageFromRows(replayList);
 }
 
-export async function listAdminReplays(): Promise<AdminReplayMetadata[]> {
+export async function listAdminReplays(cursor?: string | null): Promise<ReplayPage<AdminReplayMetadata>> {
+  const position = decodeCursor(cursor);
   const replayList = getDb()
     .select({ replay: replays, username: users.username })
     .from(replays)
     .innerJoin(users, eq(users.id, replays.userId))
-    .orderBy(desc(replays.startedAt), desc(replays.uploadedAt))
+    .where(position ? or(
+      lt(replays.startedAt, position.startedAt),
+      and(eq(replays.startedAt, position.startedAt), lt(replays.id, position.id)),
+    ) : undefined)
+    .orderBy(desc(replays.startedAt), desc(replays.id))
+    .limit(REPLAY_PAGE_SIZE + 1)
     .all();
-
-  return Promise.all(replayList.map(async ({ replay, username }) => {
-    try {
-      const raw = await readFile(replayPath(replay.storageKey), "utf8");
-      return { ...(await refreshReplayResult(replay, raw)), username };
-    } catch {
-      return { ...replay, username };
-    }
-  }));
+  return pageFromRows(replayList.map(({ replay, username }) => ({ ...replay, username })));
 }
 
-async function refreshReplayResult(replay: ReplayMetadata, raw: string) {
-  const document = JSON.parse(raw) as ReplayDocument;
-  const result = replayResult(document.match);
-  if (result === "unknown" || result === replay.result) return replay;
+function pageFromRows<T extends { id: number; startedAt: number }>(rows: T[]): ReplayPage<T> {
+  const hasMore = rows.length > REPLAY_PAGE_SIZE;
+  const items = hasMore ? rows.slice(0, REPLAY_PAGE_SIZE) : rows;
+  const last = items.at(-1);
+  return {
+    items,
+    nextCursor: hasMore && last
+      ? Buffer.from(JSON.stringify({ startedAt: last.startedAt, id: last.id })).toString("base64url")
+      : null,
+  };
+}
+
+function decodeCursor(cursor?: string | null): { startedAt: number; id: number } | null {
+  if (!cursor || cursor.length > 256) return null;
+  try {
+    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    return Number.isSafeInteger(value?.startedAt) && Number.isSafeInteger(value?.id)
+      ? { startedAt: value.startedAt, id: value.id }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function listUserReplayStats(userId: number): ReplayStatsRecord[] {
   return getDb()
-    .update(replays)
-    .set({ result })
-    .where(eq(replays.id, replay.id))
-    .returning()
-    .get() ?? { ...replay, result };
+    .select({ replay: replays, metrics: replayMetrics })
+    .from(replays)
+    .leftJoin(replayMetrics, eq(replayMetrics.replayId, replays.id))
+    .where(eq(replays.userId, userId))
+    .orderBy(desc(replays.startedAt), desc(replays.id))
+    .all()
+    .map(({ replay, metrics }) => ({
+      ...replay,
+      metrics: metrics ? {
+        receivedDamage: metrics.receivedDamage,
+        equipmentBlocked: metrics.equipmentBlocked,
+        cardBlocked: metrics.cardBlocked,
+        offeredDamage: metrics.offeredDamage,
+        lifeGained: metrics.lifeGained,
+        cycleCount: metrics.cycleCount,
+      } : null,
+    }));
 }
 
 export function findUserReplay(userId: number, replayId: string): ReplayMetadata | null {
@@ -338,21 +470,21 @@ export async function readAdminReplay(replayId: string) {
 }
 
 async function readReplay(replay: ReplayMetadata) {
-  const raw = await readFile(replayPath(replay.storageKey), "utf8");
-  let metadata = replay;
-  try {
-    metadata = await refreshReplayResult(replay, raw);
-  } catch {
-    // Keep serving the replay when an older file cannot be parsed for metadata refresh.
-  }
+  const raw = await getReplayStorage().read(replay.storageKey);
   return {
-    metadata,
+    metadata: replay,
     raw,
   };
 }
 
-export async function deleteReplayFiles(storageKeys: string[]): Promise<void> {
-  await Promise.all(
-    storageKeys.map((storageKey) => unlink(replayPath(storageKey)).catch(() => undefined)),
-  );
+export async function quarantineReplayFiles(storageKeys: string[]): Promise<QuarantinedReplay[]> {
+  return getReplayStorage().quarantine(storageKeys);
+}
+
+export async function restoreReplayFiles(items: QuarantinedReplay[]): Promise<void> {
+  await getReplayStorage().restore(items);
+}
+
+export async function deleteQuarantinedReplayFiles(items: QuarantinedReplay[]): Promise<void> {
+  await getReplayStorage().deleteQuarantined(items);
 }

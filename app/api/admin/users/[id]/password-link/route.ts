@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { getDb } from "../../../../../../db";
 import { passwordSetupTokens, users } from "../../../../../../db/schema";
 import {
@@ -9,28 +8,30 @@ import {
   hashToken,
   PASSWORD_SETUP_DURATION_MS,
 } from "../../../../../../lib/auth";
+import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../../../lib/http";
 
 export const runtime = "nodejs";
 
-export async function POST(
-  _request: Request,
+async function createPasswordLink(
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  if (!validateMutationOrigin(request)) return originError();
   const currentUser = await getCurrentUser();
   if (!currentUser || currentUser.role !== "admin") {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    return privateJson({ error: "Acesso negado." }, { status: 403 });
   }
 
   const { id } = await context.params;
   if (!/^\d+$/.test(id)) {
-    return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    return privateJson({ error: "Usuário não encontrado." }, { status: 404 });
   }
 
   let origin: string;
   try {
     origin = appUrl();
   } catch (error) {
-    return NextResponse.json(
+    return privateJson(
       { error: error instanceof Error ? error.message : "APP_URL não configurado." },
       { status: 500 },
     );
@@ -60,13 +61,15 @@ export async function POST(
   });
 
   if (!target) {
-    return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    return privateJson({ error: "Usuário não encontrado." }, { status: 404 });
   }
 
-  return NextResponse.json({
+  return privateJson({
     ok: true,
     username: target.username,
     expiresAt,
-    setupUrl: `${origin}/set-password?token=${encodeURIComponent(token)}`,
+    setupUrl: `${origin}/set-password#token=${encodeURIComponent(token)}`,
   });
 }
+
+export const POST = withApiLogging("/api/admin/users/:id/password-link", createPasswordLink);

@@ -1,16 +1,18 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
+import { and, desc, eq, gt, isNull, lt, ne } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "../db";
 import { passwordSetupTokens, sessions, users } from "../db/schema";
+import { annotateRequestUser } from "./http";
 
 export const SESSION_COOKIE = "hyperdriver_session";
 export const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 export const PASSWORD_SETUP_DURATION_MS = 2 * 60 * 60 * 1000;
 
 export function secureCookie(): boolean {
-  return process.env.NODE_ENV === "production" && process.env.APP_URL?.startsWith("https://") === true;
+  return process.env.NODE_ENV === "production";
 }
 
 export type UserRole = "admin" | "user";
@@ -48,20 +50,20 @@ export function validatePassword(password: unknown): string | null {
   return null;
 }
 
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
-  const derivedKey = scryptSync(password, salt, 64);
+  const derivedKey = await promisify(nodeScrypt)(password, salt, 64) as Buffer;
   return `scrypt$${salt}$${derivedKey.toString("hex")}`;
 }
 
-export function verifyPassword(password: string, encodedHash: string | null): boolean {
+export async function verifyPassword(password: string, encodedHash: string | null): Promise<boolean> {
   if (!encodedHash) return false;
   const [algorithm, salt, encodedKey] = encodedHash.split("$");
   if (algorithm !== "scrypt" || !salt || !encodedKey) return false;
 
   try {
     const expected = Buffer.from(encodedKey, "hex");
-    const actual = scryptSync(password, salt, expected.length);
+    const actual = await promisify(nodeScrypt)(password, salt, expected.length) as Buffer;
     return expected.length === actual.length && timingSafeEqual(expected, actual);
   } catch {
     return false;
@@ -83,6 +85,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export function findUserBySessionToken(token: string): AuthUser | null {
+  cleanupExpiredAuthArtifacts();
   const row = getDb()
     .select({
       id: users.id,
@@ -98,6 +101,7 @@ export function findUserBySessionToken(token: string): AuthUser | null {
     .get();
 
   if (!row || !row.isActive || row.expiresAt <= Date.now()) return null;
+  annotateRequestUser(row.id);
   return {
     id: row.id,
     username: row.username,
@@ -189,6 +193,7 @@ export function deleteSession(token: string | undefined): void {
 }
 
 export function createSession(userId: number): string {
+  annotateRequestUser(userId);
   const token = createOpaqueToken();
   const now = Date.now();
   getDb().transaction((database) => {
@@ -214,44 +219,58 @@ export function createPasswordSetup(
 ): { token: string; expiresAt: number } {
   const token = createOpaqueToken();
   const expiresAt = Date.now() + PASSWORD_SETUP_DURATION_MS;
-  getDb()
-    .insert(passwordSetupTokens)
-    .values({ userId, tokenHash: hashToken(token), expiresAt })
-    .run();
+  getDb().transaction((database) => {
+    database.delete(passwordSetupTokens).where(eq(passwordSetupTokens.userId, userId)).run();
+    database
+      .insert(passwordSetupTokens)
+      .values({ userId, tokenHash: hashToken(token), expiresAt })
+      .run();
+  });
   return { token, expiresAt };
 }
 
-export function consumePasswordSetup(token: string, password: string): boolean {
+export async function consumePasswordSetup(token: string, password: string): Promise<boolean> {
   const database = getDb();
   const now = Date.now();
   const tokenHash = hashToken(token);
-  const setup = database
-    .select({ id: passwordSetupTokens.id, userId: passwordSetupTokens.userId })
-    .from(passwordSetupTokens)
-    .where(
-      and(
+  const passwordHash = await hashPassword(password);
+  return database.transaction((transaction) => {
+    const setup = transaction
+      .select({ id: passwordSetupTokens.id, userId: passwordSetupTokens.userId })
+      .from(passwordSetupTokens)
+      .where(and(
         eq(passwordSetupTokens.tokenHash, tokenHash),
         isNull(passwordSetupTokens.usedAt),
         gt(passwordSetupTokens.expiresAt, now),
-      ),
-    )
-    .get();
-  if (!setup) return false;
+      ))
+      .get();
+    if (!setup) return false;
 
-  const updated = database
-    .update(users)
-    .set({ passwordHash: hashPassword(password), updatedAt: now })
-    .where(eq(users.id, setup.userId))
-    .run();
-  if (updated.changes !== 1) return false;
+    const consumed = transaction
+      .update(passwordSetupTokens)
+      .set({ usedAt: now })
+      .where(and(
+        eq(passwordSetupTokens.id, setup.id),
+        isNull(passwordSetupTokens.usedAt),
+        gt(passwordSetupTokens.expiresAt, now),
+      ))
+      .run();
+    if (consumed.changes !== 1) return false;
 
-  database.delete(sessions).where(eq(sessions.userId, setup.userId)).run();
-  database
-    .update(passwordSetupTokens)
-    .set({ usedAt: now })
-    .where(eq(passwordSetupTokens.id, setup.id))
-    .run();
-  return true;
+    const updated = transaction
+      .update(users)
+      .set({ passwordHash, updatedAt: now })
+      .where(eq(users.id, setup.userId))
+      .run();
+    if (updated.changes !== 1) return false;
+
+    transaction.delete(sessions).where(eq(sessions.userId, setup.userId)).run();
+    transaction
+      .delete(passwordSetupTokens)
+      .where(and(eq(passwordSetupTokens.userId, setup.userId), ne(passwordSetupTokens.id, setup.id)))
+      .run();
+    return true;
+  });
 }
 
 export function appUrl(): string {
@@ -261,5 +280,26 @@ export function appUrl(): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("APP_URL must use http or https.");
   }
-  return url.toString().replace(/\/$/, "");
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
+    throw new Error("APP_URL must contain only the application origin.");
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    url.protocol !== "https:" &&
+    url.hostname !== "127.0.0.1" &&
+    url.hostname !== "localhost"
+  ) {
+    throw new Error("APP_URL must use https in production.");
+  }
+  return url.origin;
+}
+
+let lastAuthCleanup = 0;
+export function cleanupExpiredAuthArtifacts(now = Date.now()): void {
+  if (now - lastAuthCleanup < 5 * 60 * 1000) return;
+  lastAuthCleanup = now;
+  getDb().transaction((database) => {
+    database.delete(sessions).where(lt(sessions.expiresAt, now)).run();
+    database.delete(passwordSetupTokens).where(lt(passwordSetupTokens.expiresAt, now)).run();
+  });
 }

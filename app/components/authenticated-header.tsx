@@ -22,7 +22,7 @@ export default function AuthenticatedHeader({
       <div className={styles.headerLeft}>
         <Brand href="/replays" subtitle={null} />
         {isAdmin && (
-          <Link className={styles.adminPartidasLink} href="/admin/partidas">
+          <Link className={styles.adminPartidasLink} href="/admin/replays">
             Partidas
           </Link>
         )}

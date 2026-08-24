@@ -1,17 +1,5 @@
-import { ReplayLibrary } from "../../replays/replay-library";
-import { requireAdmin } from "../../../lib/auth";
-import { listAdminReplays } from "../../../lib/replays";
+import { redirect } from "next/navigation";
 
-export default async function AdminReplaysPage() {
-  const currentUser = await requireAdmin("/admin/partidas");
-  const replayList = await listAdminReplays();
-
-  return (
-    <ReplayLibrary
-      currentUser={currentUser}
-      replayList={replayList}
-      title="Todas as partidas"
-      emptyDescription="As partidas sincronizadas pelos usuários aparecerão aqui."
-    />
-  );
+export default function LegacyAdminMatchesPage() {
+  redirect("/admin/replays");
 }

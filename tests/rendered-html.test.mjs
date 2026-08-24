@@ -149,6 +149,53 @@ test("renders development preview metadata", async () => {
   assert.doesNotMatch(html, /Flesh and Blood|Talishar/);
 });
 
+test("applies security headers, private caching and health checks", async () => {
+  const loginPage = await fetch(new URL("/login", baseUrl));
+  const csp = loginPage.headers.get("content-security-policy") ?? "";
+  assert.match(csp, /script-src 'self' 'nonce-[^']+'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.equal(loginPage.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(loginPage.headers.get("x-frame-options"), "DENY");
+  assert.match(loginPage.headers.get("permissions-policy") ?? "", /camera=\(\)/);
+  assert.match(loginPage.headers.get("strict-transport-security") ?? "", /max-age=31536000/);
+  assert.equal(loginPage.headers.get("x-powered-by"), null);
+  const html = await loginPage.text();
+  const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
+  assert.ok(nonce);
+  assert.match(html, new RegExp(`nonce=["']${nonce}["']`));
+
+  const setupPage = await fetch(new URL("/set-password", baseUrl));
+  assert.equal(setupPage.headers.get("referrer-policy"), "no-referrer");
+
+  const replayLibrary = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
+  assert.match(replayLibrary.headers.get("cache-control") ?? "", /no-store/);
+
+  const live = await fetch(new URL("/api/health/live", baseUrl));
+  const ready = await fetch(new URL("/api/health/ready", baseUrl));
+  assert.equal(live.status, 200);
+  assert.equal(ready.status, 200);
+  assert.deepEqual(await ready.json(), { status: "ready" });
+});
+
+test("rejects cross-origin mutations and always issues a secure production cookie", async () => {
+  const rejected = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://evil.example" },
+    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+  });
+  assert.equal(rejected.status, 403);
+
+  const accepted = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: baseUrl },
+    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+  });
+  assert.equal(accepted.status, 200);
+  assert.match(accepted.headers.get("set-cookie") ?? "", /; Secure(?:;|$)/i);
+  assert.match(accepted.headers.get("cache-control") ?? "", /no-store/);
+});
+
 test("redirects authenticated users from the landing page to the replay library", async () => {
   const response = await fetch(new URL("/", baseUrl), {
     headers: { cookie },
@@ -170,6 +217,21 @@ test("redirects authenticated users from the landing page to the replay library"
   assert.match(await replayLibrary.text(), /Replays recentes/);
 });
 
+test("renders the authenticated statistics page with shareable filters", async () => {
+  const anonymous = await fetch(new URL("/me/stats", baseUrl), { redirect: "manual" });
+  assert.equal(anonymous.status, 307);
+  assert.match(anonymous.headers.get("location") ?? "", /\/login\?returnTo=%2Fme%2Fstats/);
+
+  const response = await fetch(new URL("/me/stats?period=30&mode=all", baseUrl), { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Estatísticas[\s\S]*do jogador/);
+  assert.match(html, /name="period"/);
+  assert.match(html, /name="mode"/);
+  assert.match(html, /Nenhum replay no período/);
+  assert.match(html, /href="\/me\/stats"[^>]*>Estatísticas/);
+});
+
 test("requires authentication and supports one-time user invitations", async () => {
   const anonymous = await fetch(new URL("/admin", baseUrl), { redirect: "manual" });
   assert.equal(anonymous.status, 307);
@@ -183,13 +245,13 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.equal(created.status, 201);
   const invitation = await created.json();
   assert.equal(typeof invitation.id, "number");
-  assert.match(invitation.setupUrl, /\/set-password\?token=/);
+  assert.match(invitation.setupUrl, /\/set-password#token=/);
   assert.ok(invitation.expiresAt - Date.now() > 2 * 60 * 60 * 1000 - 5000);
   assert.ok(invitation.expiresAt - Date.now() <= 2 * 60 * 60 * 1000);
 
   const setupPage = await fetch(invitation.setupUrl);
   assert.equal(setupPage.status, 200);
-  assert.match(await setupPage.text(), /jogador-01/);
+  assert.match(await setupPage.text(), /Crie sua/);
 
   const regenerated = await fetch(
     new URL(`/api/admin/users/${invitation.id}/password-link`, baseUrl),
@@ -197,14 +259,14 @@ test("requires authentication and supports one-time user invitations", async () 
   );
   assert.equal(regenerated.status, 200);
   const regeneratedInvitation = await regenerated.json();
-  assert.match(regeneratedInvitation.setupUrl, /\/set-password\?token=/);
+  assert.match(regeneratedInvitation.setupUrl, /\/set-password#token=/);
   assert.notEqual(regeneratedInvitation.setupUrl, invitation.setupUrl);
 
   const staleSetup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(invitation.setupUrl).searchParams.get("token"),
+      token: invitationToken(invitation.setupUrl),
       password: "PlayerPassword!123",
       confirmation: "PlayerPassword!123",
     }),
@@ -215,7 +277,7 @@ test("requires authentication and supports one-time user invitations", async () 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(regeneratedInvitation.setupUrl).searchParams.get("token"),
+      token: invitationToken(regeneratedInvitation.setupUrl),
       password: "PlayerPassword!123",
       confirmation: "PlayerPassword!123",
     }),
@@ -226,7 +288,7 @@ test("requires authentication and supports one-time user invitations", async () 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(regeneratedInvitation.setupUrl).searchParams.get("token"),
+      token: invitationToken(regeneratedInvitation.setupUrl),
       password: "PlayerPassword!123",
       confirmation: "PlayerPassword!123",
     }),
@@ -285,7 +347,7 @@ test("requires authentication and supports one-time user invitations", async () 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      token: new URL(resetInvitation.setupUrl).searchParams.get("token"),
+      token: invitationToken(resetInvitation.setupUrl),
       password: resetPassword,
       confirmation: resetPassword,
     }),
@@ -335,6 +397,24 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.equal(deletedLogin.status, 401);
 });
 
+test("consumes a password invitation atomically under a race", async () => {
+  const created = await fetch(new URL("/api/admin/users", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ username: "token-race", role: "user" }),
+  });
+  assert.equal(created.status, 201);
+  const invitation = await created.json();
+  const token = invitationToken(invitation.setupUrl);
+  const password = "ConcurrentPassword!123";
+  const attempts = await Promise.all([1, 2].map(() => fetch(new URL("/api/auth/setup-password", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.80" },
+    body: JSON.stringify({ token, password, confirmation: password }),
+  })));
+  assert.deepEqual(attempts.map((response) => response.status).sort(), [200, 400]);
+});
+
 test("renders canonical replay routes and validates legacy redirects", async () => {
   const [tableResponse, legacyTelemetryResponse, invalidTelemetryResponse, invalidTableResponse, invalidCanonicalTelemetryResponse, invalidCanonicalTableResponse] = await Promise.all([
     fetch(new URL("/table", baseUrl), { headers: { cookie } }),
@@ -350,6 +430,11 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   const editProfileResponse = await fetch(new URL("/me/profile", baseUrl), {
     headers: { cookie },
   });
+  const [legacyTablePage, legacyProfilePage, legacyPasswordPage] = await Promise.all([
+    fetch(new URL("/mesa", baseUrl), { headers: { cookie }, redirect: "manual" }),
+    fetch(new URL("/perfil/editar", baseUrl), { headers: { cookie }, redirect: "manual" }),
+    fetch(new URL("/primeira-senha", baseUrl), { redirect: "manual" }),
+  ]);
 
   assert.equal(tableResponse.status, 200);
   assert.match(await tableResponse.text(), /Montando a mesa/);
@@ -372,6 +457,12 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   assert.match(editProfileHtml, /Nome de usuário/);
   assert.match(editProfileHtml, /Alterar foto/);
   assert.doesNotMatch(editProfileHtml, /Replays/);
+  assert.equal(legacyTablePage.status, 307);
+  assert.equal(new URL(legacyTablePage.headers.get("location"), baseUrl).pathname, "/table");
+  assert.equal(legacyProfilePage.status, 307);
+  assert.equal(new URL(legacyProfilePage.headers.get("location"), baseUrl).pathname, "/me/profile");
+  assert.equal(legacyPasswordPage.status, 307);
+  assert.equal(new URL(legacyPasswordPage.headers.get("location"), baseUrl).pathname, "/set-password");
 });
 
 test("allows authenticated users to choose a FAB card avatar", async () => {
@@ -469,8 +560,7 @@ test("keeps the avatar picker responsive across catalog states", () => {
   assert.match(source, /Tentar novamente/);
   assert.match(source, /Nenhuma arte encontrada/);
   assert.match(source, /Digite mais letras para refinar a busca/);
-  assert.match(source, /loading="lazy"/);
-  assert.match(source, /decoding="async"/);
+  assert.match(source, /CardImage/);
   assert.match(source, /onError=/);
   assert.doesNotMatch(source, /setCards\(\[\]\)/);
 });
@@ -555,7 +645,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.match(adminHtml, /beta_hero_cropped\.webp/);
   assert.match(adminHtml, /Modo de jogo/);
   assert.match(adminHtml, /Classic Constructed/);
-  assert.match(adminHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
+  assert.match(adminHtml, /href="\/admin\/replays"[^>]*>Partidas/);
   assert.doesNotMatch(adminHtml, /Snapshots|Origem/);
   assert.match(adminHtml, new RegExp(`/replays/${uploaded.replayId}/table`));
   assert.doesNotMatch(adminHtml, new RegExp(`/table/${uploaded.replayId}`));
@@ -674,7 +764,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   });
   const isolatedLibraryHtml = await isolatedLibrary.text();
   assert.doesNotMatch(isolatedLibraryHtml, /Alpha Hero/);
-  assert.doesNotMatch(isolatedLibraryHtml, /href="\/admin\/partidas"[^>]*>Partidas/);
+  assert.doesNotMatch(isolatedLibraryHtml, /href="\/admin\/replays"[^>]*>Partidas/);
   const privateReplay = await fetch(new URL(`/api/replays/${uploaded.replayId}`, baseUrl), {
     headers: { cookie: isolatedCookie },
   });
@@ -703,7 +793,7 @@ test("lets admins list and open replays owned by different users", async () => {
     assert.equal(upload.status, 201);
   }
 
-  const adminPage = await fetch(new URL("/admin/partidas", baseUrl), { headers: { cookie } });
+  const adminPage = await fetch(new URL("/admin/replays", baseUrl), { headers: { cookie } });
   assert.equal(adminPage.status, 200);
   const adminHtml = await adminPage.text();
   assert.match(adminHtml, /Todas as partidas/);
@@ -712,8 +802,16 @@ test("lets admins list and open replays owned by different users", async () => {
   assert.ok(adminHtml.indexOf("partidas-beta") < adminHtml.indexOf("partidas-alpha"));
   assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}/table`));
   assert.match(adminHtml, new RegExp(`/replays/${alphaReplayId}`));
+  assert.doesNotMatch(adminHtml, /href="\/admin\/partidas"/);
 
-  const userAdminPage = await fetch(new URL("/admin/partidas", baseUrl), {
+  const legacyAdminPage = await fetch(new URL("/admin/partidas", baseUrl), {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  assert.equal(legacyAdminPage.status, 307);
+  assert.equal(new URL(legacyAdminPage.headers.get("location"), baseUrl).pathname, "/admin/replays");
+
+  const userAdminPage = await fetch(new URL("/admin/replays", baseUrl), {
     headers: { cookie: alphaCookie },
     redirect: "manual",
   });
@@ -746,6 +844,105 @@ test("lets admins list and open replays owned by different users", async () => {
     headers: { cookie: betaCookie },
   });
   assert.equal(userAnalysis.status, 404);
+});
+
+test("accepts a chunked replay body without Content-Length and enforces login limits", async () => {
+  const body = JSON.stringify(replayDocument("c3333333-3333-4333-8333-333333333333", true));
+  const stream = new ReadableStream({
+    start(controller) {
+      const bytes = new TextEncoder().encode(body);
+      controller.enqueue(bytes.slice(0, Math.floor(bytes.length / 2)));
+      controller.enqueue(bytes.slice(Math.floor(bytes.length / 2)));
+      controller.close();
+    },
+  });
+  const uploaded = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: stream,
+    duplex: "half",
+  });
+  assert.equal(uploaded.status, 201);
+
+  const headers = {
+    "content-type": "application/json",
+    "x-forwarded-for": "203.0.113.77",
+  };
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const failure = await fetch(new URL("/api/auth/login", baseUrl), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ username: "rate-limited-user", password: "WrongPassword!123" }),
+    });
+    assert.equal(failure.status, 401);
+  }
+  const limited = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ username: "rate-limited-user", password: "WrongPassword!123" }),
+  });
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("retry-after")) > 0);
+});
+
+test("rejects structural replay abuse and paginates from SQLite without reading files", async () => {
+  const deepReplay = replayDocument("e4444444-4444-4444-8444-444444444444", true);
+  let nested = deepReplay;
+  for (let depth = 0; depth < 45; depth += 1) {
+    nested.extra = {};
+    nested = nested.extra;
+  }
+  const structuralLimit = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(deepReplay),
+  });
+  assert.equal(structuralLimit.status, 400);
+  assert.equal((await structuralLimit.json()).code, "STRUCTURE_LIMIT");
+
+  const quotaCookie = await createTestUser("quota-user");
+  const database = new Database(join(databaseDirectory, "test.sqlite"));
+  try {
+    database.pragma("foreign_keys = ON");
+    const userId = database.prepare("SELECT id FROM users WHERE username = 'quota-user'").get().id;
+    const insert = database.prepare(`
+      INSERT INTO replays (
+        user_id, source_match_id, storage_key, schema_version, status, result,
+        started_at, frame_count, size_bytes
+      ) VALUES (?, ?, ?, '0.1.0', 'finished', 'victory', ?, 1, 1)
+    `);
+    database.transaction(() => {
+      for (let index = 0; index < 500; index += 1) {
+        const prefix = `d${index.toString(16).padStart(7, "0")}`;
+        const suffix = index.toString(16).padStart(12, "0");
+        insert.run(
+          userId,
+          `${prefix}-0000-4000-8000-${suffix}`,
+          `quota-${index}.json`,
+          Date.parse("2026-08-23T12:00:00.000Z"),
+        );
+      }
+    })();
+  } finally {
+    database.close();
+  }
+
+  const firstPage = await fetch(new URL("/replays", baseUrl), { headers: { cookie: quotaCookie } });
+  const firstPageHtml = await firstPage.text();
+  assert.equal(replayIdsInHtml(firstPageHtml).size, 25);
+  const cursor = firstPageHtml.match(/href="\/replays\?cursor=([^"]+)"/)?.[1];
+  assert.ok(cursor);
+  const secondPage = await fetch(new URL(`/replays?cursor=${cursor}`, baseUrl), { headers: { cookie: quotaCookie } });
+  assert.equal(secondPage.status, 200);
+  assert.equal(replayIdsInHtml(await secondPage.text()).size, 25);
+
+  const quotaResponse = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: quotaCookie },
+    body: JSON.stringify(replayDocument("f5555555-5555-4555-8555-555555555555", true)),
+  });
+  assert.equal(quotaResponse.status, 413);
+  assert.equal((await quotaResponse.json()).code, "REPLAY_QUOTA_EXCEEDED");
 });
 
 function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
@@ -910,7 +1107,7 @@ async function createTestUser(username) {
   });
   assert.equal(created.status, 201);
   const invitation = await created.json();
-  const token = new URL(invitation.setupUrl).searchParams.get("token");
+  const token = invitationToken(invitation.setupUrl);
   const password = "IsolatedPassword!123";
   const setup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
     method: "POST",
@@ -960,6 +1157,14 @@ async function waitForServer(url) {
 function getCookie(response) {
   const values = response.headers.getSetCookie?.() ?? [];
   return (values[0] ?? response.headers.get("set-cookie"))?.split(";", 1)[0];
+}
+
+function invitationToken(url) {
+  return new URLSearchParams(new URL(url).hash.slice(1)).get("token");
+}
+
+function replayIdsInHtml(html) {
+  return new Set([...html.matchAll(/\/replays\/(d[0-9a-f-]{35})\/table/g)].map((match) => match[1]));
 }
 
 function readLastLogin(username) {

@@ -12,27 +12,30 @@
     "start": "next start --hostname 0.0.0.0",
     "test": "npm run build && node --test tests/*.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
+    "verify:extension": "node scripts/verify-extension-zip.mjs",
     "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
+    "db:backfill": "node scripts/backfill-replays.mjs",
+    "db:cleanup": "node scripts/cleanup-quarantine.mjs",
     "db:seed": "node scripts/seed.mjs"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.3.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "7.6.13",
     "@tailwindcss/postcss": "4.2.1",
+    "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.3.2",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },

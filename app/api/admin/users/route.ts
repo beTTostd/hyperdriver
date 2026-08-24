@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { passwordSetupTokens, users } from "../../../../db/schema";
 import {
@@ -11,33 +10,35 @@ import {
   PASSWORD_SETUP_DURATION_MS,
   normalizeUsername,
 } from "../../../../lib/auth";
+import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../lib/http";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
+async function createUser(request: Request) {
+  if (!validateMutationOrigin(request)) return originError();
   const currentUser = await getCurrentUser();
   if (!currentUser || currentUser.role !== "admin") {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    return privateJson({ error: "Acesso negado." }, { status: 403 });
   }
 
   const body = await readBody(request);
   const username = normalizeUsername(body?.username);
   const role = body?.role;
   if (!isValidUsername(username)) {
-    return NextResponse.json(
+    return privateJson(
       { error: "Username deve ter de 3 a 50 caracteres e usar apenas letras, números, ponto, hífen ou sublinhado." },
       { status: 400 },
     );
   }
   if (role !== "admin" && role !== "user") {
-    return NextResponse.json({ error: "Role inválida." }, { status: 400 });
+    return privateJson({ error: "Role inválida." }, { status: 400 });
   }
 
   let origin: string;
   try {
     origin = appUrl();
   } catch (error) {
-    return NextResponse.json(
+    return privateJson(
       { error: error instanceof Error ? error.message : "APP_URL não configurado." },
       { status: 500 },
     );
@@ -64,22 +65,24 @@ export async function POST(request: Request) {
     });
 
     if (!created) {
-      return NextResponse.json({ error: "Este username já está em uso." }, { status: 409 });
+      return privateJson({ error: "Este username já está em uso." }, { status: 409 });
     }
     createdId = created.id;
   } catch {
-    return NextResponse.json({ error: "Não foi possível criar o usuário." }, { status: 500 });
+    return privateJson({ error: "Não foi possível criar o usuário." }, { status: 500 });
   }
 
-  return NextResponse.json({
+  return privateJson({
     ok: true,
     id: createdId,
     username,
     role,
     expiresAt,
-    setupUrl: `${origin}/set-password?token=${encodeURIComponent(token)}`,
+    setupUrl: `${origin}/set-password#token=${encodeURIComponent(token)}`,
   }, { status: 201 });
 }
+
+export const POST = withApiLogging("/api/admin/users", createUser);
 
 async function readBody(request: Request): Promise<Record<string, unknown> | null> {
   try {
