@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "hyperdriver_session";
-const publicPaths = new Set(["/", "/login", "/set-password", "/primeira-senha"]);
+const publicPaths = new Set([
+  "/",
+  "/login",
+  "/politica-de-privacidade",
+  "/set-password",
+  "/primeira-senha",
+]);
 const REPLAY_ID_PATTERN = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|\d+)$/i;
 
 export function proxy(request: NextRequest) {

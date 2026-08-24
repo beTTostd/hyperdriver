@@ -149,6 +149,18 @@ test("renders development preview metadata", async () => {
   assert.doesNotMatch(html, /Flesh and Blood|Talishar/);
 });
 
+test("renders the extension privacy policy as a public page", async () => {
+  const response = await fetch(new URL("/politica-de-privacidade", baseUrl));
+
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Política de Privacidade/);
+  assert.match(html, /24 de agosto de 2026/);
+  assert.match(html, /A sincronização é automática/);
+  assert.match(html, /Política de Dados do Usuário da Chrome Web Store/);
+  assert.match(html, /Legend Story Studios/);
+});
+
 test("applies security headers, private caching and health checks", async () => {
   const loginPage = await fetch(new URL("/login", baseUrl));
   const csp = loginPage.headers.get("content-security-policy") ?? "";

@@ -48,7 +48,13 @@ export default async function LandingPage() {
           <article><span>03</span><h3>Decisões melhores</h3><p>Use seus dados para transformar experiência em consistência.</p></article>
         </div>
       </section>
-      <footer className={styles.footer}><Brand subtitle="Play with perspective" /><span>Estatísticas que ajudam você a jogar melhor.</span></footer>
+      <footer className={styles.footer}>
+        <Brand subtitle="Play with perspective" />
+        <div className={styles.footerLinks}>
+          <Link href="/politica-de-privacidade">Política de Privacidade</Link>
+          <span>Estatísticas que ajudam você a jogar melhor.</span>
+        </div>
+      </footer>
     </main>
   );
 }
