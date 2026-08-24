@@ -1,6 +1,8 @@
 .page {
   min-height: 100vh;
-  padding: 24px clamp(18px, 5vw, 72px) 72px;
+  min-height: 100dvh;
+  padding: var(--page-block-start) max(var(--page-gutter), var(--safe-right)) var(--page-block-end) max(var(--page-gutter), var(--safe-left));
+  overflow-x: clip;
   color: var(--paper);
   background:
     linear-gradient(rgba(242, 241, 236, 0.025) 1px, transparent 1px),
@@ -11,7 +13,7 @@
 }
 
 .shell {
-  width: min(1180px, 100%);
+  width: min(var(--content-max), 100%);
   margin-inline: auto;
 }
 .sectionLabel {
@@ -216,14 +218,15 @@
   display: grid;
   overflow-y: auto;
   place-items: center;
-  padding: 24px;
+  padding: max(24px, var(--safe-top)) max(24px, var(--safe-right)) max(24px, var(--safe-bottom)) max(24px, var(--safe-left));
   background: rgba(9, 10, 11, 0.82);
 }
 
 .modal {
   width: min(760px, 100%);
-  max-height: min(720px, calc(100vh - 48px));
+  max-height: min(720px, calc(100dvh - 48px - var(--safe-top) - var(--safe-bottom)));
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: clamp(20px, 4vw, 32px);
   border: 1px solid var(--line-strong);
   border-top: 2px solid var(--signal-red);
@@ -240,8 +243,9 @@
 }
 
 .closeButton {
-  width: 32px;
-  height: 32px;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  flex: 0 0 auto;
   border: 1px solid var(--line-strong);
   color: var(--paper);
   background: transparent;
@@ -319,6 +323,7 @@
   color: var(--paper);
   background: rgba(242, 241, 236, 0.025);
   cursor: pointer;
+  touch-action: manipulation;
   text-align: left;
   transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
 }
@@ -389,6 +394,7 @@
 
 .loadMoreButton {
   width: 100%;
+  min-height: var(--touch-target);
   margin-top: 16px;
   padding: 12px 14px;
   border: 1px solid var(--line-strong);
@@ -429,6 +435,7 @@
 
 .catalogError button {
   flex: 0 0 auto;
+  min-height: var(--touch-target);
   padding: 7px 9px;
   border: 1px solid var(--signal-red);
   color: var(--paper);
@@ -461,23 +468,39 @@
   .artGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-}
 
-@media (max-width: 520px) {
-  .page {
-    padding-inline: 14px;
+  .modalBackdrop {
+    align-items: start;
+    padding: max(12px, var(--safe-top)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
   }
 
+  .modal {
+    max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
+  }
+
+  .searchField input {
+    min-height: var(--touch-target);
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 440px) {
   .profileCard {
-    padding: 20px;
+    padding: 18px;
   }
 
   .avatarBlock {
     align-items: flex-start;
+    flex-direction: column;
   }
 
-  .modalBackdrop {
-    padding: 12px;
+  .avatarFrame {
+    width: 124px;
+    height: 124px;
+  }
+
+  .field strong {
+    overflow-wrap: anywhere;
   }
 
   .artGrid {
@@ -494,4 +517,13 @@
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+@media (max-width: 440px) {
+  .editorHeader h2 { font-size: 28px; }
+  .modal { padding: 16px 12px; }
+  .modalHeader { margin-bottom: 16px; }
+  .modalHeader h2 { font-size: 27px; }
+  .artGrid { gap: 7px; }
+  .artOption { min-height: var(--touch-target); padding: 5px; }
 }

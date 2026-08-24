@@ -102,7 +102,7 @@ export function ReplayLibrary({
                     </div>
                     <h3>{playerHeroFirstName} <span>vs.</span> {opponentHeroFirstName}</h3>
                     <dl className={styles.metadata}>
-                      {"username" in replay && <div><dt>Usuário</dt><dd>{replay.username}</dd></div>}
+                      {"username" in replay && <div className={styles.metadataOwner}><dt>Usuário</dt><dd>{replay.username}</dd></div>}
                       <div><dt>Turno final</dt><dd>{replay.finalTurn ?? "—"}</dd></div>
                       <div><dt>Modo de jogo</dt><dd>{gameModeLabel(replay.gameMode)}</dd></div>
                     </dl>

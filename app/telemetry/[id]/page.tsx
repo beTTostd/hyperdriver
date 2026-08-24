@@ -152,7 +152,7 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
               ))}
             </aside>
           </div>
-          <div className={styles.chart}>
+          {cycles.length ? <div className={styles.chart}>
             {cycles.map((cycle, rowIndex) => (
               <div className={styles.row} key={cycle.key}>
                 <div className={styles.cycleLabel}>
@@ -182,14 +182,14 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
                 <strong className={styles.cycleTotal}>{total(cycle)}</strong>
               </div>
             ))}
-          </div>
+          </div> : <p className={styles.emptyState}>Este replay não contém ciclos de combate suficientes para desenhar o gráfico.</p>}
         </section>
 
         <section className={styles.panel} aria-labelledby="cycle-table-title">
           <div className={styles.panelHeader}>
             <div><p>Detalhamento</p><h2 id="cycle-table-title">Números por ciclo</h2></div>
           </div>
-          <div className={styles.tableWrap}>
+          {cycles.length ? <div className={styles.tableWrap} tabIndex={0} aria-label="Tabela rolável com os números por ciclo">
             <table>
               <thead><tr><th>Ciclo</th>{metrics.map((metric) => <th key={metric.key}>{metric.label}</th>)}</tr></thead>
               <tbody>
@@ -201,7 +201,7 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div> : <p className={styles.emptyState}>Os números por ciclo aparecerão quando houver telemetria de combate válida.</p>}
         </section>
 
         <footer>

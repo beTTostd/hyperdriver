@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CARD_AVATAR_OPTIONS,
@@ -71,25 +71,51 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
   const [hasMore, setHasMore] = useState(false);
   const [visibleCardCount, setVisibleCardCount] = useState(RESULTS_PER_PAGE);
   const [retryCount, setRetryCount] = useState(0);
+  const modalRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pendingCardRef = useRef<string | null>(null);
 
   const visibleCards = cards.slice(0, visibleCardCount);
+
+  useEffect(() => {
+    pendingCardRef.current = pendingCardId;
+  }, [pendingCardId]);
 
   useEffect(() => {
     if (!isModalOpen) return;
 
     const previousOverflow = document.body.style.overflow;
+    const trigger = triggerRef.current;
     document.body.style.overflow = "hidden";
 
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !pendingCardId) setIsModalOpen(false);
+    function handleModalKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !pendingCardRef.current) {
+        setIsModalOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(modalRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ) ?? [])];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", handleModalKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", handleModalKeyDown);
+      trigger?.focus();
     };
-  }, [isModalOpen, pendingCardId]);
+  }, [isModalOpen]);
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -171,6 +197,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
 
   async function chooseCard(card: CardAvatarOption) {
     setError(null);
+    pendingCardRef.current = card.id;
     setPendingCardId(card.id);
 
     try {
@@ -192,6 +219,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível alterar a foto.");
     } finally {
+      pendingCardRef.current = null;
       setPendingCardId(null);
     }
   }
@@ -229,7 +257,7 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
             <strong>{username}</strong>
             <small>O nome não pode ser alterado nesta versão.</small>
           </div>
-          <button className={styles.changeButton} type="button" onClick={openModal}>
+          <button ref={triggerRef} className={styles.changeButton} type="button" onClick={openModal}>
             Alterar foto <Icon name="imageEdit" size={16} />
           </button>
         </div>
@@ -241,11 +269,12 @@ export default function ProfileEditor({ username, avatarCardId }: ProfileEditorP
         <div
           className={styles.modalBackdrop}
           role="presentation"
-          onMouseDown={(event) => {
+          onPointerDown={(event) => {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
           <section
+            ref={modalRef}
             className={styles.modal}
             role="dialog"
             aria-modal="true"

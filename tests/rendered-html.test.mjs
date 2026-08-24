@@ -447,6 +447,8 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   const replayLibraryHtml = await replayLibraryResponse.text();
   assert.match(replayLibraryHtml, /Replays recentes/);
   assert.match(replayLibraryHtml, /Abrir menu de admin/);
+  assert.match(replayLibraryHtml, /Abrir menu principal/);
+  assert.match(replayLibraryHtml, /Pitwall \/ navegação/);
   assert.match(replayLibraryHtml, /href="\/admin"[^>]*>Administração/);
   assert.match(replayLibraryHtml, /href="\/downloads\/hyperdriver-extension\.zip"/);
   assert.match(replayLibraryHtml, /download="hyperdriver-extension\.zip"/);
@@ -456,7 +458,8 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   assert.match(editProfileHtml, /Seu perfil/);
   assert.match(editProfileHtml, /Nome de usuário/);
   assert.match(editProfileHtml, /Alterar foto/);
-  assert.doesNotMatch(editProfileHtml, /Replays/);
+  assert.match(editProfileHtml, /Abrir menu principal/);
+  assert.doesNotMatch(editProfileHtml, /Replays recentes/);
   assert.equal(legacyTablePage.status, 307);
   assert.equal(new URL(legacyTablePage.headers.get("location"), baseUrl).pathname, "/table");
   assert.equal(legacyProfilePage.status, 307);

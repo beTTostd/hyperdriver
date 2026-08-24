@@ -42,7 +42,7 @@ export type ReplayPayload = {
   playerEquipment?: ReplayCard[];
   opponentEquipment?: ReplayCard[];
   activeChainLink?: ReplayChain | null;
-  initialLoad?: { gameFormat?: string };
+  initialLoad?: { gameFormat?: string; deckLink?: string };
   [key: string]: unknown;
 };
 

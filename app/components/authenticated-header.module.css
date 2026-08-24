@@ -1,7 +1,7 @@
 .header {
   display: flex;
   width: 100%;
-  max-width: 1180px;
+  max-width: var(--content-max);
   margin-inline: auto;
   align-items: center;
   justify-content: space-between;
@@ -12,11 +12,16 @@
 
 .headerLeft {
   display: flex;
+  min-width: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 24px;
 }
 
 .adminPartidasLink {
+  display: inline-flex;
+  min-height: var(--touch-target);
+  align-items: center;
   color: var(--paper);
   font-family: var(--font-mono);
   font-size: 9px;
@@ -33,7 +38,7 @@
 
 .installButton {
   display: inline-flex;
-  min-height: 34px;
+  min-height: var(--touch-target);
   align-items: center;
   gap: 7px;
   padding: 0 10px;
@@ -59,12 +64,53 @@
   background: transparent;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 900px) {
   .header {
-    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 14px 20px;
   }
 
   .headerLeft {
-    gap: 12px;
+    gap: 10px 14px;
+  }
+}
+
+@media (max-width: 680px) {
+  .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 8px;
+    padding-bottom: 14px;
+  }
+
+  .headerLeft {
+    display: flex;
+  }
+
+  .headerLeft > :global(.brand-lockup) {
+    min-width: 0;
+  }
+
+  .installButton,
+  .adminPartidasLink {
+    display: none;
+  }
+
+  .header > :last-child {
+    grid-column: 2;
+    min-width: 0;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 440px) {
+  .headerLeft > :global(.brand-lockup) :global(.brand-symbol) {
+    width: 36px;
+  }
+
+  .headerLeft > :global(.brand-lockup) :global(.brand-copy strong) {
+    font-size: 17px;
   }
 }

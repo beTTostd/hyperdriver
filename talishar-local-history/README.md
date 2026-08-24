@@ -17,6 +17,7 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 - Ao abrir `hyperdriver.com.br` ou `beta.hyperdriver.com.br` autenticado, envia automaticamente partidas completas ainda não sincronizadas naquele ambiente.
 - Mostra no popup quantos dos dois ambientes já receberam cada partida (`Sincronizado 1/2` ou `2/2`); antes do primeiro envio, usa os estados `Pronto`, `Baixado` ou `Erro`.
 - Mantém a cópia local e o arquivo baixado depois do envio.
+- Preserva nos dados do replay o link HTTPS da lista do deck do jogador; o Talishar nunca fornece esse campo a espectadores.
 
 ## Como instalar no Chrome
 
@@ -41,7 +42,7 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 - O upload usa a sessão já aberta no site e passa a pertencer à conta autenticada na primeira sincronização bem-sucedida.
 - Não são solicitadas permissões de histórico, cookies, abas ou acesso genérico a todos os sites.
 - Campos conhecidos como `authKey`, `token`, `cookie`, `password` e IDs de sessão são redigidos antes do armazenamento.
-- O payload mantém somente o estado usado pelo replay: cartas, zonas, vida, turno, fase, combate e formato da partida. Chat, inventário, dados de conta e estado de interface são descartados.
+- O payload mantém somente o estado usado pelo replay: cartas, zonas, vida, turno, fase, combate, formato da partida e o link validado da lista do deck do jogador. Chat, inventário, dados de conta e estado de interface são descartados.
 
 ## Limitações conhecidas
 

@@ -1,6 +1,8 @@
 .page {
   min-height: 100vh;
-  padding: 24px clamp(18px, 5vw, 72px) 72px;
+  min-height: 100dvh;
+  padding: var(--page-block-start) max(var(--page-gutter), var(--safe-right)) var(--page-block-end) max(var(--page-gutter), var(--safe-left));
+  overflow-x: clip;
   color: var(--paper);
   background:
     linear-gradient(rgba(242, 241, 236, 0.025) 1px, transparent 1px),
@@ -9,7 +11,7 @@
     var(--carbon);
   background-size: 64px 64px, 64px 64px, auto, auto;
 }
-.shell { width: min(1180px, 100%); margin-inline: auto; }
+.shell { width: min(var(--content-max), 100%); margin-inline: auto; }
 
 .pageHeader {
   display: flex;
@@ -32,8 +34,8 @@
 .filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line-strong); border-top: 2px solid var(--telemetry-blue); background: rgba(18, 20, 22, 0.9); }
 .filters label { display: grid; min-width: 190px; gap: 6px; }
 .filters label span { color: var(--muted); font-family: var(--font-mono); font-size: 8px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-.filters select { min-height: 38px; padding: 0 30px 0 10px; border: 1px solid var(--line-strong); border-radius: 0; color: var(--paper); background: #0d0f10; font-size: 11px; }
-.filters button { display: inline-flex; min-height: 38px; align-items: center; gap: 9px; padding: 0 14px; border: 1px solid var(--signal-red); border-radius: 0; color: var(--carbon); background: var(--signal-red); cursor: pointer; font-size: 9px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
+.filters select { min-height: var(--touch-target); padding: 0 30px 0 10px; border: 1px solid var(--line-strong); border-radius: 0; color: var(--paper); background: #0d0f10; font-size: 11px; }
+.filters button { display: inline-flex; min-height: var(--touch-target); align-items: center; gap: 9px; padding: 0 14px; border: 1px solid var(--signal-red); border-radius: 0; color: var(--carbon); background: var(--signal-red); cursor: pointer; font-size: 9px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
 .filters button:hover { color: var(--signal-red); background: transparent; }
 .filterNote { align-self: center; margin-left: auto; color: #657078; font-family: var(--font-mono); font-size: 8px; }
 
@@ -85,7 +87,7 @@
 .progressTrack { height: 3px; margin-top: 8px; background: rgba(242, 241, 236, 0.08); }
 .progressTrack i { display: block; height: 100%; background: var(--telemetry-blue); }
 
-.tableWrap { overflow-x: auto; }
+.tableWrap { overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: var(--signal-red) #0c0d0e; }
 .tableWrap table { width: 100%; min-width: 330px; border-collapse: collapse; font-family: var(--font-mono); }
 .tableWrap th, .tableWrap td { padding: 12px 5px; border-top: 1px solid var(--line); font-size: 9px; text-align: right; white-space: nowrap; }
 .tableWrap thead th { color: #686f75; font-size: 7px; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -122,7 +124,7 @@
 .recentInfo small { display: block; margin-top: 5px; overflow: hidden; color: var(--muted); font-family: var(--font-mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .recentResult { color: var(--result-color, var(--muted)); font-family: var(--font-mono); font-size: 8px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
 .recentActions { display: flex; gap: 10px; }
-.recentActions a { display: inline-flex; align-items: center; gap: 5px; color: var(--paper); font-family: var(--font-mono); font-size: 8px; font-weight: 700; text-decoration: none; text-transform: uppercase; }
+.recentActions a { display: inline-flex; min-height: var(--touch-target); align-items: center; gap: 5px; padding-inline: 6px; color: var(--paper); font-family: var(--font-mono); font-size: 8px; font-weight: 700; text-decoration: none; text-transform: uppercase; }
 .recentActions a:hover { color: var(--signal-red); }
 .recentActions a:first-child :global(.uiIcon) { color: var(--telemetry-blue); }
 
@@ -142,7 +144,6 @@
 }
 
 @media (max-width: 680px) {
-  .page { padding-inline: 12px; }
   .pageHeader { align-items: start; padding-top: 34px; }
   .headerSignal { display: none; }
   .filterNote { width: 100%; margin: 2px 0 0; }
@@ -158,12 +159,19 @@
   .recentInfo small { font-size: 7px; }
   .recentResult { font-size: 7px; }
   .recentActions span { display: none; }
+  .recentActions a { width: var(--touch-target); padding: 0; justify-content: center; border: 1px solid var(--line); }
+  .tableWrap { padding-bottom: 6px; border-right: 2px solid rgba(107, 184, 255, .45); }
   .footer { grid-template-columns: 1fr; gap: 4px; }
 }
 
 @media (max-width: 440px) {
+  .pageHeader h1 { font-size: clamp(38px, 13vw, 54px); }
+  .pageHeader h1 br { display: none; }
   .filters label { width: 100%; }
+  .filters select { width: 100%; font-size: 16px; }
   .filters button { width: 100%; justify-content: center; }
+  .summary article { min-height: 112px; padding: 16px; }
+  .panel { padding: 18px 12px; }
   .evolutionRow { grid-template-columns: 55px minmax(0, 1fr) 22px; gap: 7px; }
   .evolutionRow small { display: none; }
   .recentMatch { grid-template-columns: 1fr auto; padding: 10px; }

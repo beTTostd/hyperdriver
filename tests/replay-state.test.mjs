@@ -7,6 +7,7 @@ import {
   isReplaySyncedToOrigin,
   markReplaySynced,
   markReplaySyncError,
+  normalizeDeckLink,
   replaySyncProgress,
   replaySyncState,
   replayResult,
@@ -23,7 +24,7 @@ test("compacts Talishar payloads to the state used by the replay", () => {
     initialLoad: {
       gameFormat: "cc",
       playerName: "player",
-      deckLink: "https://example.test/private-deck",
+      deckLink: "https://fabrary.net/decks/private-deck#notes",
     },
     turnNo: 4,
     turnPlayer: "2",
@@ -52,7 +53,10 @@ test("compacts Talishar payloads to the state used by the replay", () => {
   assert.equal(compacted.chatLog, undefined);
   assert.equal(compacted.chatEnabled, undefined);
   assert.equal(compacted.newEvents, undefined);
-  assert.deepEqual(compacted.initialLoad, { gameFormat: "cc" });
+  assert.deepEqual(compacted.initialLoad, {
+    gameFormat: "cc",
+    deckLink: "https://fabrary.net/decks/private-deck",
+  });
   assert.equal(compacted.otherPlayer, "1");
   assert.deepEqual(compacted.turnPhase, { turnPhase: "BUTTONINPUT", caption: "Escolha" });
   assert.deepEqual(compacted.playerEquipment, [{
@@ -70,6 +74,16 @@ test("compacts Talishar payloads to the state used by the replay", () => {
     attackTarget: "2",
     goAgain: true,
   });
+});
+
+test("keeps only supported HTTPS deck links", () => {
+  assert.equal(
+    normalizeDeckLink("4<fav>https://www.fabdb.net/decks/build/private-deck#notes"),
+    "https://www.fabdb.net/decks/build/private-deck",
+  );
+  assert.equal(normalizeDeckLink("javascript:alert(1)"), undefined);
+  assert.equal(normalizeDeckLink("https://example.test/private-deck"), undefined);
+  assert.equal(normalizeDeckLink("https://user:secret@fabrary.net/decks/private-deck"), undefined);
 });
 
 test("compacts imported replay envelopes as well", () => {

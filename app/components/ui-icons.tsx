@@ -17,6 +17,7 @@ export type IconName =
   | "imageOff"
   | "key"
   | "logOut"
+  | "menu"
   | "plus"
   | "search"
   | "trash"
@@ -49,6 +50,7 @@ export default function Icon({ name, size = 16, className, ...props }: IconProps
     case "imageOff": content = <><rect x="3" y="4" width="18" height="16" rx="1" /><path d="m3 17 5-5 4 4 2-2 7 6M8 9h.01M4 4l16 16" /></>; break;
     case "key": content = <><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8m-3 0 3 3m-6 0 3 3" /></>; break;
     case "logOut": content = <><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9" /></>; break;
+    case "menu": content = <path d="M4 7h16M4 12h16M4 17h16" />; break;
     case "plus": content = <path d="M12 5v14M5 12h14" />; break;
     case "search": content = <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></>; break;
     case "trash": content = <><path d="M4 7h16m-10-3h4l1 3H9l1-3Zm-4 3 1 12h10l1-12M10 11v7m4-7v7" /></>; break;

@@ -1,10 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import Link from "next/link";
 import Icon from "../components/ui-icons";
 import { BrandSymbol } from "../components/brand";
 import CardImage from "../components/card-image";
+import { calculateLiveReplayValue } from "../../lib/replay-live-value.js";
 import { replayResult } from "../../talishar-local-history/replay-state.js";
 import {
   cardMarkers,
@@ -79,8 +90,38 @@ type PreviewContextValue = {
   showPreview: (card: Card, element: HTMLElement, persistent: boolean) => void;
   hideTransientPreview: () => void;
 };
+type TelemetryMetricKey = "receivedDamage" | "equipmentBlocked" | "cardBlocked" | "lifeGained" | "offeredDamage";
+type DamageMetricKey = "dealtDamage" | "attackEquipmentBlocked" | "attackCardBlocked";
+type TelemetryTurn = Record<TelemetryMetricKey | DamageMetricKey, number> & {
+  key: string;
+  turn: string;
+  player: "1" | "2";
+};
+type LiveReplayValue = {
+  turns: TelemetryTurn[];
+  currentTurn: TelemetryTurn | null;
+  turnValue: number;
+  matchValue: number;
+};
+
+const damageMetrics: Array<{ key: DamageMetricKey; label: string; abbreviation: string; className: string }> = [
+  { key: "dealtDamage", label: "Dano causado", abbreviation: "DMG", className: "metricOpponentDamage" },
+  { key: "attackEquipmentBlocked", label: "Bloqueado por equipamento", abbreviation: "EQP", className: "metricEquipment" },
+  { key: "attackCardBlocked", label: "Bloqueado por carta", abbreviation: "BLQ", className: "metricCard" },
+];
+
+const damageLegend = [
+  { label: "Dano oferecido por você", abbreviation: "SEU", className: "metricPlayerDamage" },
+  { label: "Dano oferecido pelo oponente", abbreviation: "OPO", className: "metricOpponentDamage" },
+  ...damageMetrics.slice(1),
+];
 
 const PreviewContext = createContext<PreviewContextValue | null>(null);
+
+const defaultSidebarWidth = 280;
+const minimumSidebarWidth = 250;
+const maximumSidebarWidth = 480;
+const sidebarResizeStep = 20;
 
 const isReplayId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) || /^\d+$/.test(value);
 
@@ -334,12 +375,97 @@ function ActionDisplay({ card }: { card?: Card }) {
   );
 }
 
+function LiveValuePanel({
+  liveValue,
+  onClose,
+  closeLabel = "Fechar valor da partida",
+  closeIcon = "x",
+}: {
+  liveValue: LiveReplayValue;
+  onClose?: () => void;
+  closeLabel?: string;
+  closeIcon?: "chevronRight" | "x";
+}) {
+  const scale = Math.max(1, ...liveValue.turns.map((turn) => turn.dealtDamage + turn.attackEquipmentBlocked + turn.attackCardBlocked));
+  const currentTurn = liveValue.currentTurn;
+  return (
+    <section className={styles.valuePanel} aria-label="Valor da partida em tempo real">
+      <header className={styles.valuePanelHeader}>
+        <div><small>Telemetria / ao vivo</small><h2>Valor</h2></div>
+        {onClose && <button className={styles.closeValuePanel} type="button" onClick={onClose} aria-label={closeLabel} title={closeLabel}><Icon name={closeIcon} size={18} /></button>}
+      </header>
+      <div className={styles.valuePanelRule} aria-hidden="true"><i /><i /><i /></div>
+      <section className={styles.valueGraph} aria-label="Gráfico de dano por turno">
+        <header><strong>Dano por turno</strong><span>Sólido = causado · hachurado = bloqueado</span></header>
+        <div className={styles.valueLegend} aria-label="Legenda do gráfico">
+          {damageLegend.map((metric) => <span title={metric.label} key={metric.abbreviation}><i className={styles[metric.className]} />{metric.abbreviation}</span>)}
+        </div>
+        <div className={styles.valueRows}>
+          {[...liveValue.turns].reverse().map((turn) => {
+            const blocked = turn.attackEquipmentBlocked + turn.attackCardBlocked;
+            const offered = turn.dealtDamage + blocked;
+            const selected = turn.key === currentTurn?.key;
+            return (
+              <div className={`${styles.valueRow} ${selected ? styles.currentValueRow : ""}`} key={turn.key} aria-current={selected ? "true" : undefined}>
+                <span className={styles.valueTurn}><strong>T{turn.turn}</strong><small>{turn.player === "1" ? "Você" : "Opo."}</small></span>
+                <div className={styles.valueTrack} role="img" aria-label={`Turno ${turn.turn}: dano oferecido ${offered}, dano causado ${turn.dealtDamage}, dano bloqueado ${blocked}`}>
+                  {damageMetrics.map((metric) => turn[metric.key] > 0 && (
+                    <i
+                      className={`${styles.valueSegment} ${styles[metric.key === "dealtDamage" && turn.player === "1" ? "metricPlayerDamage" : metric.className]}`}
+                      key={metric.key}
+                      style={{ width: `${turn[metric.key] / scale * 100}%` }}
+                      title={`${metric.label}: ${turn[metric.key]}`}
+                    />
+                  ))}
+                </div>
+                <strong className={styles.valueTotal} aria-label={`Dano causado: ${turn.dealtDamage}`} title="Dano causado">{turn.dealtDamage}</strong>
+              </div>
+            );
+          })}
+          {!liveValue.turns.length && <p className={styles.valueEmpty}>Aguardando o primeiro turno do replay.</p>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export default function TalisharTable({ replayId }: { replayId?: string } = {}) {
   const [replay, setReplay] = useState<Replay | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [valueOpen, setValueOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+
+  const updateSidebarWidth = useCallback((width: number) => {
+    setSidebarWidth(Math.min(maximumSidebarWidth, Math.max(minimumSidebarWidth, width)));
+  }, []);
+
+  const startSidebarResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setResizingSidebar(true);
+  }, []);
+
+  const resizeSidebarWithKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") {
+      updateSidebarWidth(minimumSidebarWidth);
+      return;
+    }
+    if (event.key === "End") {
+      updateSidebarWidth(maximumSidebarWidth);
+      return;
+    }
+    setSidebarWidth((width) => Math.min(
+      maximumSidebarWidth,
+      Math.max(minimumSidebarWidth, width + (event.key === "ArrowLeft" ? sidebarResizeStep : -sidebarResizeStep)),
+    ));
+  }, [updateSidebarWidth]);
 
   const showPreview = useCallback((card: Card, element: HTMLElement, persistent: boolean) => {
     const bounds = element.getBoundingClientRect();
@@ -375,6 +501,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
   const opponentSetupEquipment = useMemo(() => setupEquipment(frames, "opponentEquipment"), [frames]);
   const playerSetupEquipment = useMemo(() => setupEquipment(frames, "playerEquipment"), [frames]);
   const attackCards = useMemo(() => attackCardNumbers(frames), [frames]);
+  const liveValue = useMemo(() => calculateLiveReplayValue(frames, index) as LiveReplayValue, [frames, index]);
 
   useEffect(() => {
     if (!playing || frames.length < 2) return;
@@ -391,10 +518,25 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
   }, [playing, frames.length]);
 
   useEffect(() => {
+    if (!resizingSidebar) return;
+    const onPointerMove = (event: PointerEvent) => updateSidebarWidth(window.innerWidth - event.clientX);
+    const stopResizing = () => setResizingSidebar(false);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResizing);
+    window.addEventListener("pointercancel", stopResizing);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopResizing);
+      window.removeEventListener("pointercancel", stopResizing);
+    };
+  }, [resizingSidebar, updateSidebarWidth]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!frames.length || event.target instanceof HTMLInputElement) return;
       if (event.key === "Escape") {
         closePreview();
+        setValueOpen(false);
         return;
       }
       if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
@@ -421,62 +563,117 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
 
   return (
     <PreviewContext.Provider value={previewContext}>
-      <main className={styles.replay}>
+      <main
+        className={`${styles.replay} ${sidebarCollapsed ? styles.sidebarIsCollapsed : ""} ${resizingSidebar ? styles.resizingSidebar : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         <div className={styles.tableWorkspace}>
           <section className={styles.table}>
-        <div className={styles.opponentMat} />
-        <div className={styles.playerMat} />
-        <Hand values={current.opponentHand} opponent />
-        <ZonePile className={styles.opponentBanish} label="Banido" values={current.opponentBanish} hoverCount />
-        <ZonePile className={styles.opponentDeck} label="Deck" count={current.opponentDeckCount ?? 0} topCard={current.opponentDeckCard} hidden hoverCount />
-        <ZonePile className={styles.opponentPitch} label="Pitch" values={current.opponentPitch} stacked hideCount />
-        <ZonePile className={styles.opponentGraveyard} label="Cemitério" values={current.opponentDiscard} hoverCount />
-        <Arsenal values={current.opponentArse} opponent />
-        <HeroCluster equipment={opponentEquipment} health={current.opponentHealth} opponent />
-        <EquipmentCluster equipment={opponentEquipment} opponent />
-        <Permanents values={opponentPermanents} opponent />
+            <div className={styles.opponentMat} />
+            <div className={styles.playerMat} />
+            <section className={`${styles.playerHalf} ${styles.opponentHalf}`} aria-label="Mesa do oponente">
+              <h2 className={styles.halfLabel}>Oponente</h2>
+              <Hand values={current.opponentHand} opponent />
+              <ZonePile className={styles.opponentBanish} label="Banido" values={current.opponentBanish} hoverCount />
+              <ZonePile className={styles.opponentDeck} label="Deck" count={current.opponentDeckCount ?? 0} topCard={current.opponentDeckCard} hidden hoverCount />
+              <ZonePile className={styles.opponentPitch} label="Pitch" values={current.opponentPitch} stacked hideCount />
+              <ZonePile className={styles.opponentGraveyard} label="Cemitério" values={current.opponentDiscard} hoverCount />
+              <Arsenal values={current.opponentArse} opponent />
+              <HeroCluster equipment={opponentEquipment} health={current.opponentHealth} opponent />
+              <EquipmentCluster equipment={opponentEquipment} opponent />
+              <Permanents values={opponentPermanents} opponent />
+            </section>
 
-        <EquipmentCluster equipment={playerEquipment} opponent={false} />
-        <Permanents values={playerPermanents} opponent={false} />
-        <HeroCluster equipment={playerEquipment} health={current.playerHealth} opponent={false} />
-        <Arsenal values={current.playerArse} opponent={false} />
-        <Hand values={current.playerHand} opponent={false} />
-        <div className={styles.playerZoneColumn}>
-          <ZonePile className={styles.playerGraveyard} label="Cemitério" values={current.playerDiscard} hoverCount />
-          <ZonePile className={styles.playerDeck} label="Deck" count={current.playerDeckCount ?? 0} topCard={current.playerDeckCard} hidden={!current.playerDeckCard || current.playerDeckCard.cardNumber === "CardBack"} hoverCount />
-          <ZonePile className={styles.playerBanish} label="Banido" values={current.playerBanish} hoverCount />
-        </div>
-        <ZonePile className={styles.playerPitch} label="Pitch" values={current.playerPitch} stacked hideCount />
+            <div className={styles.centerLane}>
+              <CombatChain chain={current.activeChainLink} />
+              <ActionDisplay card={actionCard} />
+              {isFinal && (
+                <div className={`${styles.result} ${styles[result]}`}>
+                  <small>Partida encerrada</small>
+                  <strong>{result === "victory" ? "Você venceu" : result === "defeat" ? "Oponente venceu" : "Resultado indisponível"}</strong>
+                </div>
+              )}
+            </div>
 
-        <CombatChain chain={current.activeChainLink} />
-        <ActionDisplay card={actionCard} />
-        {isFinal && <div className={`${styles.result} ${styles[result]}`}><small>Partida encerrada</small><strong>{result === "victory" ? "Você venceu" : result === "defeat" ? "Oponente venceu" : "Resultado indisponível"}</strong></div>}
-
+            <section className={`${styles.playerHalf} ${styles.localPlayerHalf}`} aria-label="Sua mesa">
+              <h2 className={styles.halfLabel}>Você</h2>
+              <EquipmentCluster equipment={playerEquipment} opponent={false} />
+              <Permanents values={playerPermanents} opponent={false} />
+              <HeroCluster equipment={playerEquipment} health={current.playerHealth} opponent={false} />
+              <Arsenal values={current.playerArse} opponent={false} />
+              <Hand values={current.playerHand} opponent={false} />
+              <div className={styles.playerZoneColumn}>
+                <ZonePile className={styles.playerGraveyard} label="Cemitério" values={current.playerDiscard} hoverCount />
+                <ZonePile className={styles.playerDeck} label="Deck" count={current.playerDeckCount ?? 0} topCard={current.playerDeckCard} hidden={!current.playerDeckCard || current.playerDeckCard.cardNumber === "CardBack"} hoverCount />
+                <ZonePile className={styles.playerBanish} label="Banido" values={current.playerBanish} hoverCount />
+              </div>
+              <ZonePile className={styles.playerPitch} label="Pitch" values={current.playerPitch} stacked hideCount />
+            </section>
           </section>
 
-          <aside className={styles.sidebar} aria-label="Barra lateral da mesa" />
+          <aside className={styles.sidebar} id="table-telemetry-sidebar" aria-label="Telemetria da mesa">
+            <div
+              className={styles.sidebarResizeHandle}
+              role="separator"
+              tabIndex={0}
+              aria-controls="table-telemetry-sidebar"
+              aria-label="Redimensionar painel lateral"
+              aria-orientation="vertical"
+              aria-valuemin={minimumSidebarWidth}
+              aria-valuemax={maximumSidebarWidth}
+              aria-valuenow={sidebarWidth}
+              title="Arraste para redimensionar. Use as setas com o teclado."
+              onDoubleClick={() => updateSidebarWidth(defaultSidebarWidth)}
+              onKeyDown={resizeSidebarWithKeyboard}
+              onPointerDown={startSidebarResize}
+            ><span /></div>
+            <LiveValuePanel
+              liveValue={liveValue}
+              onClose={() => setSidebarCollapsed(true)}
+              closeLabel="Recolher painel lateral"
+              closeIcon="chevronRight"
+            />
+          </aside>
+          <button
+            className={styles.sidebarExpand}
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            aria-controls="table-telemetry-sidebar"
+            aria-expanded="false"
+          ><Icon name="chart" size={18} /><span>Mostrar telemetria</span></button>
+          <button className={styles.valueToggle} type="button" onClick={() => setValueOpen(true)} aria-expanded={valueOpen} aria-label="Abrir valor da partida">
+            <span>{liveValue.currentTurn ? `T${liveValue.currentTurn.turn}` : "T—"}</span>
+            <strong>{liveValue.turnValue}</strong>
+            <small>Σ {liveValue.matchValue}</small>
+          </button>
         </div>
 
         <section className={styles.timeline} aria-label="Controles do replay">
-        <div className={styles.transport}>
-          <Link className={styles.backButton} href="/replays" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
-          <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
-          <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot" title="Próximo snapshot"><TransportIcon name="next" /></button>
-          <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot" title="Último snapshot"><TransportIcon name="last" /></button>
-        </div>
-        <div className={styles.scrubber}>
-          <div className={styles.turns}>{markers.map((marker, markerIndex) => {
-            const next = markers[markerIndex + 1]?.index ?? frames.length;
-            const selected = index >= marker.index && index < next;
-            return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
-          })}</div>
-          <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
-        </div>
-        <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
+          <div className={styles.transport}>
+            <Link className={styles.backButton} href="/replays" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
+            <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
+            <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
+            <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
+            <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot" title="Próximo snapshot"><TransportIcon name="next" /></button>
+            <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot" title="Último snapshot"><TransportIcon name="last" /></button>
+          </div>
+          <div className={styles.scrubber}>
+            <div className={styles.turns}>{markers.map((marker, markerIndex) => {
+              const next = markers[markerIndex + 1]?.index ?? frames.length;
+              const selected = index >= marker.index && index < next;
+              return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
+            })}</div>
+            <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
+          </div>
+          <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
         </section>
         <CardPreview preview={preview?.frameIndex === index ? preview : null} onClose={closePreview} />
+        {valueOpen && (
+          <div className={styles.valueDrawer} role="dialog" aria-modal="true" aria-label="Valor da partida em tempo real">
+            <button className={styles.valueDrawerBackdrop} type="button" onClick={() => setValueOpen(false)} aria-label="Fechar valor da partida" />
+            <div className={styles.valueDrawerSheet}><LiveValuePanel liveValue={liveValue} onClose={() => setValueOpen(false)} /></div>
+          </div>
+        )}
       </main>
     </PreviewContext.Provider>
   );

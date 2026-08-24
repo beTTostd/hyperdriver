@@ -66,8 +66,38 @@ const SINGLE_CARD_FIELDS = new Set([
   "lastPlayedCard",
 ]);
 
+const DECK_LINK_HOSTS = new Set([
+  "fabdb.net",
+  "fabbazaar.app",
+  "fabmeta.net",
+  "fabtcgmeta.com",
+  "fabrary.net",
+]);
+
 function isScalar(value) {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+export function normalizeDeckLink(value) {
+  if (typeof value !== "string") return undefined;
+  const favoriteSeparator = value.lastIndexOf("<fav>");
+  const candidate = value.slice(favoriteSeparator < 0 ? 0 : favoriteSeparator + 5).trim();
+  if (!candidate || candidate.length > 2_048) return undefined;
+
+  try {
+    const url = new URL(candidate);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      !DECK_LINK_HOSTS.has(hostname)
+    ) return undefined;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export const SYNC_ORIGINS = Object.freeze([
@@ -199,17 +229,22 @@ function compactIndicators(value) {
 
 /**
  * Keep only the state consumed by the replay table and telemetry.
- * Talishar sends chat, account, deck metadata and UI plumbing in every SSE
- * frame; none of those fields are needed to reproduce the board.
+ * Talishar sends chat, account metadata and UI plumbing in every SSE frame.
+ * Keep the local player's sanitized deck link so the replay can reference the
+ * exact list, while discarding fields that are not needed by the replay.
  */
 export function compactReplayPayload(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   const payload = {};
 
   if (value.initialLoad && typeof value.initialLoad === "object" && !Array.isArray(value.initialLoad)) {
+    const initialLoad = {};
     if (isScalar(value.initialLoad.gameFormat)) {
-      payload.initialLoad = { gameFormat: value.initialLoad.gameFormat };
+      initialLoad.gameFormat = value.initialLoad.gameFormat;
     }
+    const deckLink = normalizeDeckLink(value.initialLoad.deckLink);
+    if (deckLink) initialLoad.deckLink = deckLink;
+    if (Object.keys(initialLoad).length) payload.initialLoad = initialLoad;
   }
   if (Object.prototype.hasOwnProperty.call(value, "turnPhase")) {
     payload.turnPhase = compactTurnPhase(value.turnPhase);
