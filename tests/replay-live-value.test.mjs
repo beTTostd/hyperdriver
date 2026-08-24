@@ -65,3 +65,42 @@ test("returns zero values before the replay has a visible frame", () => {
     matchValue: 0,
   });
 });
+
+test("calculates telemetry from the local player two perspective", () => {
+  const playerTwoEquipment = [
+    { cardNumber: "player_two_hero", slot: "Hero", controller: "2" },
+    { cardNumber: "player_two_shield", slot: "Chest", controller: "2" },
+  ];
+  const payload = (turnNo, turnPlayer, activeChainLink) => ({
+    turnNo,
+    turnPlayer,
+    otherPlayer: "1",
+    playerHealth: 20,
+    playerEquipment: playerTwoEquipment,
+    opponentEquipment: [{ cardNumber: "player_one_hero", slot: "Hero", controller: "1" }],
+    activeChainLink,
+  });
+  const frames = [
+    { payload: payload(1, "1", {
+      attackingCard: { cardNumber: "opponent_attack_red", controller: "1" },
+      totalPower: 8,
+      totalDefense: 3,
+      reactions: [{ cardNumber: "player_two_shield", controller: "2" }],
+    }) },
+    { payload: payload(1, "1", null) },
+    { payload: payload(1, "2", {
+      attackingCard: { cardNumber: "player_attack_red", controller: "2" },
+      totalPower: 6,
+      totalDefense: 2,
+      reactions: [{ cardNumber: "opponent_guard_red", controller: "1" }],
+    }) },
+    { payload: payload(1, "2", null) },
+  ];
+
+  const result = calculateLiveReplayValue(frames);
+  assert.equal(result.turns[0].receivedDamage, 5);
+  assert.equal(result.turns[0].equipmentBlocked, 3);
+  assert.equal(result.turns[1].offeredDamage, 6);
+  assert.equal(result.turns[1].attackCardBlocked, 2);
+  assert.equal(result.matchValue, 14);
+});

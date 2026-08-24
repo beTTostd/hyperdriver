@@ -99,6 +99,7 @@ export const replayMetrics = sqliteTable(
     offeredDamage: integer("offered_damage").notNull().default(0),
     lifeGained: integer("life_gained").notNull().default(0),
     cycleCount: integer("cycle_count").notNull().default(0),
+    calculationVersion: integer("calculation_version").notNull().default(1),
     calculatedAt: integer("calculated_at").notNull().default(sql`(unixepoch() * 1000)`),
   },
 );

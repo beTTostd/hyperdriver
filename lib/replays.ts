@@ -3,7 +3,7 @@ import { and, count, desc, eq, lt, or, sum } from "drizzle-orm";
 import { getDb } from "../db";
 import { replayMetrics, replays, users } from "../db/schema";
 import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
-import { calculateReplayTelemetry } from "./replay-telemetry";
+import { calculateReplayTelemetry, TELEMETRY_ALGORITHM_VERSION } from "./replay-telemetry";
 import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
@@ -71,7 +71,10 @@ export type AdminReplayMetadata = ReplayMetadata & {
   username: string;
 };
 
-export type ReplayMetricTotals = Omit<typeof replayMetrics.$inferSelect, "replayId" | "calculatedAt">;
+export type ReplayMetricTotals = Omit<
+  typeof replayMetrics.$inferSelect,
+  "replayId" | "calculatedAt" | "calculationVersion"
+>;
 export type ReplayStatsRecord = ReplayMetadata & { metrics: ReplayMetricTotals | null };
 export type ReplayPage<T> = { items: T[]; nextCursor: string | null };
 
@@ -300,7 +303,11 @@ export async function saveReplayUpload(userId: number, raw: string) {
         })
         .returning()
         .get();
-      transaction.insert(replayMetrics).values({ replayId: inserted.id, ...metrics }).run();
+      transaction.insert(replayMetrics).values({
+        replayId: inserted.id,
+        ...metrics,
+        calculationVersion: TELEMETRY_ALGORITHM_VERSION,
+      }).run();
       return inserted;
     });
     return { replay, duplicate: false };

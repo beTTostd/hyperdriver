@@ -1,5 +1,11 @@
 import type { ReplayDocument } from "./replays";
-import { calculateReplayTelemetryCore, calculateReplayTurnTelemetryCore } from "./replay-telemetry-core.js";
+import {
+  calculateReplayTelemetryCore,
+  calculateReplayTurnTelemetryCore,
+  TELEMETRY_ALGORITHM_VERSION as telemetryAlgorithmVersion,
+} from "./replay-telemetry-core.js";
+
+export const TELEMETRY_ALGORITHM_VERSION = telemetryAlgorithmVersion as number;
 
 export type TelemetryTurn = {
   key: string;

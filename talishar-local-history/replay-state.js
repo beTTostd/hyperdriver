@@ -375,7 +375,7 @@ function playerNumber(value) {
   return null;
 }
 
-function localPlayerNumber(match) {
+export function localPlayerNumber(match) {
   const frames = Array.isArray(match?.frames) ? match.frames : [];
   for (const frame of frames) {
     const payload = frame?.payload;

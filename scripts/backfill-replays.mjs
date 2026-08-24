@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import Database from "better-sqlite3";
-import { calculateReplayTelemetryCore } from "../lib/replay-telemetry-core.js";
+import {
+  calculateReplayTelemetryCore,
+  TELEMETRY_ALGORITHM_VERSION,
+} from "../lib/replay-telemetry-core.js";
 import { replayResult } from "../talishar-local-history/replay-state.js";
 import { configureDatabase } from "./migration-runner.mjs";
 
@@ -15,6 +18,7 @@ const pending = database.prepare(`
   FROM replays r
   LEFT JOIN replay_metrics m ON m.replay_id = r.id
   WHERE r.size_bytes = 0 OR m.replay_id IS NULL OR r.game_mode IS NULL
+    OR m.calculation_version < ${TELEMETRY_ALGORITHM_VERSION}
   ORDER BY r.id
 `).all();
 const updateReplay = database.prepare(`
@@ -28,8 +32,8 @@ const updateReplay = database.prepare(`
 const upsertMetrics = database.prepare(`
   INSERT INTO replay_metrics (
     replay_id, received_damage, equipment_blocked, card_blocked,
-    offered_damage, life_gained, cycle_count, calculated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    offered_damage, life_gained, cycle_count, calculation_version, calculated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(replay_id) DO UPDATE SET
     received_damage = excluded.received_damage,
     equipment_blocked = excluded.equipment_blocked,
@@ -37,6 +41,7 @@ const upsertMetrics = database.prepare(`
     offered_damage = excluded.offered_damage,
     life_gained = excluded.life_gained,
     cycle_count = excluded.cycle_count,
+    calculation_version = excluded.calculation_version,
     calculated_at = excluded.calculated_at
 `);
 const save = database.transaction((id, raw, document, metrics) => {
@@ -63,6 +68,7 @@ const save = database.transaction((id, raw, document, metrics) => {
     metrics.offeredDamage,
     metrics.lifeGained,
     metrics.cycleCount,
+    TELEMETRY_ALGORITHM_VERSION,
     Date.now(),
   );
 });
