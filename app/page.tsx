@@ -16,7 +16,7 @@ export default async function LandingPage() {
       <nav className={styles.nav}>
         <Brand subtitle="Game intelligence" />
         <div className={styles.navActions}>
-          <Link className={styles.navCta} href={appLink}>Acessar plataforma <Icon name="arrowUpRight" size={14} /></Link>
+          <Link className={styles.navCta} href={appLink}>Acessar plataforma</Link>
         </div>
       </nav>
       <section className={styles.hero}>
@@ -27,7 +27,6 @@ export default async function LandingPage() {
           <p className={styles.lead}>Transforme suas sessões em decisões melhores com estatísticas claras, histórico organizado e uma visão precisa do seu desempenho.</p>
           <div className={styles.heroActions}>
             <Link className={styles.primaryCta} href={appLink}>Acompanhar meus jogos <Icon name="arrowRight" size={16} /></Link>
-            <Link className={styles.textCta} href="#recursos">Conheça a plataforma <Icon name="arrowDown" size={15} /></Link>
           </div>
         </div>
         <div className={styles.signalPanel} aria-label="Visão geral das estatísticas">

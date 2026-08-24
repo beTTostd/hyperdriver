@@ -21,11 +21,6 @@ export default function AuthenticatedHeader({
     <header className={styles.header}>
       <div className={styles.headerLeft}>
         <Brand href="/replays" subtitle={null} />
-        {isAdmin && (
-          <Link className={styles.adminPartidasLink} href="/admin/replays">
-            Partidas
-          </Link>
-        )}
         <a
           className={styles.installButton}
           href={extensionUrl}
@@ -33,6 +28,11 @@ export default function AuthenticatedHeader({
         >
           Instalar extensão <Icon name="download" size={14} />
         </a>
+        {isAdmin && (
+          <Link className={styles.adminPartidasLink} href="/admin/replays">
+            Partidas
+          </Link>
+        )}
       </div>
       <AuthControls username={username} avatarCardId={avatarCardId} isAdmin={isAdmin} />
     </header>

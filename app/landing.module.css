@@ -34,8 +34,8 @@
   gap: 22px;
 }
 
-.navCta,
-.textCta {
+.navCta {
+  white-space: nowrap;
   color: var(--paper);
   font-size: 10px;
   font-weight: 800;
@@ -49,14 +49,7 @@
   border: 1px solid var(--line-strong);
 }
 
-.navCta :global(.uiIcon),
-.textCta :global(.uiIcon) {
-  margin-left: 8px;
-  color: var(--signal-red);
-}
-
-.navCta:hover,
-.textCta:hover {
+.navCta:hover {
   color: var(--signal-red);
 }
 
