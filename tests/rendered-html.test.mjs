@@ -392,6 +392,10 @@ test("requires authentication and supports one-time user invitations", async () 
 
   const adminPage = await fetch(new URL("/admin", baseUrl), { headers: { cookie } });
   const adminHtml = await adminPage.text();
+  assert.match(adminHtml, /Adicionar usuário/);
+  assert.match(adminHtml, /aria-current="page"[^>]*href="\/admin"/);
+  assert.match(adminHtml, /href="\/admin\/extensoes"/);
+  assert.match(adminHtml, /Versões da extensão/);
   assert.match(adminHtml, /Gerar link de senha/);
   assert.match(adminHtml, />Apagar<\/button>/);
   assert.match(adminHtml, /Último login:/);
@@ -407,6 +411,27 @@ test("requires authentication and supports one-time user invitations", async () 
     body: JSON.stringify({ username: "jogador-01", password: resetPassword }),
   });
   assert.equal(deletedLogin.status, 401);
+});
+
+test("lista versões válidas da extensão para administradores", async () => {
+  const anonymous = await fetch(new URL("/admin/extensoes", baseUrl), { redirect: "manual" });
+  assert.equal(anonymous.status, 307);
+  assert.match(anonymous.headers.get("location") ?? "", /\/login\?returnTo=%2Fadmin%2Fextensoes/);
+
+  const response = await fetch(new URL("/admin/extensoes", baseUrl), { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Versões da extensão/);
+  assert.match(html, /v0\.4\.4/);
+  assert.match(html, /Data de criação|Arquivo criado em/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v0\.4\.4\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v0\.4\.4\.zip"/);
+  assert.match(html, /Usuários/);
+  assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
+
+  const download = await fetch(new URL("/downloads/hyperdriver-extension-v0.4.4.zip", baseUrl));
+  assert.equal(download.status, 200);
+  assert.ok((await download.arrayBuffer()).byteLength > 0);
 });
 
 test("consumes a password invitation atomically under a race", async () => {
@@ -462,8 +487,8 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   assert.match(replayLibraryHtml, /Abrir menu principal/);
   assert.match(replayLibraryHtml, /Pitwall \/ navegação/);
   assert.match(replayLibraryHtml, /href="\/admin"[^>]*>Administração/);
-  assert.match(replayLibraryHtml, /href="\/downloads\/hyperdriver-extension\.zip"/);
-  assert.match(replayLibraryHtml, /download="hyperdriver-extension\.zip"/);
+  assert.match(replayLibraryHtml, /href="\/downloads\/hyperdriver-extension-v0\.4\.4\.zip"/);
+  assert.match(replayLibraryHtml, /download="hyperdriver-extension-v0\.4\.4\.zip"/);
   assert.doesNotMatch(replayLibraryHtml, /Replay telemetry|Importar replay|Perfil \/ avatar/);
   assert.equal(editProfileResponse.status, 200);
   const editProfileHtml = await editProfileResponse.text();

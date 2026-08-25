@@ -1,33 +1,47 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { EXTENSION_FILE_PATTERN } from "../lib/extension-artifacts.js";
 
 const sourceDirectory = resolve("talishar-local-history");
-const archive = resolve("public/downloads/hyperdriver-extension.zip");
 const sourceFiles = listFiles(sourceDirectory).sort();
-const archiveFiles = runUnzip(["-Z1", archive])
-  .toString()
-  .trim()
-  .split("\n")
-  .filter(Boolean);
+const downloadsDirectory = resolve("public/downloads");
+const archives = readdirSync(downloadsDirectory)
+  .filter((fileName) => EXTENSION_FILE_PATTERN.test(fileName))
+  .filter((fileName) => statSync(resolve(downloadsDirectory, fileName)).isFile())
+  .sort();
 
-if (JSON.stringify(archiveFiles) !== JSON.stringify(sourceFiles)) {
-  throw new Error("Extension ZIP entries differ from source or are not sorted deterministically.");
+if (!archives.length) throw new Error("No versioned extension ZIP found in public/downloads.");
+
+for (const fileName of archives) {
+  verifyArchive(resolve(downloadsDirectory, fileName), fileName);
 }
 
-for (const file of sourceFiles) {
-  const archived = runUnzip(["-p", archive, file]);
-  const source = readFileSync(resolve(sourceDirectory, file));
-  if (!archived.equals(source)) throw new Error(`Extension ZIP contains stale content: ${file}`);
-}
+console.log(`Verified ${archives.length} deterministic extension ZIP(s) (${sourceFiles.length} files each).`);
 
-const listing = runUnzip(["-l", archive]).toString();
-const datedEntries = listing.split("\n").filter((line) => /\d{4}-\d{2}-\d{2}/.test(line));
-if (datedEntries.some((line) => !line.includes("1980-01-01 00:00"))) {
-  throw new Error("Extension ZIP timestamps are not normalized to 1980-01-01 00:00.");
-}
+function verifyArchive(archive, fileName) {
+  const archiveFiles = runUnzip(["-Z1", archive])
+    .toString()
+    .trim()
+    .split("\n")
+    .filter(Boolean);
 
-console.log(`Verified deterministic extension ZIP (${sourceFiles.length} files).`);
+  if (JSON.stringify(archiveFiles) !== JSON.stringify(sourceFiles)) {
+    throw new Error(`Extension ZIP entries differ from source or are not sorted deterministically: ${fileName}`);
+  }
+
+  for (const file of sourceFiles) {
+    const archived = runUnzip(["-p", archive, file]);
+    const source = readFileSync(resolve(sourceDirectory, file));
+    if (!archived.equals(source)) throw new Error(`Extension ZIP contains stale content: ${fileName}/${file}`);
+  }
+
+  const listing = runUnzip(["-l", archive]).toString();
+  const datedEntries = listing.split("\n").filter((line) => /\d{4}-\d{2}-\d{2}/.test(line));
+  if (datedEntries.some((line) => !line.includes("1980-01-01 00:00"))) {
+    throw new Error(`Extension ZIP timestamps are not normalized to 1980-01-01 00:00: ${fileName}`);
+  }
+}
 
 function listFiles(directory, prefix = "") {
   return readdirSync(directory).flatMap((name) => {

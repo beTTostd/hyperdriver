@@ -1,0 +1,127 @@
+.artifactList {
+  display: grid;
+  gap: 1px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--line);
+}
+
+.artifact {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 22px;
+  background: var(--panel);
+}
+
+.artifactIndex {
+  align-self: start;
+  color: var(--signal-red);
+  font: 9px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.artifactInfo {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.artifactInfo strong {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+
+.artifactInfo span,
+.artifactInfo time {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font: 10px var(--font-mono);
+}
+
+.artifactInfo time {
+  color: var(--paper);
+  font-size: 9px;
+}
+
+.download {
+  display: inline-flex;
+  min-height: var(--touch-target);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  color: var(--paper);
+  font: 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.download:hover {
+  border-color: var(--signal-red);
+  color: var(--signal-red);
+  background: rgba(255, 77, 61, 0.08);
+}
+
+.emptyState {
+  margin-top: 28px;
+  padding: 30px 22px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.emptyState strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 28px;
+  text-transform: uppercase;
+}
+
+.emptyState p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.emptyState code,
+.artifactInfo span {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 680px) {
+  .artifact {
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .artifactIndex {
+    grid-column: 1 / -1;
+  }
+
+  .artifactInfo strong {
+    font-size: 30px;
+  }
+
+  .download {
+    padding-inline: 10px;
+  }
+}
+
+@media (max-width: 440px) {
+  .artifact {
+    grid-template-columns: 1fr;
+  }
+
+  .download {
+    width: 100%;
+    justify-content: center;
+  }
+}

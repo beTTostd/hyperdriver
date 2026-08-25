@@ -12,6 +12,7 @@
     "start": "next start --hostname 0.0.0.0",
     "test": "npm run build && node --test tests/*.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
+    "build:extension": "node scripts/build-extension-zip.mjs",
     "verify:extension": "node scripts/verify-extension-zip.mjs",
     "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",

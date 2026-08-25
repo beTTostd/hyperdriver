@@ -16,6 +16,7 @@ type ReplayLibraryProps = {
   emptyDescription?: string;
   nextCursor?: string | null;
   paginationPath?: string;
+  embedded?: boolean;
 };
 
 function cardName(cardId: string | null) {
@@ -57,15 +58,10 @@ export function ReplayLibrary({
   emptyDescription = "Grave uma partida no Talishar e abra o Hyperdriver para enviar o histórico automaticamente.",
   nextCursor = null,
   paginationPath = "/replays",
+  embedded = false,
 }: ReplayLibraryProps) {
-  return (
-    <main className={styles.page}>
-      <AuthenticatedHeader
-        username={currentUser.username}
-        avatarCardId={currentUser.avatarCardId}
-        isAdmin={currentUser.role === "admin"}
-      />
-      <section className={styles.library} aria-labelledby="replay-list-title">
+  const content = (
+    <section className={styles.library} aria-labelledby="replay-list-title">
         <div className={styles.libraryHeader}>
           <div><h2 id="replay-list-title">{title}</h2></div>
           <div className={styles.sectorBars} aria-hidden="true"><i /><i /><i /></div>
@@ -121,7 +117,19 @@ export function ReplayLibrary({
             Carregar mais replays <Icon name="arrowRight" size={15} />
           </Link>
         )}
-      </section>
+    </section>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <main className={styles.page}>
+      <AuthenticatedHeader
+        username={currentUser.username}
+        avatarCardId={currentUser.avatarCardId}
+        isAdmin={currentUser.role === "admin"}
+      />
+      {content}
     </main>
   );
 }

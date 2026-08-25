@@ -12,14 +12,16 @@ type AuthControlsProps = {
   username: string;
   avatarCardId?: string | null;
   isAdmin?: boolean;
+  extensionUrl?: string;
+  extensionDownloadName?: string;
 };
-
-const extensionUrl = "/downloads/hyperdriver-extension.zip";
 
 export default function AuthControls({
   username,
   avatarCardId = null,
   isAdmin = false,
+  extensionUrl,
+  extensionDownloadName,
 }: AuthControlsProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -243,9 +245,11 @@ export default function AuthControls({
           </nav>
 
           <div className={styles.mobileDrawerFooter}>
-            <a href={extensionUrl} download="hyperdriver-extension.zip">
-              Instalar extensão <Icon name="download" size={17} />
-            </a>
+            {extensionUrl && (
+              <a href={extensionUrl} download={extensionDownloadName}>
+                Instalar extensão <Icon name="download" size={17} />
+              </a>
+            )}
             <button type="button" onClick={signOut} disabled={pending}>
               {pending ? "Saindo…" : "Sair da conta"}<Icon name="logOut" size={17} />
             </button>

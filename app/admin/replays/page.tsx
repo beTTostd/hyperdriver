@@ -20,6 +20,7 @@ export default async function AdminReplaysPage({
       paginationPath="/admin/replays"
       title="Todas as partidas"
       emptyDescription="As partidas sincronizadas pelos usuários aparecerão aqui."
+      embedded
     />
   );
 }
