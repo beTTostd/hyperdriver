@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hyperdriver — Histórico Talishar",
-  "version": "0.4.4",
+  "version": "1.0.0",
   "description": "Captura partidas do Talishar e sincroniza replays completos com o Hyperdriver.",
   "permissions": ["downloads", "storage"],
   "icons": {
@@ -11,10 +11,8 @@
     "128": "icons/icon128.png"
   },
   "host_permissions": [
-    "https://talishar.net/*",
-    "https://api.talishar.net/*",
-    "https://hyperdriver.com.br/*",
-    "https://beta.hyperdriver.com.br/*"
+    "https://*.talishar.net/*",
+    "https://*.hyperdriver.com.br/*"
   ],
   "background": {
     "service_worker": "service-worker.js",
@@ -31,21 +29,18 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://talishar.net/*"],
+      "matches": ["https://*.talishar.net/*"],
       "js": ["page-bridge.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://talishar.net/*"],
+      "matches": ["https://*.talishar.net/*"],
       "js": ["capture-session-utils.js", "content-script.js"],
       "run_at": "document_start"
     },
     {
-      "matches": [
-        "https://hyperdriver.com.br/*",
-        "https://beta.hyperdriver.com.br/*"
-      ],
+      "matches": ["https://*.hyperdriver.com.br/*"],
       "css": ["sync-content-script.css"],
       "js": ["sync-content-script-utils.js", "sync-content-script.js"],
       "run_at": "document_idle"

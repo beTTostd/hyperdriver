@@ -4,7 +4,10 @@ import {
   canAppendCaptureFrame,
   captureMatchesPage,
   createKeyedTaskQueue,
+  isAllowedHttpsOrigin,
+  isHyperdriverOrigin,
   isValidImportedCandidate,
+  isTalisharOrigin,
   matchesToPrune,
   MAX_STORED_MATCHES,
   MAX_TOTAL_BYTES,
@@ -19,6 +22,21 @@ test("associates a capture id with one Talishar game URL", () => {
   const match = { capture: { pageUrl: "/game/play/2026809" } };
   assert.equal(captureMatchesPage(match, "/game/play/2026809"), true);
   assert.equal(captureMatchesPage(match, "/game/play/2026810"), false);
+});
+
+test("accepts only HTTPS origins inside the grouped Talishar and Hyperdriver domains", () => {
+  assert.equal(isTalisharOrigin("https://talishar.net"), true);
+  assert.equal(isTalisharOrigin("https://api.talishar.net"), true);
+  assert.equal(isTalisharOrigin("https://replays.talishar.net"), true);
+  assert.equal(isTalisharOrigin("http://api.talishar.net"), false);
+  assert.equal(isTalisharOrigin("https://talishar.net.evil.example"), false);
+
+  assert.equal(isHyperdriverOrigin("https://hyperdriver.com.br"), true);
+  assert.equal(isHyperdriverOrigin("https://beta.hyperdriver.com.br"), true);
+  assert.equal(isHyperdriverOrigin("https://staging.hyperdriver.com.br"), true);
+  assert.equal(isHyperdriverOrigin("http://beta.hyperdriver.com.br"), false);
+  assert.equal(isHyperdriverOrigin("https://hyperdriver.com.br.evil.example"), false);
+  assert.equal(isAllowedHttpsOrigin("https://talishar.net", "hyperdriver.com.br"), false);
 });
 
 test("serializes capture tasks for the same match", async () => {

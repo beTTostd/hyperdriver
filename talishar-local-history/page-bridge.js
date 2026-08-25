@@ -11,7 +11,8 @@
     try {
       const parsed = new URL(String(url), window.location.href);
       return (
-        ["talishar.net", "api.talishar.net"].includes(parsed.hostname) &&
+        parsed.protocol === "https:" &&
+        (parsed.hostname === "talishar.net" || parsed.hostname.endsWith(".talishar.net")) &&
         parsed.pathname.endsWith("/GetUpdateSSE.php")
       );
     } catch {

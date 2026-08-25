@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { EXTENSION_FILE_PATTERN } from "../lib/extension-artifacts.js";
+import { compareExtensionVersions, EXTENSION_FILE_PATTERN } from "../lib/extension-artifacts.js";
 
 const sourceDirectory = resolve("talishar-local-history");
 const sourceFiles = listFiles(sourceDirectory).sort();
@@ -9,31 +9,37 @@ const downloadsDirectory = resolve("public/downloads");
 const archives = readdirSync(downloadsDirectory)
   .filter((fileName) => EXTENSION_FILE_PATTERN.test(fileName))
   .filter((fileName) => statSync(resolve(downloadsDirectory, fileName)).isFile())
-  .sort();
+  .sort((left, right) => compareExtensionVersions(right, left));
 
 if (!archives.length) throw new Error("No versioned extension ZIP found in public/downloads.");
 
-for (const fileName of archives) {
-  verifyArchive(resolve(downloadsDirectory, fileName), fileName);
+for (const [index, fileName] of archives.entries()) {
+  verifyArchive(resolve(downloadsDirectory, fileName), fileName, index === 0);
 }
 
-console.log(`Verified ${archives.length} deterministic extension ZIP(s) (${sourceFiles.length} files each).`);
+console.log(`Verified ${archives.length} deterministic extension ZIP(s); latest archive matches ${sourceFiles.length} source files.`);
 
-function verifyArchive(archive, fileName) {
+function verifyArchive(archive, fileName, isLatest) {
   const archiveFiles = runUnzip(["-Z1", archive])
     .toString()
     .trim()
     .split("\n")
     .filter(Boolean);
 
-  if (JSON.stringify(archiveFiles) !== JSON.stringify(sourceFiles)) {
-    throw new Error(`Extension ZIP entries differ from source or are not sorted deterministically: ${fileName}`);
+  if (JSON.stringify(archiveFiles) !== JSON.stringify([...archiveFiles].sort())) {
+    throw new Error(`Extension ZIP entries are not sorted deterministically: ${fileName}`);
   }
 
-  for (const file of sourceFiles) {
-    const archived = runUnzip(["-p", archive, file]);
-    const source = readFileSync(resolve(sourceDirectory, file));
-    if (!archived.equals(source)) throw new Error(`Extension ZIP contains stale content: ${fileName}/${file}`);
+  if (isLatest) {
+    if (JSON.stringify(archiveFiles) !== JSON.stringify(sourceFiles)) {
+      throw new Error(`Latest extension ZIP entries differ from source: ${fileName}`);
+    }
+
+    for (const file of sourceFiles) {
+      const archived = runUnzip(["-p", archive, file]);
+      const source = readFileSync(resolve(sourceDirectory, file));
+      if (!archived.equals(source)) throw new Error(`Latest extension ZIP contains stale content: ${fileName}/${file}`);
+    }
   }
 
   const listing = runUnzip(["-l", archive]).toString();

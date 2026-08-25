@@ -1,11 +1,19 @@
 (() => {
   "use strict";
 
-  const allowedOrigins = new Set([
-    "https://hyperdriver.com.br",
-    "https://beta.hyperdriver.com.br"
-  ]);
-  if (!allowedOrigins.has(window.location.origin)) return;
+  function isHyperdriverOrigin(origin) {
+    try {
+      const url = new URL(origin);
+      return (
+        url.protocol === "https:" &&
+        (url.hostname === "hyperdriver.com.br" || url.hostname.endsWith(".hyperdriver.com.br"))
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  if (!isHyperdriverOrigin(window.location.origin)) return;
 
   const syncHelpers = globalThis.__hyperdriverSync;
   if (!syncHelpers) return;

@@ -7,6 +7,30 @@ export const MAX_STORED_MATCHES = 100;
 
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const TALISHAR_DOMAIN = "talishar.net";
+const HYPERDRIVER_DOMAIN = "hyperdriver.com.br";
+
+export function isAllowedHttpsOrigin(origin, domain) {
+  if (typeof origin !== "string") return false;
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === domain || url.hostname.endsWith(`.${domain}`))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isTalisharOrigin(origin) {
+  return isAllowedHttpsOrigin(origin, TALISHAR_DOMAIN);
+}
+
+export function isHyperdriverOrigin(origin) {
+  return isAllowedHttpsOrigin(origin, HYPERDRIVER_DOMAIN);
+}
+
 export function utf8Size(value) {
   return new TextEncoder().encode(value).byteLength;
 }

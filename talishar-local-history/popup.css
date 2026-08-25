@@ -46,6 +46,8 @@ section > h2 span { margin-right: 7px; color: var(--signal-red); font: 8px/1 "IB
 #sync-button { width: 100%; }
 #import-button:disabled,
 #sync-button:disabled { cursor: wait; opacity: .6; }
+.popup-footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); text-align: right; }
+.popup-footer small { font: 8px/1 "IBM Plex Mono", Consolas, monospace; letter-spacing: .08em; }
 .matches { display: grid; gap: 8px; color: var(--muted); font-size: 11px; }
 .match { position: relative; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-top: 2px solid var(--signal-red); background: var(--panel); }
 .match strong { padding-right: 82px; font: 900 15px/1 "Arial Narrow", Impact, sans-serif; text-transform: uppercase; }

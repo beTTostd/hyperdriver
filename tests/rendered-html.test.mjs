@@ -422,16 +422,19 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Versões da extensão/);
+  assert.match(html, /v1\.0\.0/);
   assert.match(html, /v0\.4\.4/);
   assert.match(html, /Data de criação|Arquivo criado em/);
-  assert.match(html, /href="\/downloads\/hyperdriver-extension-v0\.4\.4\.zip"/);
-  assert.match(html, /download="hyperdriver-extension-v0\.4\.4\.zip"/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.0\.0\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v1\.0\.0\.zip"/);
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  const download = await fetch(new URL("/downloads/hyperdriver-extension-v0.4.4.zip", baseUrl));
-  assert.equal(download.status, 200);
-  assert.ok((await download.arrayBuffer()).byteLength > 0);
+  for (const version of ["1.0.0", "0.4.4"]) {
+    const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
+    assert.equal(download.status, 200);
+    assert.ok((await download.arrayBuffer()).byteLength > 0);
+  }
 });
 
 test("consumes a password invitation atomically under a race", async () => {
@@ -487,8 +490,8 @@ test("renders canonical replay routes and validates legacy redirects", async () 
   assert.match(replayLibraryHtml, /Abrir menu principal/);
   assert.match(replayLibraryHtml, /Pitwall \/ navegação/);
   assert.match(replayLibraryHtml, /href="\/admin"[^>]*>Administração/);
-  assert.match(replayLibraryHtml, /href="\/downloads\/hyperdriver-extension-v0\.4\.4\.zip"/);
-  assert.match(replayLibraryHtml, /download="hyperdriver-extension-v0\.4\.4\.zip"/);
+  assert.match(replayLibraryHtml, /href="https:\/\/chromewebstore\.google\.com\/detail\/ahbjlfpiejjlaplcjnipdcplnkoibegn\?utm_source=header"/g);
+  assert.doesNotMatch(replayLibraryHtml, /download="hyperdriver-extension-v[\d.]+\.zip"/);
   assert.doesNotMatch(replayLibraryHtml, /Replay telemetry|Importar replay|Perfil \/ avatar/);
   assert.equal(editProfileResponse.status, 200);
   const editProfileHtml = await editProfileResponse.text();

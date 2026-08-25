@@ -26,6 +26,7 @@ import {
   MAX_TOTAL_BYTES,
   utf8Size,
   UUID_PATTERN,
+  isTalisharOrigin,
 } from "./extension-policy.js";
 
 const DATABASE_NAME = "talishar-local-history";
@@ -348,7 +349,7 @@ function senderOrigin(sender) {
 function isTrustedMessage(message, sender) {
   const origin = senderOrigin(sender);
   if (["capture-session-start", "capture-frame"].includes(message?.type)) {
-    return origin === "https://talishar.net";
+    return isTalisharOrigin(origin);
   }
   if (["list-sync-pending", "get-sync-match", "mark-match-synced", "mark-sync-error"].includes(message?.type)) {
     return SYNC_ORIGINS.includes(origin);
