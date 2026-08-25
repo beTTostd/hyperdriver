@@ -19,6 +19,7 @@ export type IconName =
   | "logOut"
   | "menu"
   | "plus"
+  | "refresh"
   | "search"
   | "trash"
   | "x";
@@ -52,6 +53,7 @@ export default function Icon({ name, size = 16, className, ...props }: IconProps
     case "logOut": content = <><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9" /></>; break;
     case "menu": content = <path d="M4 7h16M4 12h16M4 17h16" />; break;
     case "plus": content = <path d="M12 5v14M5 12h14" />; break;
+    case "refresh": content = <><path d="M20 11a8 8 0 0 0-14.7-4L4 9" /><path d="M4 4v5h5M4 13a8 8 0 0 0 14.7 4L20 15" /><path d="M20 20v-5h-5" /></>; break;
     case "search": content = <><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></>; break;
     case "trash": content = <><path d="M4 7h16m-10-3h4l1 3H9l1-3Zm-4 3 1 12h10l1-12M10 11v7m4-7v7" /></>; break;
     case "x": content = <path d="m6 6 12 12M18 6 6 18" />; break;

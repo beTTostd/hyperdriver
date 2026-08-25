@@ -232,11 +232,14 @@ export default function AuthControls({
             </Link>
             {isAdmin && (
               <>
-                <Link href="/admin/replays" aria-current={pathname === "/admin/replays" ? "page" : undefined} onClick={closeMobileMenu}>
-                  <span><small>04</small> Partidas</span><Icon name="arrowRight" size={17} />
-                </Link>
                 <Link href="/admin" aria-current={pathname === "/admin" ? "page" : undefined} onClick={closeMobileMenu}>
-                  <span><small>05</small> Administração</span><Icon name="externalLink" size={17} />
+                  <span><small>04</small> Saúde do sistema</span><Icon name="chart" size={17} />
+                </Link>
+                <Link href="/admin/usuarios" aria-current={pathname.startsWith("/admin/usuarios") ? "page" : undefined} onClick={closeMobileMenu}>
+                  <span><small>05</small> Usuários</span><Icon name="key" size={17} />
+                </Link>
+                <Link href="/admin/replays" aria-current={pathname.startsWith("/admin/replays") ? "page" : undefined} onClick={closeMobileMenu}>
+                  <span><small>06</small> Partidas</span><Icon name="arrowRight" size={17} />
                 </Link>
               </>
             )}

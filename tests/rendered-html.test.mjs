@@ -325,7 +325,7 @@ test("requires authentication and supports one-time user invitations", async () 
   });
   assert.equal(invalidLogin.status, 401);
   assert.equal(readLastLogin("jogador-01"), successfulLastLogin);
-  const userAdminPage = await fetch(new URL("/admin", baseUrl), {
+  const userAdminPage = await fetch(new URL("/admin/usuarios", baseUrl), {
     headers: { cookie: userCookie },
     redirect: "manual",
   });
@@ -390,15 +390,23 @@ test("requires authentication and supports one-time user invitations", async () 
   });
   assert.equal(selfDelete.status, 400);
 
-  const adminPage = await fetch(new URL("/admin", baseUrl), { headers: { cookie } });
+  const adminPage = await fetch(new URL("/admin/usuarios", baseUrl), { headers: { cookie } });
   const adminHtml = await adminPage.text();
   assert.match(adminHtml, /Adicionar usuário/);
-  assert.match(adminHtml, /aria-current="page"[^>]*href="\/admin"/);
+  assert.match(adminHtml, /aria-current="page"[^>]*href="\/admin\/usuarios"/);
   assert.match(adminHtml, /href="\/admin\/extensoes"/);
   assert.match(adminHtml, /Versões da extensão/);
   assert.match(adminHtml, /Gerar link de senha/);
   assert.match(adminHtml, />Apagar<\/button>/);
   assert.match(adminHtml, /Último login:/);
+
+  const healthPage = await fetch(new URL("/admin", baseUrl), { headers: { cookie } });
+  assert.equal(healthPage.status, 200);
+  const healthHtml = await healthPage.text();
+  assert.match(healthHtml, /Saúde do sistema/);
+  assert.match(healthHtml, /Tentativas por dia/);
+  assert.match(healthHtml, /Partidas aceitas/);
+  assert.match(healthHtml, /href="\/admin\/usuarios"/);
 
   const deleted = await fetch(new URL(`/api/admin/users/${invitation.id}`, baseUrl), {
     method: "DELETE",
@@ -681,6 +689,44 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).replayId, uploaded.replayId);
 
+  const t0Document = replayDocument("5f777777-7777-4777-8777-777777777777", true);
+  t0Document.match.frames[0].payload.turnNo = "0";
+  const t0Upload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(t0Document),
+  });
+  assert.equal(t0Upload.status, 201);
+
+  const corruptUpload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: "{not-json",
+  });
+  assert.equal(corruptUpload.status, 400);
+
+  const incompleteUpload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(replayDocument("6f888888-8888-4888-8888-888888888888", false)),
+  });
+  assert.equal(incompleteUpload.status, 422);
+
+  const healthResponse = await fetch(new URL("/api/admin/upload-health", baseUrl), { headers: { cookie } });
+  assert.equal(healthResponse.status, 200);
+  const health = await healthResponse.json();
+  assert.deepEqual(health.summary.categories.map((category) => category.key), ["success", "error", "duplicate", "non_t0", "corrupt"]);
+  assert.ok(health.summary.total >= 2);
+  assert.ok(health.summary.categories.find((category) => category.key === "success").total >= 1);
+  assert.ok(health.summary.categories.find((category) => category.key === "error").total >= 1);
+  assert.ok(health.summary.categories.find((category) => category.key === "corrupt").total >= 1);
+  const nonT0Day = health.summary.days.find((day) => day.cells.non_t0.count > 0);
+  assert.ok(nonT0Day);
+  const nonT0Details = await fetch(new URL(`/api/admin/upload-health?date=${nonT0Day.date}&category=non_t0`, baseUrl), { headers: { cookie } });
+  assert.equal(nonT0Details.status, 200);
+  const nonT0Payload = await nonT0Details.json();
+  assert.ok(nonT0Payload.details.items.some((item) => item.sourceMatchId === uploaded.replayId));
+
   const adminLibrary = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   const adminHtml = await adminLibrary.text();
   assert.match(adminHtml, /Alpha Hero/);
@@ -821,6 +867,8 @@ test("stores complete replays idempotently and isolates them by user", async () 
 test("lets admins list and open replays owned by different users", async () => {
   const alphaCookie = await createTestUser("partidas-alpha");
   const betaCookie = await createTestUser("partidas-beta");
+  const forbiddenHealth = await fetch(new URL("/api/admin/upload-health", baseUrl), { headers: { cookie: alphaCookie } });
+  assert.equal(forbiddenHealth.status, 403);
   const alphaReplayId = "a1111111-1111-4111-8111-111111111111";
   const betaReplayId = "b2222222-2222-4222-8222-222222222222";
 

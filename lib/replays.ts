@@ -79,7 +79,13 @@ export type ReplayStatsRecord = ReplayMetadata & { metrics: ReplayMetricTotals |
 export type ReplayPage<T> = { items: T[]; nextCursor: string | null };
 
 export class ReplayUploadError extends Error {
-  constructor(message: string, public status: number, public code?: string) {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+    public sourceMatchId?: string | null,
+    public document?: ReplayDocument,
+  ) {
     super(message);
   }
 }
@@ -134,13 +140,14 @@ export function parseReplayDocument(raw: string): ReplayDocument {
   try {
     value = JSON.parse(raw);
   } catch {
-    throw new ReplayUploadError("O arquivo enviado não contém JSON válido.", 400);
+    throw new ReplayUploadError("O arquivo enviado não contém JSON válido.", 400, "INVALID_JSON");
   }
 
   validateStructuralLimits(value);
 
   const document = value as Partial<ReplayDocument>;
   const match = document?.match;
+  const sourceMatchId = match && typeof match === "object" && typeof match.id === "string" ? match.id : null;
   if (
     typeof document?.schemaVersion !== "string" ||
     !match ||
@@ -152,14 +159,14 @@ export function parseReplayDocument(raw: string): ReplayDocument {
     match.frames.length === 0 ||
     match.frames.some((frame) => !frame || typeof frame !== "object" || !frame.payload || typeof frame.payload !== "object")
   ) {
-    throw new ReplayUploadError("A estrutura do replay é inválida.", 400);
+    throw new ReplayUploadError("A estrutura do replay é inválida.", 400, "INVALID_STRUCTURE", sourceMatchId);
   }
   if (parseTimestamp(match.startedAt) === null) {
-    throw new ReplayUploadError("A data inicial do replay é inválida.", 400);
+    throw new ReplayUploadError("A data inicial do replay é inválida.", 400, "INVALID_TIMESTAMP", match.id);
   }
   const compacted = compactReplayDocument(document as ReplayDocument) as ReplayDocument;
   if (!isCompleteReplay(compacted)) {
-    throw new ReplayUploadError("A partida ainda não foi concluída.", 422);
+    throw new ReplayUploadError("A partida ainda não foi concluída.", 422, "INCOMPLETE_REPLAY", match.id, compacted);
   }
   return compacted;
 }
@@ -259,7 +266,7 @@ export async function saveReplayUpload(userId: number, raw: string) {
 
   if (existing) {
     if (existing.userId !== userId) {
-      throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409);
+      throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409, "DUPLICATE_REPLAY", document.match.id, document);
     }
     if (!existing.gameMode) {
       const metadata = extractedMetadata(document);
@@ -270,19 +277,23 @@ export async function saveReplayUpload(userId: number, raw: string) {
           .where(eq(replays.id, existing.id))
           .returning()
           .get();
-        return { replay: updated, duplicate: true };
+        return { replay: updated, duplicate: true, document };
       }
     }
-    return { replay: existing, duplicate: true };
+    return { replay: existing, duplicate: true, document };
   }
 
   const storageKey = `${randomUUID()}.json`;
   const normalizedRaw = JSON.stringify(document);
   const sizeBytes = Buffer.byteLength(normalizedRaw, "utf8");
   const metrics = extractedMetrics(document);
-  assertQuota(userId, sizeBytes);
+  assertQuota(userId, sizeBytes, document.match.id);
   const storage = getReplayStorage();
-  await storage.writeAtomic(storageKey, normalizedRaw);
+  try {
+    await storage.writeAtomic(storageKey, normalizedRaw);
+  } catch {
+    throw new ReplayUploadError("Não foi possível armazenar o replay.", 500, "STORAGE_ERROR", document.match.id, document);
+  }
 
   try {
     const replay = database.transaction((transaction) => {
@@ -291,7 +302,7 @@ export async function saveReplayUpload(userId: number, raw: string) {
         .from(replays)
         .where(eq(replays.userId, userId))
         .get();
-      assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), sizeBytes);
+      assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), sizeBytes, document.match.id);
       const inserted = transaction
         .insert(replays)
         .values({
@@ -310,7 +321,7 @@ export async function saveReplayUpload(userId: number, raw: string) {
       }).run();
       return inserted;
     });
-    return { replay, duplicate: false };
+    return { replay, duplicate: false, document };
   } catch (error) {
     await storage.delete(storageKey).catch(() => undefined);
     const concurrent = database
@@ -320,11 +331,12 @@ export async function saveReplayUpload(userId: number, raw: string) {
       .get();
     if (concurrent) {
       if (concurrent.userId !== userId) {
-        throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409);
+        throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409, "DUPLICATE_REPLAY", document.match.id, document);
       }
-      return { replay: concurrent, duplicate: true };
+      return { replay: concurrent, duplicate: true, document };
     }
-    throw error;
+    if (error instanceof ReplayUploadError) throw error;
+    throw new ReplayUploadError("Não foi possível salvar o replay.", 500, "STORAGE_ERROR", document.match.id, document);
   }
 }
 
@@ -336,20 +348,21 @@ function quotaLimit(name: string, fallback: number): number {
 function assertQuota(
   userId: number,
   incomingBytes: number,
+  sourceMatchId?: string,
 ): void {
   const usage = getDb()
     .select({ replayCount: count(), totalBytes: sum(replays.sizeBytes) })
     .from(replays)
     .where(eq(replays.userId, userId))
     .get();
-  assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), incomingBytes);
+  assertQuotaUsage(usage?.replayCount ?? 0, Number(usage?.totalBytes ?? 0), incomingBytes, sourceMatchId);
 }
 
-function assertQuotaUsage(replayCount: number, totalBytes: number, incomingBytes: number): void {
+function assertQuotaUsage(replayCount: number, totalBytes: number, incomingBytes: number, sourceMatchId?: string): void {
   const maxBytes = quotaLimit("REPLAY_QUOTA_BYTES", 1024 * 1024 * 1024);
   const maxReplays = quotaLimit("REPLAY_QUOTA_COUNT", 500);
   if (replayCount >= maxReplays || totalBytes + incomingBytes > maxBytes) {
-    throw new ReplayUploadError("A quota de replays desta conta foi atingida.", 413, "REPLAY_QUOTA_EXCEEDED");
+    throw new ReplayUploadError("A quota de replays desta conta foi atingida.", 413, "REPLAY_QUOTA_EXCEEDED", sourceMatchId);
   }
 }
 

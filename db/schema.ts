@@ -130,11 +130,37 @@ export const uploadLeases = sqliteTable(
   (table) => [index("upload_leases_user_expiry_idx").on(table.userId, table.expiresAt)],
 );
 
+export const uploadEvents = sqliteTable(
+  "upload_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    attemptedAt: integer("attempted_at").notNull().default(sql`(unixepoch() * 1000)`),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceMatchId: text("source_match_id"),
+    category: text("category").notNull(),
+    httpStatus: integer("http_status").notNull(),
+    errorCode: text("error_code"),
+    technicalMessage: text("technical_message"),
+    replayId: integer("replay_id").references(() => replays.id, { onDelete: "set null" }),
+  },
+  (table) => [
+    index("upload_events_attempted_idx").on(table.attemptedAt),
+    index("upload_events_category_attempted_idx").on(table.category, table.attemptedAt),
+    index("upload_events_user_attempted_idx").on(table.userId, table.attemptedAt),
+  ],
+);
+
+// Named alias kept for callers that want to describe the table by its domain.
+export const uploadTelemetryEvents = uploadEvents;
+
 export const usersRelations = relations(users, ({ many }) => ({
   passwordSetupTokens: many(passwordSetupTokens),
   sessions: many(sessions),
   replays: many(replays),
   uploadLeases: many(uploadLeases),
+  uploadEvents: many(uploadEvents),
 }));
 
 export const passwordSetupTokensRelations = relations(
@@ -154,7 +180,7 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   }),
 }));
 
-export const replaysRelations = relations(replays, ({ one }) => ({
+export const replaysRelations = relations(replays, ({ one, many }) => ({
   user: one(users, {
     fields: [replays.userId],
     references: [users.id],
@@ -163,6 +189,7 @@ export const replaysRelations = relations(replays, ({ one }) => ({
     fields: [replays.id],
     references: [replayMetrics.replayId],
   }),
+  uploadEvents: many(uploadEvents),
 }));
 
 export const replayMetricsRelations = relations(replayMetrics, ({ one }) => ({
@@ -176,5 +203,16 @@ export const uploadLeasesRelations = relations(uploadLeases, ({ one }) => ({
   user: one(users, {
     fields: [uploadLeases.userId],
     references: [users.id],
+  }),
+}));
+
+export const uploadEventsRelations = relations(uploadEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [uploadEvents.userId],
+    references: [users.id],
+  }),
+  replay: one(replays, {
+    fields: [uploadEvents.replayId],
+    references: [replays.id],
   }),
 }));

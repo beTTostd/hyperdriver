@@ -31,11 +31,13 @@ test("migrations create a new database once with checksums and hardening tables"
         "0004_replay_game_mode",
         "0005_hardening",
         "0006_replay_metric_version",
+        "0007_upload_events",
       ],
     );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 7);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='replay_metrics'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_events'").get());
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "size_bytes"));
     assert.ok(database.pragma("table_info(replay_metrics)").some((column) => column.name === "calculation_version"));
     assert.ok(database.prepare("SELECT checksum FROM schema_migrations").all().every((row) => /^[a-f0-9]{64}$/.test(row.checksum)));
@@ -68,7 +70,11 @@ test("migration adoption preserves an existing legacy user and replay", () => {
   try {
     assert.equal(migrated.prepare("SELECT username FROM users WHERE id=1").get().username, "legacy");
     assert.equal(migrated.prepare("SELECT source_match_id AS id FROM replays WHERE id=1").get().id, "11111111-1111-4111-8111-111111111111");
-    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 7);
+    assert.deepEqual(
+      migrated.prepare("SELECT category, http_status AS httpStatus, replay_id AS replayId FROM upload_events").get(),
+      { category: "success", httpStatus: 201, replayId: 1 },
+    );
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
   } finally {
     migrated.close();
   }

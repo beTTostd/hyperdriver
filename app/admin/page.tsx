@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { listAdminUsers, requireAdmin } from "../../lib/auth";
-import AdminPanel from "./admin-panel";
+import { requireAdmin } from "../../lib/auth";
+import { getUploadHealthSummary } from "../../lib/upload-telemetry";
+import HealthPanel from "./health-panel";
 
 export const metadata: Metadata = {
-  title: "admin",
+  title: "saúde do sistema",
 };
 
 export default async function AdminPage() {
-  const currentUser = await requireAdmin();
-  const initialUsers = listAdminUsers();
-  return <AdminPanel initialUsers={initialUsers} currentUserId={currentUser.id} />;
+  await requireAdmin();
+  return <HealthPanel initialSummary={getUploadHealthSummary()} />;
 }

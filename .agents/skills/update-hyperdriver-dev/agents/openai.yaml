@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atualizar Hyperdriver dev"
+  short_description: "Atualiza e valida o ambiente dev do Hyperdriver"
+  default_prompt: "Use $update-hyperdriver-dev para atualizar e validar o ambiente de desenvolvimento do Hyperdriver."

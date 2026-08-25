@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Hyperdriver em produção"
+  short_description: "Publica o Hyperdriver com backup e validação"
+  default_prompt: "Use $deploy-hyperdriver-production para publicar em produção a versão validada do Hyperdriver."
