@@ -84,6 +84,28 @@ type Payload = {
 
 type Frame = { sequence: number; receivedAt: string; payload: Payload };
 type Replay = { match: { startedAt?: string; frames: Frame[]; summary?: { winner?: string | number }; } };
+type ReplayDecisionMarker = {
+  stateFingerprint: string;
+  frameIndex: number;
+  turn: number | null;
+  decisionLabel: string;
+  marker: "good" | "opportunity" | "high_impact_error";
+  confidence: "high" | "medium";
+  regretPp: number;
+  executionQuality: number;
+  explanation: string;
+  chosenAction: { key: string; label: string; identifier: string; estimatedWinProbability: number };
+  bestAction: { key: string; label: string; identifier: string; estimatedWinProbability: number };
+  alternatives: Array<{ key: string; label: string; identifier: string; estimatedWinProbability: number }>;
+};
+type ReplayDecisionAnalysisResponse = {
+  status: "pending" | "ready" | "insufficient_data" | "failed";
+  recommendationsVisible: boolean;
+  handAnalyses: Array<Omit<ReplayDecisionMarker, "marker" | "confidence"> & {
+    marker: ReplayDecisionMarker["marker"] | null;
+    confidence: "high" | "medium" | "low";
+  }>;
+};
 type EquipmentKey = "playerEquipment" | "opponentEquipment";
 type PreviewState = { card: Card; frameIndex: number; side: "left" | "right"; persistent: boolean };
 type PreviewContextValue = {
@@ -431,8 +453,77 @@ function LiveValuePanel({
   );
 }
 
-export default function TalisharTable({ replayId }: { replayId?: string } = {}) {
+function decisionMarkerLabel(marker: ReplayDecisionMarker["marker"]) {
+  if (marker === "good") return "Boa decisão";
+  if (marker === "opportunity") return "Oportunidade de melhoria";
+  return "Erro de alto impacto";
+}
+
+function DecisionSidebarPanel({
+  decision,
+  replayId,
+}: {
+  decision: ReplayDecisionMarker | null;
+  replayId?: string;
+}) {
+  return (
+    <section
+      className={`${styles.decisionSidebar} ${decision ? styles[decision.marker] : ""}`}
+      aria-label="Análise da decisão selecionada"
+      aria-live="polite"
+    >
+      <header>
+        <div>
+          <small>Análise / decisão</small>
+          <strong>{decision ? decisionMarkerLabel(decision.marker) : "Nenhuma decisão selecionada"}</strong>
+        </div>
+        {decision && <span>T{decision.turn ?? "—"}</span>}
+      </header>
+
+      {!decision ? (
+        <p className={styles.decisionSidebarEmpty}>Selecione um marcador colorido na timeline para ver a comparação neste painel.</p>
+      ) : (
+        <>
+          <p className={styles.decisionSidebarMeta}>{decision.decisionLabel} · confiança {decision.confidence === "high" ? "alta" : "média"} · execução {decision.executionQuality.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</p>
+          <div className={styles.decisionSidebarComparison}>
+            <article>
+              <small>Ação realizada</small>
+              <strong>{decision.chosenAction.label || decision.chosenAction.identifier}</strong>
+              <span>{decision.chosenAction.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% de vitória estimada</span>
+            </article>
+            {decision.marker !== "good" && (
+              <article>
+                <small>Melhor linha encontrada</small>
+                <strong>{decision.bestAction.label || decision.bestAction.identifier}</strong>
+                <span>{decision.bestAction.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% · +{decision.regretPp.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.</span>
+              </article>
+            )}
+          </div>
+          {decision.marker !== "good" && <p className={styles.decisionSidebarExplanation}><b>Por que apareceu:</b> {decision.explanation}</p>}
+          {decision.alternatives.length > 0 && (
+            <div className={styles.decisionSidebarAlternatives}>
+              <small>Outras alternativas</small>
+              <ul>{decision.alternatives.slice(0, 2).map((alternative) => (
+                <li key={alternative.key}><span>{alternative.label || alternative.identifier}</span><b>{alternative.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</b></li>
+              ))}</ul>
+            </div>
+          )}
+          {replayId && <Link className={styles.decisionSidebarLink} href={`/replays/${replayId}`}>Entender a análise completa</Link>}
+        </>
+      )}
+    </section>
+  );
+}
+
+export default function TalisharTable({
+  replayId,
+  decisionAnalysisEnabled = false,
+}: {
+  replayId?: string;
+  decisionAnalysisEnabled?: boolean;
+} = {}) {
   const [replay, setReplay] = useState<Replay | null>(null);
+  const [decisionMarkers, setDecisionMarkers] = useState<ReplayDecisionMarker[]>([]);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState("");
@@ -485,16 +576,39 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
     const endpoint = requestedReplayId && isReplayId(requestedReplayId)
       ? `/api/replays/${requestedReplayId}`
       : "/api/replays/recorded-match";
+    let active = true;
     fetch(endpoint)
       .then((response) => {
         if (!response.ok) throw new Error("Não foi possível abrir a partida.");
         return response.json();
       })
       .then((data: Replay) => {
+        if (!active) return;
         setReplay(data);
+        const requestedFrame = Number(new URLSearchParams(window.location.search).get("frame"));
+        if (Number.isInteger(requestedFrame) && requestedFrame >= 0) {
+          setIndex(Math.min(requestedFrame, Math.max(0, data.match.frames.length - 1)));
+        }
       })
-      .catch((reason: Error) => setError(reason.message));
-  }, [replayId]);
+      .catch((reason: Error) => {
+        if (active) setError(reason.message);
+      });
+
+    if (decisionAnalysisEnabled && requestedReplayId && isReplayId(requestedReplayId)) {
+      fetch(`/api/replays/${requestedReplayId}/analysis`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((data: ReplayDecisionAnalysisResponse | null) => {
+          if (!active || data?.status !== "ready" || !data.recommendationsVisible) return;
+          setDecisionMarkers(data.handAnalyses.filter(
+            (item): item is ReplayDecisionMarker => Boolean(item.marker) && item.confidence !== "low",
+          ));
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      active = false;
+    };
+  }, [decisionAnalysisEnabled, replayId]);
 
   const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
   const currentFrame = frames[index];
@@ -504,6 +618,10 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
   const playerSetupEquipment = useMemo(() => setupEquipment(frames, "playerEquipment"), [frames]);
   const attackCards = useMemo(() => attackCardNumbers(frames), [frames]);
   const liveValue = useMemo(() => calculateLiveReplayValue(frames, index) as LiveReplayValue, [frames, index]);
+  const selectedDecision = useMemo(
+    () => decisionMarkers.find((marker) => marker.frameIndex === index) ?? null,
+    [decisionMarkers, index],
+  );
 
   useEffect(() => {
     if (!playing || frames.length < 2) return;
@@ -562,6 +680,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
   const actionCard = !current.activeChainLink?.attackingCard && current.lastPlayedCard?.cardNumber && !attackCards.has(current.lastPlayedCard.cardNumber) ? current.lastPlayedCard : undefined;
   const isFinal = current.turnPhase?.turnPhase === "OVER";
   const result = replayResult(replay?.match ?? { frames: [] });
+  const showDecisionAnalysis = decisionAnalysisEnabled;
 
   return (
     <PreviewContext.Provider value={previewContext}>
@@ -613,7 +732,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
             </section>
           </section>
 
-          <aside className={styles.sidebar} id="table-telemetry-sidebar" aria-label="Telemetria da mesa">
+          <aside className={styles.sidebar} id="table-telemetry-sidebar" aria-label={showDecisionAnalysis ? "Telemetria e análise da mesa" : "Telemetria da mesa"}>
             <div
               className={styles.sidebarResizeHandle}
               role="separator"
@@ -635,6 +754,7 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
               closeLabel="Recolher painel lateral"
               closeIcon="chevronRight"
             />
+            {showDecisionAnalysis && <DecisionSidebarPanel decision={selectedDecision} replayId={replayId} />}
           </aside>
           <button
             className={styles.sidebarExpand}
@@ -642,8 +762,8 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
             onClick={() => setSidebarCollapsed(false)}
             aria-controls="table-telemetry-sidebar"
             aria-expanded="false"
-          ><Icon name="chart" size={18} /><span>Mostrar telemetria</span></button>
-          <button className={styles.valueToggle} type="button" onClick={() => setValueOpen(true)} aria-expanded={valueOpen} aria-label="Abrir valor da partida">
+          ><Icon name="chart" size={18} /><span>Mostrar painel lateral</span></button>
+          <button className={styles.valueToggle} type="button" onClick={() => setValueOpen(true)} aria-expanded={valueOpen} aria-label={showDecisionAnalysis ? "Abrir painel de telemetria e análise" : "Abrir painel de telemetria"}>
             <span>{liveValue.currentTurn ? `T${liveValue.currentTurn.turn}` : "T—"}</span>
             <strong>{liveValue.turnValue}</strong>
             <small>Σ {liveValue.matchValue}</small>
@@ -665,15 +785,34 @@ export default function TalisharTable({ replayId }: { replayId?: string } = {}) 
               const selected = index >= marker.index && index < next;
               return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
             })}</div>
+            {showDecisionAnalysis && decisionMarkers.length > 0 && <div className={styles.decisionMarkers} aria-label="Decisões analisadas">{decisionMarkers.map((marker) => (
+              <button
+                aria-label={`${marker.marker === "good" ? "Boa decisão" : marker.marker === "opportunity" ? "Oportunidade de melhoria" : "Erro de alto impacto"}, turno ${marker.turn ?? "não informado"}`}
+                className={`${styles.decisionMarker} ${styles[marker.marker]} ${index === marker.frameIndex ? styles.selectedDecisionMarker : ""}`}
+                key={`${marker.stateFingerprint}-${marker.frameIndex}`}
+                style={{ "--decision-position": `${frames.length > 1 ? marker.frameIndex / (frames.length - 1) * 100 : 0}%` } as CSSProperties}
+                title={`Clique para abrir · ${marker.decisionLabel}: ${marker.regretPp.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.`}
+                type="button"
+                onClick={() => {
+                  setPlaying(false);
+                  setIndex(marker.frameIndex);
+                  setSidebarCollapsed(false);
+                  setValueOpen(true);
+                }}
+              />
+            ))}</div>}
             <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
           </div>
           <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
         </section>
         <CardPreview preview={preview?.frameIndex === index ? preview : null} onClose={closePreview} />
         {valueOpen && (
-          <div className={styles.valueDrawer} role="dialog" aria-modal="true" aria-label="Valor da partida em tempo real">
-            <button className={styles.valueDrawerBackdrop} type="button" onClick={() => setValueOpen(false)} aria-label="Fechar valor da partida" />
-            <div className={styles.valueDrawerSheet}><LiveValuePanel liveValue={liveValue} onClose={() => setValueOpen(false)} /></div>
+          <div className={styles.valueDrawer} role="dialog" aria-modal="true" aria-label={showDecisionAnalysis ? "Telemetria e análise da partida" : "Telemetria da partida"}>
+            <button className={styles.valueDrawerBackdrop} type="button" onClick={() => setValueOpen(false)} aria-label={showDecisionAnalysis ? "Fechar painel de telemetria e análise" : "Fechar painel de telemetria"} />
+            <div className={styles.valueDrawerSheet}>
+              <LiveValuePanel liveValue={liveValue} onClose={() => setValueOpen(false)} closeLabel={showDecisionAnalysis ? "Fechar painel de telemetria e análise" : "Fechar painel de telemetria"} />
+              {showDecisionAnalysis && <DecisionSidebarPanel decision={selectedDecision} replayId={replayId} />}
+            </div>
           </div>
         )}
       </main>

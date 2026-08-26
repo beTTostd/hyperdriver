@@ -2,6 +2,7 @@ import {
   compactReplayDocument,
   compactReplayMatch,
   compactReplayPayload,
+  compactDecisionChoice,
   indicators,
   isCompleteMatch,
   isFinished,
@@ -32,7 +33,7 @@ import {
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
-const SCHEMA_VERSION = "0.2.0";
+const SCHEMA_VERSION = "0.3.0";
 const CAPTURE_ERROR_KEY = "captureError";
 const enqueueCapture = createKeyedTaskQueue();
 
@@ -223,7 +224,7 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
       source: "Talishar Local History",
       startedAt,
       pageUrl,
-      privacy: "Authentication fields are redacted; chat and unused Talishar state are discarded before local storage or Hyperdriver synchronization."
+      privacy: "Authentication fields, chat and raw requests are discarded; decisions keep only action code, zone and sanitized card or option identifiers."
     },
     status: "recording",
     startedAt,
@@ -231,6 +232,7 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
     endedAt: null,
     result: null,
     frames: [],
+    decisionEvents: [],
     summary: {
       turn: null,
       activePlayer: null,
@@ -309,6 +311,39 @@ async function recordFrame(message) {
   await putMatch(match);
 }
 
+async function recordDecision(message) {
+  if (typeof message.pageSessionId !== "string" || !UUID_PATTERN.test(message.pageSessionId)) {
+    throw new Error("A sessão de captura é inválida.");
+  }
+  const match = await ensureMatch(message);
+  if (!canAppendCaptureFrame(match)) return;
+  const choice = compactDecisionChoice(message.choice);
+  if (!choice) throw new Error("A decisão capturada é inválida.");
+  if (!Array.isArray(match.decisionEvents)) match.decisionEvents = [];
+  if (match.decisionEvents.length >= 5_000) {
+    throw new Error("A partida atingiu o limite de decisões capturadas.");
+  }
+
+  const event = {
+    sequence: match.decisionEvents.length + 1,
+    frameSequence: match.frames.length,
+    occurredAt: Number.isFinite(Date.parse(message.occurredAt))
+      ? message.occurredAt
+      : new Date().toISOString(),
+    choice
+  };
+  const eventBytes = utf8Size(JSON.stringify(event));
+  const capturedBytes = Number(match.capturedBytes) || utf8Size(JSON.stringify(match));
+  if (capturedBytes + eventBytes > MAX_MATCH_BYTES) {
+    throw new Error("A partida atingiu o limite local de 40 MB. Exporte ou apague gravações antigas.");
+  }
+  await enforceRetention(match.id, 0, eventBytes);
+  match.decisionEvents.push(event);
+  match.capturedBytes = capturedBytes + eventBytes;
+  match.updatedAt = event.occurredAt;
+  await putMatch(match);
+}
+
 function fileName(match) {
   const date = (match.startedAt || new Date().toISOString()).replace(/[:.]/g, "-");
   return `talishar-history-${date}-${match.id.slice(0, 8)}.json`;
@@ -348,7 +383,7 @@ function senderOrigin(sender) {
 
 function isTrustedMessage(message, sender) {
   const origin = senderOrigin(sender);
-  if (["capture-session-start", "capture-frame"].includes(message?.type)) {
+  if (["capture-session-start", "capture-frame", "capture-decision"].includes(message?.type)) {
     return isTalisharOrigin(origin);
   }
   if (["list-sync-pending", "get-sync-match", "mark-match-synced", "mark-sync-error"].includes(message?.type)) {
@@ -369,6 +404,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message.type === "capture-frame") {
       await enqueueCapture(message.pageSessionId, () => recordFrame(message));
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "capture-decision") {
+      await enqueueCapture(message.pageSessionId, () => recordDecision(message));
       sendResponse({ ok: true });
       return;
     }
@@ -461,7 +501,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true });
     }
   })().catch(async (error) => {
-    if (message?.type === "capture-frame") await setCaptureError(error.message).catch(() => undefined);
+    if (["capture-frame", "capture-decision"].includes(message?.type)) {
+      await setCaptureError(error.message).catch(() => undefined);
+    }
     sendResponse({ ok: false, error: error.message });
   });
   return true;

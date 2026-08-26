@@ -25,6 +25,14 @@ const CARD_FIELDS = [
   "tapped",
   "isBroken",
   "onChain",
+  "action",
+  "actionData",
+  "pitchValue",
+  "restriction",
+  "zone",
+  "type",
+  "sType",
+  "facing",
 ];
 
 const CARD_ARRAY_FIELDS = [
@@ -59,6 +67,13 @@ const SCALAR_FIELDS = [
   "playerDeckCount",
   "turnNo",
   "turnPlayer",
+  "playerAP",
+  "opponentAP",
+  "playerPitchCount",
+  "opponentPitchCount",
+  "havePriority",
+  "priorityPlayer",
+  "canPassPhase",
 ];
 const SINGLE_CARD_FIELDS = new Set([
   "opponentDeckCard",
@@ -76,6 +91,26 @@ const DECK_LINK_HOSTS = new Set([
 
 function isScalar(value) {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+const MAX_SAFE_LABEL_LENGTH = 160;
+const MAX_SAFE_TOKEN_LENGTH = 256;
+const SAFE_TOKEN_PATTERN = /^[\p{L}\p{N}_.:+\-/]+$/u;
+
+function compactToken(value, maxLength = MAX_SAFE_TOKEN_LENGTH) {
+  if (!isScalar(value)) return undefined;
+  const token = String(value).trim();
+  if (!token || token.length > maxLength || !SAFE_TOKEN_PATTERN.test(token)) return undefined;
+  return token;
+}
+
+function compactLabel(value, maxLength = MAX_SAFE_LABEL_LENGTH) {
+  if (!isScalar(value)) return undefined;
+  const label = String(value)
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return label ? label.slice(0, maxLength) : undefined;
 }
 
 export function normalizeDeckLink(value) {
@@ -175,6 +210,11 @@ function compactCard(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const card = {};
   for (const [key, item] of Object.entries(value)) {
+    if (key === "actionDataOverride") {
+      const actionData = compactToken(item);
+      if (actionData !== undefined) card.actionData = actionData;
+      continue;
+    }
     if (!CARD_FIELDS_SET.has(key)) continue;
     if (key === "countersMap") {
       if (item && typeof item === "object" && !Array.isArray(item)) {
@@ -184,7 +224,13 @@ function compactCard(value) {
       }
       continue;
     }
-    if (isScalar(item)) card[key] = item;
+    if (!isScalar(item)) continue;
+    if (["cardNumber", "slot", "actionData", "restriction", "zone", "type", "sType", "facing"].includes(key)) {
+      const token = compactToken(item);
+      if (token !== undefined) card[key] = token;
+    } else {
+      card[key] = item;
+    }
   }
   return card;
 }
@@ -202,6 +248,136 @@ function compactTurnPhase(value) {
     if (isScalar(value[key])) phase[key] = value[key];
   }
   return phase;
+}
+
+function compactButton(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const button = {};
+  for (const key of ["mode", "numMode"]) {
+    if (isScalar(value[key])) button[key] = value[key];
+  }
+  for (const key of ["buttonInput", "cardID"]) {
+    const token = compactToken(value[key]);
+    if (token !== undefined) button[key] = token;
+  }
+  const caption = compactLabel(value.caption ?? value.prompt);
+  if (caption !== undefined) button.caption = caption;
+  return Object.keys(button).length ? button : null;
+}
+
+function compactButtons(value) {
+  return Array.isArray(value)
+    ? value.slice(0, 100).map(compactButton).filter(Boolean)
+    : [];
+}
+
+function compactPlayerPrompt(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const buttons = compactButtons(value.buttons);
+  return buttons.length ? { buttons } : null;
+}
+
+function compactChoiceOptions(value) {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  return values.slice(0, 100).map((option) => compactToken(option)).filter(Boolean);
+}
+
+function compactPlayerInputPopUp(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const result = {};
+  if (typeof value.active === "boolean") result.active = value.active;
+
+  const buttons = compactButtons(value.buttons);
+  if (buttons.length) result.buttons = buttons;
+
+  if (value.popup && typeof value.popup === "object" && !Array.isArray(value.popup)) {
+    const popup = {};
+    if (typeof value.popup.active === "boolean") popup.active = value.popup.active;
+    const id = compactToken(value.popup.id);
+    const title = compactLabel(value.popup.title);
+    if (id !== undefined) popup.id = id;
+    if (title !== undefined) popup.title = title;
+    for (const key of ["cards", "topCards", "bottomCards"]) {
+      const cards = compactCardList(value.popup[key]).slice(0, 100);
+      if (cards.length) popup[key] = cards;
+    }
+    if (Object.keys(popup).length) result.popup = popup;
+  }
+
+  if (Array.isArray(value.multiChooseText)) {
+    const options = value.multiChooseText.slice(0, 100).map((option) => {
+      if (!option || typeof option !== "object" || Array.isArray(option)) return null;
+      const compacted = {};
+      const optionValue = compactToken(option.value);
+      const label = compactLabel(option.label);
+      if (optionValue !== undefined) compacted.value = optionValue;
+      if (label !== undefined) compacted.label = label;
+      return Object.keys(compacted).length ? compacted : null;
+    }).filter(Boolean);
+    if (options.length) result.options = options;
+  }
+
+  const choiceOptions = compactChoiceOptions(value.choiceOptions);
+  if (choiceOptions.length) result.choiceOptions = choiceOptions;
+
+  if (value.formOptions && typeof value.formOptions === "object" && !Array.isArray(value.formOptions)) {
+    const form = {};
+    for (const key of ["mode", "maxNo", "minNo"]) {
+      if (isScalar(value.formOptions[key])) form[key] = value.formOptions[key];
+    }
+    const caption = compactLabel(value.formOptions.caption);
+    if (caption !== undefined) form.caption = caption;
+    if (Object.keys(form).length) result.form = form;
+  }
+
+  return Object.keys(result).length ? result : null;
+}
+
+function decisionZone(value) {
+  const zone = compactToken(value, 40)?.toUpperCase();
+  return zone && /^(?:MY|THEIR)?(?:HAND|ARS|ARSENAL|BANISH|CHAR|DISCARD|ITEMS|LAYER|PERM|PITCH|CC|BUTTON|MODAL)$/.test(zone)
+    ? zone
+    : undefined;
+}
+
+/**
+ * Defense-in-depth sanitizer for an action already projected by the page bridge.
+ * It deliberately has no generic object traversal, so auth/chat/request bodies
+ * cannot enter a replay through a forged window message or imported document.
+ */
+export function compactDecisionChoice(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const action = compactToken(value.action, 40);
+  if (action === undefined) return null;
+  const result = { action };
+  const zone = decisionZone(value.zone);
+  const identifier = compactToken(value.identifier);
+  if (zone !== undefined) result.zone = zone;
+  if (identifier !== undefined) result.identifier = identifier;
+  if (Array.isArray(value.identifiers)) {
+    const identifiers = [...new Set(
+      value.identifiers.slice(0, 100).map((item) => compactToken(item)).filter(Boolean),
+    )];
+    if (identifiers.length) result.identifiers = identifiers;
+  }
+  return result;
+}
+
+function compactDecisionEvent(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const choice = compactDecisionChoice(value.choice ?? value);
+  if (!choice) return null;
+  const event = { choice };
+  if (isScalar(value.sequence)) event.sequence = value.sequence;
+  if (isScalar(value.frameSequence)) event.frameSequence = value.frameSequence;
+  if (typeof value.occurredAt === "string" && Number.isFinite(Date.parse(value.occurredAt))) {
+    event.occurredAt = value.occurredAt;
+  }
+  return event;
 }
 
 function compactChain(value) {
@@ -251,6 +427,14 @@ export function compactReplayPayload(value) {
   }
   if (Object.prototype.hasOwnProperty.call(value, "activeChainLink")) {
     payload.activeChainLink = compactChain(value.activeChainLink);
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "playerPrompt")) {
+    const prompt = compactPlayerPrompt(value.playerPrompt);
+    if (prompt) payload.playerPrompt = prompt;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "playerInputPopUp")) {
+    const popup = compactPlayerInputPopUp(value.playerInputPopUp);
+    if (popup) payload.playerInputPopUp = popup;
   }
   for (const key of CARD_ARRAY_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(value, key)) payload[key] = compactCardList(value[key]);
@@ -309,6 +493,9 @@ export function compactReplayMatch(match) {
   }
   compacted.sync = replaySyncState(match);
   compacted.frames = Array.isArray(match.frames) ? match.frames.map(compactReplayFrame) : [];
+  compacted.decisionEvents = Array.isArray(match.decisionEvents)
+    ? match.decisionEvents.slice(0, 5_000).map(compactDecisionEvent).filter(Boolean)
+    : [];
   return compacted;
 }
 

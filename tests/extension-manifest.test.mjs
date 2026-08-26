@@ -8,8 +8,8 @@ const manifest = JSON.parse(readFileSync(`${projectRoot}/talishar-local-history/
 const popup = readFileSync(`${projectRoot}/talishar-local-history/popup.html`, "utf8");
 const popupStyles = readFileSync(`${projectRoot}/talishar-local-history/popup.css`, "utf8");
 
-test("publica a extensão 1.0.0 com permissões agrupadas", () => {
-  assert.equal(manifest.version, "1.0.0");
+test("publica a extensão 1.1.0 com permissões agrupadas", () => {
+  assert.equal(manifest.version, "1.1.0");
   assert.deepEqual(manifest.host_permissions, [
     "https://*.talishar.net/*",
     "https://*.hyperdriver.com.br/*",
@@ -21,6 +21,7 @@ test("publica a extensão 1.0.0 com permissões agrupadas", () => {
     "https://*.talishar.net/*",
   ]);
   assert.equal(manifest.content_scripts.length, 3);
+  assert.deepEqual(manifest.content_scripts[0].js, ["decision-capture-utils.js", "page-bridge.js"]);
 
   const serializedManifest = JSON.stringify(manifest);
   for (const legacyPattern of [
@@ -34,6 +35,6 @@ test("publica a extensão 1.0.0 com permissões agrupadas", () => {
 });
 
 test("exibe a versão no rodapé semântico do popup", () => {
-  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.0\.0<\/small>[\s\S]*<\/footer>/);
+  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.1\.0<\/small>[\s\S]*<\/footer>/);
   assert.match(popupStyles, /\.popup-footer\s*\{/);
 });

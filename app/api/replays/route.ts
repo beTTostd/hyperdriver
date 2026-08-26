@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { getCurrentUser } from "../../../lib/auth";
+import { processReplayAnalysis } from "../../../lib/decision-analysis";
 import {
   originError,
   privateJson,
@@ -92,6 +94,19 @@ async function uploadReplay(request: Request) {
     }
     const raw = await readRequestBody(request, MAX_REPLAY_BYTES);
     const { replay, duplicate, document } = await saveReplayUpload(user.id, raw);
+    if (!duplicate) {
+      after(async () => {
+        try {
+          await processReplayAnalysis(replay.id, document);
+        } catch {
+          console.error(JSON.stringify({
+            level: "error",
+            type: "replay_decision_analysis_failed",
+            replayId: replay.id,
+          }));
+        }
+      });
+    }
     const category = classifyUploadAttempt({ document, duplicate });
     return respond(
       { ok: true, replayId: replay.sourceMatchId, username: user.username, duplicate },

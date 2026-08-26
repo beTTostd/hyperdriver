@@ -53,9 +53,12 @@
 
 .sidebar {
   position: relative;
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex-direction: column;
   padding: 20px 18px 18px;
-  overflow: visible;
+  overflow: hidden;
   border-left: 1px solid var(--line);
   background:
     linear-gradient(180deg, rgb(255 255 255 / 2%), transparent 32%),
@@ -74,7 +77,7 @@
 .sidebarResizeHandle:focus-visible span,
 .resizingSidebar .sidebarResizeHandle span { opacity: 1; background: var(--paper); }
 .resizingSidebar, .resizingSidebar * { cursor: col-resize!important; user-select: none!important; }
-.valuePanel { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.valuePanel { display: flex; height: auto; min-height: 0; flex: 1 1 0; flex-direction: column; }
 .valuePanelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .valuePanelHeader small { display: block; color: var(--signal-red); font-family: var(--font-mono); font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .valuePanelHeader h2 { margin: 5px 0 0; color: var(--paper); font-family: var(--font-display); font-size: 30px; font-weight: 900; line-height: .92; text-transform: uppercase; }
@@ -271,7 +274,7 @@
 .transportIcon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .transportIconFill { fill: currentColor; stroke: none; }
 .transport .playButton { width: 38px; height: 38px; border-color: var(--signal-red); border-radius: 50%; color: var(--carbon); background: var(--signal-red); font-size: 11px; }
-.scrubber { display: grid; gap: 5px; min-width: 0; }
+.scrubber { position: relative; display: grid; gap: 5px; min-width: 0; }
 .scrubber input { width: 100%; height: 3px; accent-color: var(--telemetry-blue); }
 .turns { display: flex; gap: 3px; overflow: hidden; }
 .turns button { min-width: 27px; padding: 2px 5px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: 7px; font-weight: 850; cursor: pointer; }
@@ -279,6 +282,36 @@
 .frameCount { display: flex; align-items: baseline; justify-content: flex-end; gap: 3px; }
 .frameCount strong { font-size: 18px; }
 .frameCount span { color: var(--muted); font-size: 8px; }
+.decisionMarkers { position: absolute; z-index: 3; right: 0; bottom: -4px; left: 0; height: 14px; pointer-events: none; }
+.decisionMarker { --decision-color: var(--telemetry-blue); position: absolute; top: 50%; left: var(--decision-position); width: 11px; height: 11px; padding: 0; border: 2px solid var(--carbon); border-radius: 50%; background: var(--decision-color); box-shadow: 0 0 0 1px var(--decision-color); cursor: pointer; pointer-events: auto; transform: translate(-50%, -50%); }
+.decisionMarker.good, .decisionSidebar.good { --decision-color: #65d18a; }
+.decisionMarker.opportunity, .decisionSidebar.opportunity { --decision-color: #f2b84b; }
+.decisionMarker.high_impact_error, .decisionSidebar.high_impact_error { --decision-color: var(--signal-red); }
+.decisionMarker:hover, .decisionMarker:focus-visible, .selectedDecisionMarker { width: 15px; height: 15px; outline: none; box-shadow: 0 0 0 2px var(--carbon), 0 0 0 4px var(--decision-color); }
+.decisionSidebar { --decision-color: var(--telemetry-blue); max-height: min(49%, 420px); flex: 0 0 auto; margin: 16px -18px -18px; padding: 14px 16px 16px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line-strong); border-left: 3px solid var(--decision-color); color: var(--paper); background: linear-gradient(135deg, color-mix(in srgb, var(--decision-color) 8%, transparent), transparent 46%), #0c0d0e; scrollbar-color: var(--decision-color) transparent; scrollbar-width: thin; }
+.decisionSidebar > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.decisionSidebar > header > div { min-width: 0; }
+.decisionSidebar > header small { display: block; color: var(--decision-color); font-family: var(--font-mono); font-size: 8px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.decisionSidebar > header strong { display: block; margin-top: 4px; font-family: var(--font-display); font-size: 18px; line-height: 1; text-transform: uppercase; }
+.decisionSidebar > header > span { display: grid; min-width: 30px; height: 24px; place-items: center; border: 1px solid color-mix(in srgb, var(--decision-color) 52%, transparent); border-radius: 4px; color: var(--decision-color); font-family: var(--font-mono); font-size: 9px; font-weight: 850; }
+.decisionSidebarEmpty { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.decisionSidebarMeta { margin: 8px 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 8px; line-height: 1.45; text-transform: uppercase; }
+.decisionSidebarComparison { display: grid; gap: 6px; margin-top: 11px; }
+.decisionSidebarComparison article { display: grid; gap: 3px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-left: 2px solid var(--muted); background: rgba(242, 241, 236, .025); }
+.decisionSidebarComparison article:last-child { border-left-color: var(--decision-color); background: color-mix(in srgb, var(--decision-color) 7%, transparent); }
+.decisionSidebarComparison small, .decisionSidebarAlternatives > small { color: var(--muted); font-family: var(--font-mono); font-size: 7px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.decisionSidebarComparison article:last-child small { color: var(--decision-color); }
+.decisionSidebarComparison strong { overflow-wrap: anywhere; font-size: 11px; line-height: 1.25; }
+.decisionSidebarComparison span { color: var(--muted); font-family: var(--font-mono); font-size: 8px; line-height: 1.35; }
+.decisionSidebarExplanation { margin: 10px 0 0; color: #b2b7bb; font-size: 9px; line-height: 1.5; }
+.decisionSidebarExplanation b { color: var(--paper); }
+.decisionSidebarAlternatives { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); }
+.decisionSidebarAlternatives ul { display: grid; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
+.decisionSidebarAlternatives li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--muted); font-family: var(--font-mono); font-size: 8px; line-height: 1.35; }
+.decisionSidebarAlternatives li span { overflow-wrap: anywhere; }
+.decisionSidebarAlternatives li b { flex: 0 0 auto; color: var(--paper); }
+.decisionSidebarLink { display: flex; min-height: 32px; align-items: center; justify-content: center; margin-top: 12px; padding: 6px 9px; border: 1px solid var(--decision-color); border-radius: 4px; color: var(--decision-color); font-family: var(--font-mono); font-size: 8px; font-weight: 850; line-height: 1.25; text-align: center; text-decoration: none; text-transform: uppercase; }
+.decisionSidebarLink:hover, .decisionSidebarLink:focus-visible { color: var(--carbon); background: var(--decision-color); outline: none; }
 
 .loading { display: grid; min-height: 100vh; min-height: 100dvh; place-items: center; padding: 24px; color: var(--paper); background: var(--carbon); text-align: center; }
 .loading small { color: var(--signal-red); font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
@@ -326,7 +359,7 @@
   .valueToggle > small { color: var(--telemetry-blue); font-size: 10px; }
   .valueDrawer { position: fixed; z-index: 1200; inset: 0; display: grid; justify-items: end; }
   .valueDrawerBackdrop { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: rgba(9,10,11,.75); cursor: pointer; }
-  .valueDrawerSheet { position: relative; z-index: 1; width: min(430px, calc(100vw - 24px)); height: 100vh; height: 100dvh; padding: max(22px, var(--safe-top)) max(20px, var(--safe-right)) max(18px, var(--safe-bottom)) 20px; border-left: 1px solid var(--line-strong); background: var(--carbon); box-shadow: -18px 0 48px rgba(0,0,0,.5); }
+  .valueDrawerSheet { position: relative; z-index: 1; display: flex; width: min(430px, calc(100vw - 24px)); height: 100vh; height: 100dvh; min-height: 0; flex-direction: column; padding: max(22px, var(--safe-top)) max(20px, var(--safe-right)) max(18px, var(--safe-bottom)) 20px; overflow: hidden; border-left: 1px solid var(--line-strong); background: var(--carbon); box-shadow: -18px 0 48px rgba(0,0,0,.5); }
   .valueDrawerSheet .valuePanelHeader h2 { font-size: 36px; }
   .valueDrawerSheet .valueGraph > header strong { font-size: 17px; }
   .valueDrawerSheet .valueLegend { gap: 8px 14px; font-size: 10px; }
@@ -335,6 +368,7 @@
   .valueDrawerSheet .valueTurn small { font-size: 9px; }
   .valueDrawerSheet .valueTrack { height: 17px; }
   .valueDrawerSheet .valueTotal { font-size: 13px; }
+  .valueDrawerSheet .decisionSidebar { max-height: min(49%, 420px); margin: 16px 0 0; }
 }
 
 @media (max-width: 1180px) and (min-width: 681px) {

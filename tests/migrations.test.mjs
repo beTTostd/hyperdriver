@@ -32,12 +32,16 @@ test("migrations create a new database once with checksums and hardening tables"
         "0005_hardening",
         "0006_replay_metric_version",
         "0007_upload_events",
+        "0008_decision_analysis",
       ],
     );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 9);
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='replay_metrics'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_events'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='decision_observations'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hand_analyses'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='decision_dataset_examples'").get());
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "size_bytes"));
     assert.ok(database.pragma("table_info(replay_metrics)").some((column) => column.name === "calculation_version"));
     assert.ok(database.prepare("SELECT checksum FROM schema_migrations").all().every((row) => /^[a-f0-9]{64}$/.test(row.checksum)));
@@ -74,9 +78,66 @@ test("migration adoption preserves an existing legacy user and replay", () => {
       migrated.prepare("SELECT category, http_status AS httpStatus, replay_id AS replayId FROM upload_events").get(),
       { category: "success", httpStatus: 201, replayId: 1 },
     );
-    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 9);
   } finally {
     migrated.close();
+  }
+});
+
+test("replay deletion cascades through decision observations, analyses, feedback and collective examples", () => {
+  const databaseFile = temporaryDatabase();
+  migrate(databaseFile);
+  const database = new Database(databaseFile);
+  try {
+    database.pragma("foreign_keys = ON");
+    database.prepare("INSERT INTO users (username, role) VALUES ('analysis-owner', 'user')").run();
+    const replay = database.prepare(`
+      INSERT INTO replays (
+        user_id, source_match_id, storage_key, schema_version, status, result,
+        started_at, frame_count, size_bytes
+      ) VALUES (1, '44444444-4444-4444-8444-444444444444', 'analysis.json', '0.3.0', 'finished', 'unknown', 1, 1, 2)
+      RETURNING id
+    `).get();
+    database.prepare(`
+      INSERT INTO analysis_model_versions (
+        id, analysis_schema, evaluator_version, card_catalog_version, rules_version, talishar_commit
+      ) VALUES ('model-1', '1.0.0', 'evaluator-1', 'catalog-1', 'rules-1', 'commit-1')
+    `).run();
+    database.prepare("INSERT INTO replay_analyses (replay_id, model_version_id, status) VALUES (?, 'model-1', 'ready')").run(replay.id);
+    const observation = database.prepare(`
+      INSERT INTO decision_observations (
+        replay_id, ordinal, frame_sequence, frame_index, kind, state_fingerprint,
+        hand_fingerprint, data_quality, state_json, legal_actions_json
+      ) VALUES (?, 1, 1, 0, 'action', 'state', 'hand', 'captured', '{}', '[]')
+      RETURNING id
+    `).get(replay.id);
+    database.prepare(`
+      INSERT INTO hand_analyses (
+        replay_id, observation_id, model_version_id, state_fingerprint,
+        frame_sequence, frame_index, decision_kind, confidence, hand_potential,
+        execution_quality, chosen_value, best_value, regret_pp, tags_json, analysis_json
+      ) VALUES (?, ?, 'model-1', 'state', 1, 0, 'action', 'medium', 50, 90, 50, 51, 1, '[]', '{}')
+    `).run(replay.id, observation.id);
+    database.prepare("INSERT INTO analysis_feedback (replay_id, user_id, analysis_fingerprint, helpful) VALUES (?, 1, 'state', 1)").run(replay.id);
+    database.prepare(`
+      INSERT INTO decision_dataset_examples (
+        replay_id, model_version_id, example_key, user_cohort, decision_kind, payload_json
+      ) VALUES (?, 'model-1', 'example-1', 'cohort-1', 'action', '{}')
+    `).run(replay.id);
+
+    database.prepare("DELETE FROM replays WHERE id = ?").run(replay.id);
+    for (const table of [
+      "replay_analyses",
+      "decision_observations",
+      "hand_analyses",
+      "analysis_feedback",
+      "decision_dataset_examples",
+    ]) {
+      assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0, table);
+    }
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM analysis_model_versions").get().count, 1);
+  } finally {
+    database.close();
   }
 });
 

@@ -110,6 +110,26 @@
 .card { --metric-color: #f2b84b; }
 .life { --metric-color: #65d18a; }
 
+.decisionPanel { border-top: 2px solid var(--telemetry-blue); }
+.decisionSummary { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.decisionSummary article { min-height: 126px; padding: 17px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(242, 241, 236, .018); }
+.decisionSummary small, .decisionSummary span { display: block; }
+.decisionSummary small { min-height: 24px; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; line-height: 1.35; text-transform: uppercase; }
+.decisionSummary strong { display: block; margin-top: 12px; color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 27px; font-weight: 600; }
+.decisionSummary span { margin-top: 7px; color: #687078; font-family: var(--font-mono); font-size: 7px; line-height: 1.4; }
+.decisionInsights { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; }
+.decisionInsights article { padding: 17px; border: 1px solid var(--line); border-left: 2px solid var(--signal-red); background: rgba(255, 77, 61, .025); }
+.decisionInsights article:last-child { border-left-color: var(--telemetry-blue); background: rgba(107, 184, 255, .025); }
+.decisionInsights small { color: var(--muted); font-family: var(--font-mono); font-size: 7px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.decisionInsights h3 { margin: 5px 0 13px; font-family: var(--font-display); font-size: 20px; text-transform: uppercase; }
+.decisionInsights ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.decisionInsights li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 9px; border: 1px solid var(--line); color: var(--muted); font-size: 9px; }
+.decisionInsights li b { color: var(--paper); font-family: var(--font-mono); font-size: 8px; }
+.decisionInsights p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.decisionPanel .tableWrap { margin-top: 13px; }
+.decisionPanel .tableWrap th span { color: var(--muted); font-size: 8px; font-weight: 500; }
+.decisionCaveat { margin: 13px 0 0; padding: 12px 14px; border-left: 2px solid #5f676d; color: #70787e; background: rgba(242, 241, 236, .02); font-size: 9px; line-height: 1.6; }
+
 .recentList { display: grid; gap: 7px; }
 .recentMatch { display: grid; grid-template-columns: 60px 92px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; min-height: 78px; padding: 9px 12px; border: 1px solid var(--line); border-left: 2px solid var(--result-color, var(--muted)); background: rgba(242, 241, 236, 0.018); }
 .recentMatch.victory { --result-color: #4ade80; }
@@ -138,6 +158,7 @@
   .summary article:nth-child(4) { border-top: 1px solid var(--line); border-left: 0; }
   .summary article:nth-child(5) { border-top: 1px solid var(--line); }
   .telemetryGrid { grid-template-columns: repeat(3, 1fr); }
+  .decisionSummary { grid-template-columns: repeat(2, 1fr); }
   .recentMatch { grid-template-columns: 52px 82px minmax(0, 1fr) auto; }
   .recentResult { grid-column: 4; grid-row: 1; }
   .recentActions { grid-column: 3 / -1; grid-row: 2; justify-content: flex-end; }
@@ -152,6 +173,7 @@
   .summary article:nth-child(5) { grid-column: 1 / -1; border-left: 0; }
   .splitPanels { grid-template-columns: 1fr; }
   .telemetryGrid { grid-template-columns: repeat(2, 1fr); }
+  .decisionInsights { grid-template-columns: 1fr; }
   .telemetryCard:last-child { grid-column: 1 / -1; }
   .recentMatch { grid-template-columns: 42px 76px minmax(0, 1fr) auto; gap: 8px; }
   .recentIndex { font-size: 7px; }
@@ -171,6 +193,8 @@
   .filters select { width: 100%; font-size: 16px; }
   .filters button { width: 100%; justify-content: center; }
   .summary article { min-height: 112px; padding: 16px; }
+  .decisionSummary { grid-template-columns: 1fr; }
+  .decisionSummary article { min-height: 104px; }
   .panel { padding: 18px 12px; }
   .evolutionRow { grid-template-columns: 55px minmax(0, 1fr) 22px; gap: 7px; }
   .evolutionRow small { display: none; }

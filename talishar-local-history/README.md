@@ -4,8 +4,9 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 
 ## O que esta versão faz
 
-- Observa exclusivamente o stream de atualizações do Talishar (`GetUpdateSSE.php`), hospedado em `api.talishar.net`.
+- Observa o stream de atualizações do Talishar (`GetUpdateSSE.php`) e os endpoints de ação (`ProcessInput.php` e `ProcessInputAPI.php`).
 - Guarda snapshots compactos da partida no IndexedDB da extensão.
+- Registra a escolha efetiva com uma lista fechada: código da ação, zona e identificador da carta ou opção.
 - Remove campos de autenticação conhecidos antes de persistir os dados.
 - Detecta o fim da partida e deixa o replay pronto para sincronização.
 - Permite baixar ou apagar cada partida pelo popup da extensão.
@@ -41,8 +42,9 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 - Atualizações da página passam por validação de origem, endpoint, tamanho e frequência antes de serem encaminhadas ao armazenamento.
 - O upload usa a sessão já aberta no site e passa a pertencer à conta autenticada na primeira sincronização bem-sucedida.
 - Não são solicitadas permissões de histórico, cookies, abas ou acesso genérico a todos os sites.
-- Campos conhecidos como `authKey`, `token`, `cookie`, `password` e IDs de sessão são redigidos antes do armazenamento.
-- O payload mantém somente o estado usado pelo replay: cartas, zonas, vida, turno, fase, combate, formato da partida e o link validado da lista do deck do jogador. Chat, inventário, dados de conta e estado de interface são descartados.
+- Campos conhecidos como `authKey`, `token`, `cookie`, `password`, nome da partida e IDs de sessão são redigidos antes do armazenamento.
+- A extensão nunca persiste o corpo bruto das requisições de ação. Somente `mode`, zona e identificadores sanitizados podem formar um evento de decisão.
+- O payload mantém somente o estado usado pelo replay e pelo treinador pós-partida: cartas, zonas, vida, turno, fase, combate, prioridade, recursos, action points, alternativas apresentadas, formato da partida e o link validado da lista do deck do jogador. Chat, inventário, dados de conta e estado de interface são descartados.
 
 ## Limitações conhecidas
 
@@ -50,4 +52,4 @@ O Talishar não publica um contrato estável para o formato dos eventos. Por iss
 
 ## Estrutura do JSON
 
-Cada arquivo contém `schemaVersion`, informações da captura, status, resumo e a sequência de snapshots compactos recebidos. O campo `match.sync.targets` registra separadamente os envios para `https://beta.hyperdriver.com.br` e `https://hyperdriver.com.br`; o formato antigo com um único `sync` é migrado ao ser lido. Isso reduz o armazenamento e evita transportar logs de chat ou dados de interface que não participam do replay.
+Cada arquivo contém `schemaVersion`, informações da captura, status, resumo, a sequência de snapshots compactos e, na versão 0.3.0, `match.decisionEvents`. Cada decisão referencia a quantidade de frames conhecida quando a escolha ocorreu e contém apenas a projeção sanitizada da ação. O campo `match.sync.targets` registra separadamente os envios para `https://beta.hyperdriver.com.br` e `https://hyperdriver.com.br`; o formato antigo com um único `sync` é migrado ao ser lido. Isso reduz o armazenamento e evita transportar logs de chat, requisições brutas ou dados de interface que não participam do replay.

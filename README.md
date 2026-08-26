@@ -8,6 +8,9 @@ Página local para reproduzir uma partida capturada pela extensão **Talishar Lo
 - Controles de reprodução, avanço quadro a quadro e salto entre turnos.
 - Estado de vida, mão, arsenal, pitch, equipamentos, banish, permanentes e combat chain.
 - Persistência somente dos dados necessários para reconstruir a mesa, sem o log de chat.
+- Captura sanitizada das escolhas e alternativas apresentadas pelo Talishar.
+- Treinador pós-partida que separa potencial da mão, qualidade da execução e sinais recorrentes de deck.
+- Marcadores de boa decisão, oportunidade e erro de alto impacto, sempre descritos como a “melhor linha encontrada”.
 - Botão para abrir qualquer outro JSON gerado pela extensão.
 
 ## Executar localmente
@@ -116,3 +119,11 @@ o vínculo com o proprietário. A biblioteca `/replays`, a análise em
 autenticada. `/me`, `/table/<id>` e `/telemetry/<id>` permanecem como aliases
 de compatibilidade. Os replays não são enviados ao CDN do Talishar; a interface
 busca nesse CDN apenas as imagens públicas das cartas.
+
+## Treinador pós-partida
+
+Novos uploads recebem uma análise assíncrona sem bloquear a gravação ou a abertura do replay. O avaliador otimiza uma estimativa de probabilidade de vitória; dano, vida, cartas, pitch, arsenal, action points e equipamento são apenas a decomposição explicativa. O valor de telemetria exibido na mesa não é usado como objetivo.
+
+As observações de decisão, análises e versões do avaliador ficam em tabelas separadas do replay, portanto podem ser recalculadas. O treinador, os marcadores e as APIs de análise ficam disponíveis somente para administradores. Exemplos coletivos são pseudonimizados e não incluem username, URL, identificador da partida ou link do deck; desative sua criação com `COLLECTIVE_ANALYSIS_ENABLED=false`.
+
+Replays históricos não são retroalimentados automaticamente. O backfill para aprendizado coletivo depende de avaliação documentada da base legal e de aviso compatível. Consulte a política pública antes de ativar o recurso em produção.

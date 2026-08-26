@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -104,6 +105,146 @@ export const replayMetrics = sqliteTable(
   },
 );
 
+export const analysisModelVersions = sqliteTable(
+  "analysis_model_versions",
+  {
+    id: text("id").primaryKey(),
+    analysisSchema: text("analysis_schema").notNull(),
+    evaluatorVersion: text("evaluator_version").notNull(),
+    cardCatalogVersion: text("card_catalog_version").notNull(),
+    rulesVersion: text("rules_version").notNull(),
+    talisharCommit: text("talishar_commit").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+);
+
+export const replayAnalyses = sqliteTable(
+  "replay_analyses",
+  {
+    replayId: integer("replay_id")
+      .primaryKey()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    modelVersionId: text("model_version_id").references(() => analysisModelVersions.id),
+    status: text("status", { enum: ["pending", "ready", "insufficient_data", "failed"] }).notNull(),
+    observationCount: integer("observation_count").notNull().default(0),
+    analysisCount: integer("analysis_count").notNull().default(0),
+    summaryJson: text("summary_json"),
+    methodologyJson: text("methodology_json"),
+    errorCode: text("error_code"),
+    queuedAt: integer("queued_at").notNull().default(sql`(unixepoch() * 1000)`),
+    analyzedAt: integer("analyzed_at"),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("replay_analyses_status_idx").on(table.status, table.updatedAt)],
+);
+
+export const decisionObservations = sqliteTable(
+  "decision_observations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    replayId: integer("replay_id")
+      .notNull()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    frameSequence: integer("frame_sequence").notNull(),
+    frameIndex: integer("frame_index").notNull(),
+    turn: integer("turn"),
+    kind: text("kind").notNull(),
+    stateFingerprint: text("state_fingerprint").notNull(),
+    handFingerprint: text("hand_fingerprint").notNull(),
+    dataQuality: text("data_quality").notNull(),
+    stateJson: text("state_json").notNull(),
+    legalActionsJson: text("legal_actions_json").notNull(),
+    chosenActionJson: text("chosen_action_json"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("decision_observations_replay_ordinal_unique").on(table.replayId, table.ordinal),
+    index("decision_observations_fingerprint_idx").on(table.stateFingerprint),
+    index("decision_observations_replay_kind_idx").on(table.replayId, table.kind),
+  ],
+);
+
+export const handAnalyses = sqliteTable(
+  "hand_analyses",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    replayId: integer("replay_id")
+      .notNull()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    observationId: integer("observation_id")
+      .notNull()
+      .references(() => decisionObservations.id, { onDelete: "cascade" }),
+    modelVersionId: text("model_version_id")
+      .notNull()
+      .references(() => analysisModelVersions.id),
+    stateFingerprint: text("state_fingerprint").notNull(),
+    frameSequence: integer("frame_sequence").notNull(),
+    frameIndex: integer("frame_index").notNull(),
+    turn: integer("turn"),
+    decisionKind: text("decision_kind").notNull(),
+    marker: text("marker"),
+    confidence: text("confidence", { enum: ["high", "medium", "low"] }).notNull(),
+    handPotential: real("hand_potential").notNull(),
+    executionQuality: real("execution_quality").notNull(),
+    chosenValue: real("chosen_value").notNull(),
+    bestValue: real("best_value").notNull(),
+    regretPp: real("regret_pp").notNull(),
+    tagsJson: text("tags_json").notNull(),
+    analysisJson: text("analysis_json").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("hand_analyses_observation_model_unique").on(table.observationId, table.modelVersionId),
+    index("hand_analyses_replay_frame_idx").on(table.replayId, table.frameSequence),
+    index("hand_analyses_replay_marker_idx").on(table.replayId, table.marker),
+  ],
+);
+
+export const analysisFeedback = sqliteTable(
+  "analysis_feedback",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    replayId: integer("replay_id")
+      .notNull()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    analysisFingerprint: text("analysis_fingerprint").notNull(),
+    helpful: integer("helpful", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("analysis_feedback_user_analysis_unique").on(table.userId, table.replayId, table.analysisFingerprint),
+    index("analysis_feedback_replay_idx").on(table.replayId),
+  ],
+);
+
+export const decisionDatasetExamples = sqliteTable(
+  "decision_dataset_examples",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    replayId: integer("replay_id")
+      .notNull()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    modelVersionId: text("model_version_id")
+      .notNull()
+      .references(() => analysisModelVersions.id),
+    exampleKey: text("example_key").notNull(),
+    userCohort: text("user_cohort").notNull(),
+    decisionKind: text("decision_kind").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("decision_dataset_examples_key_unique").on(table.exampleKey),
+    index("decision_dataset_examples_replay_idx").on(table.replayId),
+    index("decision_dataset_examples_cohort_idx").on(table.userCohort, table.createdAt),
+  ],
+);
+
 export const rateLimitEvents = sqliteTable(
   "rate_limit_events",
   {
@@ -161,6 +302,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   replays: many(replays),
   uploadLeases: many(uploadLeases),
   uploadEvents: many(uploadEvents),
+  analysisFeedback: many(analysisFeedback),
 }));
 
 export const passwordSetupTokensRelations = relations(
@@ -190,12 +332,82 @@ export const replaysRelations = relations(replays, ({ one, many }) => ({
     references: [replayMetrics.replayId],
   }),
   uploadEvents: many(uploadEvents),
+  analysis: one(replayAnalyses, {
+    fields: [replays.id],
+    references: [replayAnalyses.replayId],
+  }),
+  decisionObservations: many(decisionObservations),
+  handAnalyses: many(handAnalyses),
+  analysisFeedback: many(analysisFeedback),
+  decisionDatasetExamples: many(decisionDatasetExamples),
 }));
 
 export const replayMetricsRelations = relations(replayMetrics, ({ one }) => ({
   replay: one(replays, {
     fields: [replayMetrics.replayId],
     references: [replays.id],
+  }),
+}));
+
+export const analysisModelVersionsRelations = relations(analysisModelVersions, ({ many }) => ({
+  replayAnalyses: many(replayAnalyses),
+  handAnalyses: many(handAnalyses),
+  decisionDatasetExamples: many(decisionDatasetExamples),
+}));
+
+export const replayAnalysesRelations = relations(replayAnalyses, ({ one }) => ({
+  replay: one(replays, {
+    fields: [replayAnalyses.replayId],
+    references: [replays.id],
+  }),
+  modelVersion: one(analysisModelVersions, {
+    fields: [replayAnalyses.modelVersionId],
+    references: [analysisModelVersions.id],
+  }),
+}));
+
+export const decisionObservationsRelations = relations(decisionObservations, ({ one, many }) => ({
+  replay: one(replays, {
+    fields: [decisionObservations.replayId],
+    references: [replays.id],
+  }),
+  handAnalyses: many(handAnalyses),
+}));
+
+export const handAnalysesRelations = relations(handAnalyses, ({ one }) => ({
+  replay: one(replays, {
+    fields: [handAnalyses.replayId],
+    references: [replays.id],
+  }),
+  observation: one(decisionObservations, {
+    fields: [handAnalyses.observationId],
+    references: [decisionObservations.id],
+  }),
+  modelVersion: one(analysisModelVersions, {
+    fields: [handAnalyses.modelVersionId],
+    references: [analysisModelVersions.id],
+  }),
+}));
+
+export const analysisFeedbackRelations = relations(analysisFeedback, ({ one }) => ({
+  replay: one(replays, {
+    fields: [analysisFeedback.replayId],
+    references: [replays.id],
+  }),
+  user: one(users, {
+    fields: [analysisFeedback.userId],
+    references: [users.id],
+  }),
+}));
+
+export const decisionDatasetExamplesRelations = relations(decisionDatasetExamples, ({ one }) => ({
+  replay: one(replays, {
+    fields: [decisionDatasetExamples.replayId],
+    references: [replays.id],
+  }),
+  modelVersion: one(analysisModelVersions, {
+    fields: [decisionDatasetExamples.modelVersionId],
+    references: [analysisModelVersions.id],
   }),
 }));
 

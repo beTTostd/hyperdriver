@@ -1,4 +1,5 @@
 import { listUserReplayStats, type ReplayMetricTotals, type ReplayMetadata } from "./replays";
+import { aggregateDecisionAnalysis, type DecisionAnalysisAggregate } from "./decision-analysis";
 import {
   aggregateUserStats,
   normalizeStatsMode,
@@ -21,7 +22,9 @@ export type UserStatsRecord = {
   metrics: ReplayMetricTotals | null;
 };
 
-export type UserStats = ReturnType<typeof aggregateUserStats>;
+export type UserStats = ReturnType<typeof aggregateUserStats> & {
+  decisionAnalysis: DecisionAnalysisAggregate;
+};
 
 export async function getUserStats(userId: number, filters: UserStatsFilters = {}): Promise<UserStats> {
   const records: UserStatsRecord[] = listUserReplayStats(userId).map(({ metrics, ...metadata }) => ({
@@ -30,9 +33,17 @@ export async function getUserStats(userId: number, filters: UserStatsFilters = {
     metrics,
   }));
 
-  return aggregateUserStats(records, {
+  const base = aggregateUserStats(records, {
     userId,
     period: normalizeStatsPeriod(filters.period),
     mode: normalizeStatsMode(filters.mode),
-  }) as UserStats;
+  });
+  return {
+    ...base,
+    decisionAnalysis: aggregateDecisionAnalysis(userId, {
+      startAt: base.filters.startAt,
+      endAt: base.filters.endAt,
+      mode: base.filters.mode,
+    }),
+  } as UserStats;
 }

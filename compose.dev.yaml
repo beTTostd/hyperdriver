@@ -14,6 +14,7 @@ services:
       DOCKER_DEV: 1
       DATABASE_FILE: /app/data/hyperdriver.sqlite
       UPLOADS_DIR: /app/uploads
+      COLLECTIVE_ANALYSIS_ENABLED: "true"
     volumes:
       - .:/app
       - /app/node_modules

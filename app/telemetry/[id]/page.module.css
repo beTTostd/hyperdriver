@@ -70,6 +70,74 @@
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 13px; height: 5px; background: var(--metric-color); transform: skewX(-18deg); }
 
+.coachPanel { border-top: 2px solid var(--telemetry-blue); }
+.analysisCoverage { padding: 7px 9px; border: 1px solid rgba(107, 184, 255, .4); color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.analysisNotice { margin: 0; padding: 18px; border-left: 2px solid var(--telemetry-blue); color: var(--muted); background: rgba(107, 184, 255, .04); font-size: 11px; line-height: 1.6; }
+.coachSummary { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.coachSummary article { min-height: 126px; padding: 17px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(242, 241, 236, .018); }
+.coachSummary small, .coachSummary span { display: block; }
+.coachSummary small { min-height: 26px; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; line-height: 1.35; text-transform: uppercase; }
+.coachSummary strong { display: block; margin-top: 12px; color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 27px; font-weight: 600; }
+.coachSummary span { margin-top: 7px; color: #6c7378; font-family: var(--font-mono); font-size: 7px; line-height: 1.4; }
+.markerGuide { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.6fr); gap: 18px; margin-top: 12px; padding: 15px; border: 1px solid var(--line); background: rgba(107, 184, 255, .035); }
+.markerGuide > div > strong { font-family: var(--font-mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.markerGuide > div > p { margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.markerGuide ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.markerGuide li { --decision-color: var(--telemetry-blue); display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: start; gap: 8px; }
+.markerGuide li.good { --decision-color: #65d18a; }
+.markerGuide li.opportunity { --decision-color: #f2b84b; }
+.markerGuide li.high_impact_error { --decision-color: var(--signal-red); }
+.markerGuide li > i { width: 8px; height: 8px; margin-top: 3px; border-radius: 50%; background: var(--decision-color); box-shadow: 0 0 0 1px rgba(242, 241, 236, .14); }
+.markerGuide li b, .markerGuide li small { display: block; }
+.markerGuide li b { color: var(--decision-color); font-family: var(--font-mono); font-size: 7px; letter-spacing: .04em; line-height: 1.35; text-transform: uppercase; }
+.markerGuide li small { margin-top: 4px; color: #6c7378; font-family: var(--font-mono); font-size: 6px; line-height: 1.45; }
+.patternSummary { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 18px; margin-top: 12px; padding: 13px 15px; border-left: 2px solid var(--signal-red); background: rgba(255, 77, 61, .045); }
+.patternSummary > strong { font-family: var(--font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.patternSummary > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.patternSummary span, .analysisTags span { padding: 5px 7px; border: 1px solid var(--line-strong); color: var(--muted); font-family: var(--font-mono); font-size: 7px; text-transform: uppercase; }
+.decisionList { display: grid; gap: 8px; margin-top: 16px; }
+.decisionCard { --decision-color: var(--telemetry-blue); border: 1px solid var(--line-strong); border-left: 3px solid var(--decision-color); background: rgba(9, 10, 11, .54); }
+.decisionCard.good { --decision-color: #65d18a; }
+.decisionCard.opportunity { --decision-color: #f2b84b; }
+.decisionCard.high_impact_error { --decision-color: var(--signal-red); }
+.decisionCard summary { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; min-height: 60px; padding: 12px 15px; cursor: pointer; list-style: none; transition: background-color 140ms ease; }
+.decisionCard summary:hover, .decisionCard summary:focus-visible { background: rgba(242, 241, 236, .035); outline: none; }
+.decisionCard summary::-webkit-details-marker { display: none; }
+.decisionCard summary::after { grid-column: 4; color: var(--decision-color); content: "Abrir análise +"; font-family: var(--font-mono); font-size: 7px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.decisionCard[open] summary::after { content: "Fechar −"; }
+.decisionCard summary > span { color: var(--decision-color); font-family: var(--font-mono); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.decisionCard summary > strong { font-family: var(--font-display); font-size: 19px; text-transform: uppercase; }
+.decisionCard summary > small { grid-column: 3; grid-row: 1; color: var(--muted); font-family: var(--font-mono); font-size: 7px; white-space: nowrap; }
+.decisionBody { padding: 0 15px 15px; border-top: 1px solid var(--line); }
+.decisionBody > .decisionMeaning { margin: 0 -15px; padding: 13px 15px; border-bottom: 1px solid var(--line); color: #8c9499; background: rgba(242, 241, 236, .018); font-size: 9px; }
+.decisionMeaning strong { color: var(--paper); }
+.decisionComparison { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); }
+.singleDecisionComparison { grid-template-columns: 1fr; }
+.decisionComparison article { padding: 16px; background: #101214; }
+.decisionComparison small, .decisionComparison span { display: block; font-family: var(--font-mono); }
+.decisionComparison small { color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.decisionComparison strong { display: block; margin-top: 7px; color: var(--paper); font-size: 13px; }
+.decisionComparison article:last-child strong { color: var(--decision-color); }
+.decisionComparison span { margin-top: 6px; color: #737a7f; font-size: 8px; }
+.decisionBody > p { margin: 15px 0; color: #aeb4b8; font-size: 11px; line-height: 1.6; }
+.alternatives > strong { font-family: var(--font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.alternatives ol { display: grid; gap: 5px; margin: 9px 0 0; padding: 0; list-style: none; counter-reset: alternatives; }
+.alternatives li { display: flex; justify-content: space-between; gap: 14px; padding: 9px 11px; border: 1px solid var(--line); color: var(--muted); counter-increment: alternatives; font-size: 10px; }
+.alternatives li span::before { margin-right: 8px; color: #5e666c; content: counter(alternatives, decimal-leading-zero); font-family: var(--font-mono); font-size: 7px; }
+.alternatives li b { color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 9px; white-space: nowrap; }
+.analysisTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.decisionActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 13px; margin-top: 16px; }
+.decisionActions > a { display: inline-flex; min-height: var(--touch-target); align-items: center; padding: 0 12px; border: 1px solid var(--telemetry-blue); color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 8px; font-weight: 800; text-decoration: none; text-transform: uppercase; }
+.decisionActions > a:hover { color: var(--carbon); background: var(--telemetry-blue); }
+.analysisFeedback { display: flex; align-items: center; gap: 6px; }
+.analysisFeedback > span, .analysisFeedback small { color: var(--muted); font-family: var(--font-mono); font-size: 7px; }
+.analysisFeedback button { min-height: 32px; padding: 0 9px; border: 1px solid var(--line-strong); color: var(--paper); background: transparent; cursor: pointer; font-family: var(--font-mono); font-size: 7px; text-transform: uppercase; }
+.analysisFeedback button[aria-pressed="true"] { border-color: var(--telemetry-blue); color: var(--telemetry-blue); background: rgba(107, 184, 255, .08); }
+.analysisFeedback button:disabled { cursor: wait; opacity: .55; }
+.analysisFeedback small { min-width: 100px; }
+.methodologyNote { margin: 18px 0 0; padding: 14px 16px; border-left: 2px solid #5d656b; color: #737a7f; background: rgba(242, 241, 236, .025); font-size: 9px; line-height: 1.6; }
+.methodologyNote strong { color: var(--paper); font-family: var(--font-mono); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+
 .chart { display: grid; gap: 10px; }
 .row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 30px; align-items: center; gap: 14px; }
 .cycleLabel { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
@@ -123,6 +191,11 @@
   .summary article:nth-child(5) { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
   .panelHeader { align-items: flex-start; flex-direction: column; }
   .legend { justify-content: flex-start; }
+  .coachSummary { grid-template-columns: repeat(2, 1fr); }
+  .markerGuide { grid-template-columns: 1fr; }
+  .decisionCard summary { grid-template-columns: 120px minmax(0, 1fr) auto; }
+  .decisionCard summary > small { grid-column: 2; grid-row: 2; margin-right: 0; }
+  .decisionCard summary::after { grid-column: 3; grid-row: 1 / span 2; }
 }
 
 @media (max-width: 680px) {
@@ -138,6 +211,17 @@
   .matchFacts div { padding: 11px 14px; border-top: 1px solid var(--line); border-left: 0; }
   .matchFacts div:first-child { border-top: 0; }
   .panel { padding: 18px 13px; }
+  .decisionCard summary { grid-template-columns: 1fr auto; gap: 5px 10px; }
+  .decisionCard summary > span, .decisionCard summary > strong, .decisionCard summary > small { grid-column: 1; }
+  .decisionCard summary > span { grid-row: 1; }
+  .decisionCard summary > strong { grid-row: 2; }
+  .decisionCard summary > small { grid-row: 3; white-space: normal; }
+  .decisionCard summary::after { grid-column: 2; grid-row: 1 / span 3; }
+  .markerGuide ul { grid-template-columns: 1fr; }
+  .decisionComparison { grid-template-columns: 1fr; }
+  .decisionActions { align-items: flex-start; flex-direction: column; }
+  .analysisFeedback { flex-wrap: wrap; }
+  .patternSummary { grid-template-columns: 1fr; gap: 8px; }
   .row { grid-template-columns: 78px minmax(0, 1fr) 28px; gap: 8px; }
   .track { height: 28px; }
   .row { min-height: 36px; }
@@ -152,6 +236,8 @@
   .matchResult > i { width: 30px; }
   .summary article { min-height: 112px; padding: 16px; }
   .summary strong { font-size: 32px; }
+  .coachSummary { grid-template-columns: 1fr; }
+  .coachSummary article { min-height: 104px; }
   .row { grid-template-columns: 24px minmax(0, 1fr) 24px; }
   .cycleLabel > strong { font-size: 9px; }
   .legend { gap: 9px 12px; }

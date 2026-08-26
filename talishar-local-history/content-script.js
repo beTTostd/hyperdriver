@@ -4,6 +4,7 @@
   const CHANNEL = "__talishar_local_history__";
   const CAPTURE_ERROR_KEY = "captureError";
   const MAX_BRIDGE_PAYLOAD_BYTES = 5 * 1024 * 1024;
+  const MAX_DECISION_EVENT_BYTES = 4 * 1024;
   const MAX_FRAMES_PER_MINUTE = 240;
   const sessionHelpers = globalThis.__talisharCaptureSession;
   if (!sessionHelpers) return;
@@ -54,6 +55,7 @@
 
   let frameQueue = Promise.resolve();
   const recentFrames = [];
+  const recentDecisions = [];
 
   function acceptsFrame(data) {
     if (data.endpoint !== "/GetUpdateSSE.php" || typeof data.payload !== "string") return false;
@@ -71,23 +73,55 @@
     return true;
   }
 
+  function decisionToken(value, maxLength = 256) {
+    if (typeof value !== "string" || !value || value.length > maxLength) return false;
+    return /^[\p{L}\p{N}_.:+\-/]+$/u.test(value);
+  }
+
+  function acceptsDecision(data) {
+    if (!data.choice || typeof data.choice !== "object" || Array.isArray(data.choice)) return false;
+    if (!decisionToken(data.choice.action, 40)) return false;
+    if (data.choice.zone !== undefined && !decisionToken(data.choice.zone, 40)) return false;
+    if (data.choice.identifier !== undefined && !decisionToken(data.choice.identifier)) return false;
+    if (data.choice.identifiers !== undefined && (
+      !Array.isArray(data.choice.identifiers) ||
+      data.choice.identifiers.length > 100 ||
+      data.choice.identifiers.some((identifier) => !decisionToken(identifier))
+    )) return false;
+    if (new TextEncoder().encode(JSON.stringify(data.choice)).byteLength > MAX_DECISION_EVENT_BYTES) return false;
+    const now = Date.now();
+    while (recentDecisions.length && recentDecisions[0] <= now - 60_000) recentDecisions.shift();
+    if (recentDecisions.length >= MAX_FRAMES_PER_MINUTE) return false;
+    recentDecisions.push(now);
+    return true;
+  }
+
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.origin !== window.location.origin) return;
     const data = event.data;
-    if (!data || data.channel !== CHANNEL || data.type !== "sse-frame" || !acceptsFrame(data)) return;
+    if (!data || data.channel !== CHANNEL) return;
+    const captureFrame = data.type === "sse-frame" && acceptsFrame(data);
+    const captureDecision = data.type === "decision-event" && acceptsDecision(data);
+    if (!captureFrame && !captureDecision) return;
 
     frameQueue = frameQueue
       .catch(() => undefined)
       .then(() => sessionReady)
       .then(async (ready) => {
         if (!ready) throw new Error("A sessão de captura não foi iniciada.");
-        const response = await chrome.runtime.sendMessage({
+        const response = await chrome.runtime.sendMessage(captureFrame ? {
           type: "capture-frame",
           pageSessionId,
           pageUrl,
           endpoint: "/GetUpdateSSE.php",
           payload: data.payload,
           receivedAt: new Date().toISOString()
+        } : {
+          type: "capture-decision",
+          pageSessionId,
+          pageUrl,
+          choice: data.choice,
+          occurredAt: data.occurredAt || new Date().toISOString()
         });
         if (!response?.ok) throw new Error(response?.error || "Não foi possível salvar um snapshot.");
         if (captureErrorActive) {

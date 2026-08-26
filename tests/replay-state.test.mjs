@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  compactDecisionChoice,
   compactReplayDocument,
   compactReplayPayload,
   indicators,
@@ -73,6 +74,65 @@ test("compacts Talishar payloads to the state used by the replay", () => {
     totalDefense: 3,
     attackTarget: "2",
     goAgain: true,
+  });
+});
+
+test("keeps legal alternatives and effective choices through strict allowlists", () => {
+  const compacted = compactReplayPayload({
+    authKey: "never-store",
+    playerID: "never-store",
+    playerAP: 1,
+    playerPitchCount: 2,
+    canPassPhase: true,
+    havePriority: true,
+    playerHand: [{
+      cardNumber: "command_and_conquer_red",
+      action: 3,
+      actionDataOverride: "0",
+      pitchValue: 1,
+      restriction: "",
+      authKey: "never-store",
+    }],
+    playerPrompt: {
+      buttons: [{ mode: 5, buttonInput: "MYHAND-0", caption: "Jogar carta", authKey: "never-store" }],
+      authKey: "never-store",
+    },
+    playerInputPopUp: {
+      active: true,
+      multiChooseText: [{ value: "alpha", label: "Opção alpha", secret: "never-store" }],
+      formOptions: { mode: 7, minNo: 1, maxNo: 2, caption: "Escolha", authKey: "never-store" },
+    },
+  });
+
+  assert.deepEqual(compacted.playerHand, [{
+    cardNumber: "command_and_conquer_red",
+    action: 3,
+    actionData: "0",
+    pitchValue: 1,
+  }]);
+  assert.deepEqual(compacted.playerPrompt, {
+    buttons: [{ mode: 5, buttonInput: "MYHAND-0", caption: "Jogar carta" }],
+  });
+  assert.deepEqual(compacted.playerInputPopUp, {
+    active: true,
+    options: [{ value: "alpha", label: "Opção alpha" }],
+    form: { mode: 7, maxNo: 2, minNo: 1, caption: "Escolha" },
+  });
+  assert.equal(JSON.stringify(compacted).includes("never-store"), false);
+
+  assert.deepEqual(compactDecisionChoice({
+    action: 3,
+    zone: "myhand",
+    identifier: "0",
+    identifiers: ["0", "1", "1", "unsafe value"],
+    authKey: "never-store",
+    body: "never-store",
+    chat: "never-store",
+  }), {
+    action: "3",
+    zone: "MYHAND",
+    identifier: "0",
+    identifiers: ["0", "1"],
   });
 });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, lt, or, sum } from "drizzle-orm";
 import { getDb } from "../db";
-import { replayMetrics, replays, users } from "../db/schema";
+import { replayAnalyses, replayMetrics, replays, users } from "../db/schema";
 import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
 import { calculateReplayTelemetry, TELEMETRY_ALGORITHM_VERSION } from "./replay-telemetry";
 import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
@@ -318,6 +318,10 @@ export async function saveReplayUpload(userId: number, raw: string) {
         replayId: inserted.id,
         ...metrics,
         calculationVersion: TELEMETRY_ALGORITHM_VERSION,
+      }).run();
+      transaction.insert(replayAnalyses).values({
+        replayId: inserted.id,
+        status: "pending",
       }).run();
       return inserted;
     });

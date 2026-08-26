@@ -99,6 +99,8 @@ before(async () => {
         DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
         UPLOADS_DIR: join(databaseDirectory, "uploads"),
         CARD_CATALOG_API_URL: `http://127.0.0.1:${catalogAddress.port}/cards`,
+        COLLECTIVE_ANALYSIS_ENABLED: "true",
+        ANALYSIS_PSEUDONYM_SALT: "integration-test-pseudonym-salt-2026-08-25",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -155,8 +157,10 @@ test("renders the extension privacy policy as a public page", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Política de Privacidade/);
-  assert.match(html, /24 de agosto de 2026/);
+  assert.match(html, /25 de agosto de 2026/);
   assert.match(html, /A sincronização é automática/);
+  assert.match(html, /Análises e aprendizado coletivo/);
+  assert.match(html, /não transforma automaticamente o dado em anônimo/);
   assert.match(html, /Política de Dados do Usuário da Chrome Web Store/);
   assert.match(html, /Legend Story Studios/);
 });
@@ -242,6 +246,103 @@ test("renders the authenticated statistics page with shareable filters", async (
   assert.match(html, /name="mode"/);
   assert.match(html, /Nenhum replay no período/);
   assert.match(html, /href="\/me\/stats"[^>]*>Estatísticas/);
+});
+
+test("keeps decision analysis and feedback visible only to administrators", async () => {
+  const ownerCookie = await createTestUser("analysis-admin-only-owner");
+  const document = decisionReplayDocument("e3333333-3333-4333-8333-333333333333");
+  const uploaded = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify(document),
+  });
+  assert.equal(uploaded.status, 201);
+  const { replayId } = await uploaded.json();
+
+  const anonymous = await fetch(new URL(`/api/replays/${replayId}/analysis`, baseUrl));
+  assert.equal(anonymous.status, 401);
+
+  const ownerAnalysis = await fetch(new URL(`/api/replays/${replayId}/analysis`, baseUrl), {
+    headers: { cookie: ownerCookie },
+  });
+  assert.equal(ownerAnalysis.status, 404);
+
+  const adminAnalysis = await waitForDecisionAnalysis(replayId, cookie);
+  assert.equal(adminAnalysis.status, "ready");
+  assert.equal(adminAnalysis.recommendationsVisible, true);
+  assert.equal(adminAnalysis.methodology.primaryObjective, "estimated_win_probability");
+  assert.equal(adminAnalysis.methodology.usesFinalResult, false);
+  assert.equal(adminAnalysis.versions.replaySchema, "0.3.0");
+  assert.equal(adminAnalysis.handAnalyses.length, 1);
+  assert.equal(adminAnalysis.handAnalyses[0].confidence, "medium");
+  assert.equal(adminAnalysis.handAnalyses[0].marker, "opportunity");
+  assert.ok(adminAnalysis.handAnalyses[0].regretPp > 0);
+  assert.ok(adminAnalysis.handAnalyses[0].alternatives.length > 0);
+  assert.ok(adminAnalysis.handAnalyses[0].alternatives.length <= 2);
+
+  const ownerFeedback = await fetch(new URL(`/api/replays/${replayId}/analysis/feedback`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({
+      analysisFingerprint: adminAnalysis.handAnalyses[0].stateFingerprint,
+      helpful: false,
+    }),
+  });
+  assert.equal(ownerFeedback.status, 404);
+
+  const feedback = await fetch(new URL(`/api/replays/${replayId}/analysis/feedback`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      analysisFingerprint: adminAnalysis.handAnalyses[0].stateFingerprint,
+      helpful: true,
+    }),
+  });
+  assert.equal(feedback.status, 200);
+  assert.deepEqual(await feedback.json(), { ok: true });
+
+  const report = await fetch(new URL(`/replays/${replayId}`, baseUrl), { headers: { cookie } });
+  assert.equal(report.status, 200);
+  const reportHtml = await report.text();
+  assert.match(reportHtml, /Treinador pós-partida/);
+  assert.match(reportHtml, /Melhor linha encontrada/);
+  assert.match(reportHtml, /Como usar os marcadores/);
+  assert.match(reportHtml, /Oportunidade de melhoria/);
+  assert.match(reportHtml, /p\.p.*pontos percentuais/);
+  assert.match(reportHtml, /Ação realizada/);
+  assert.match(reportHtml, /execução/);
+  assert.match(reportHtml, /Abrir decisão na mesa/);
+  assert.match(reportHtml, /probabilidade estimada de vitória/);
+
+  const ownerReport = await fetch(new URL(`/replays/${replayId}`, baseUrl), { headers: { cookie: ownerCookie } });
+  assert.equal(ownerReport.status, 200);
+  const ownerReportHtml = await ownerReport.text();
+  assert.doesNotMatch(ownerReportHtml, /Treinador pós-partida/);
+  assert.doesNotMatch(ownerReportHtml, /Melhor linha encontrada/);
+  assert.doesNotMatch(ownerReportHtml, /Como usar os marcadores/);
+  assert.doesNotMatch(ownerReportHtml, /Abrir decisão na mesa/);
+
+  const ownerStats = await fetch(new URL("/me/stats", baseUrl), { headers: { cookie: ownerCookie } });
+  assert.equal(ownerStats.status, 200);
+  const ownerStatsHtml = await ownerStats.text();
+  assert.doesNotMatch(ownerStatsHtml, /Decisões \/ pós-partida/);
+  assert.doesNotMatch(ownerStatsHtml, /Potencial das mãos/);
+  assert.doesNotMatch(ownerStatsHtml, /Qualidade da execução/);
+
+  const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  try {
+    const replay = database.prepare("SELECT id FROM replays WHERE source_match_id = ?").get(replayId);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM decision_observations WHERE replay_id = ?").get(replay.id).count, 1);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM hand_analyses WHERE replay_id = ?").get(replay.id).count, 1);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM analysis_feedback WHERE replay_id = ?").get(replay.id).count, 1);
+    const dataset = database.prepare("SELECT user_cohort AS userCohort, payload_json AS payloadJson FROM decision_dataset_examples WHERE replay_id = ?").get(replay.id);
+    assert.match(dataset.userCohort, /^[0-9a-f]{64}$/);
+    for (const forbidden of ["analysis-admin-only-owner", replayId, "private-deck"]) {
+      assert.equal(dataset.payloadJson.includes(forbidden), false, forbidden);
+    }
+  } finally {
+    database.close();
+  }
 });
 
 test("requires authentication and supports one-time user invitations", async () => {
@@ -430,15 +531,16 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Versões da extensão/);
+  assert.match(html, /v1\.1\.0/);
   assert.match(html, /v1\.0\.0/);
   assert.match(html, /v0\.4\.4/);
   assert.match(html, /Data de criação|Arquivo criado em/);
-  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.0\.0\.zip"/);
-  assert.match(html, /download="hyperdriver-extension-v1\.0\.0\.zip"/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.1\.0\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v1\.1\.0\.zip"/);
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  for (const version of ["1.0.0", "0.4.4"]) {
+  for (const version of ["1.1.0", "1.0.0", "0.4.4"]) {
     const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
     assert.equal(download.status, 200);
     assert.ok((await download.arrayBuffer()).byteLength > 0);
@@ -1070,6 +1172,67 @@ function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
   };
 }
 
+function decisionReplayDocument(id) {
+  const decisionPayload = {
+    initialLoad: {
+      gameFormat: "cc",
+      deckLink: "https://fabrary.net/decks/private-deck",
+    },
+    turnNo: 1,
+    turnPlayer: "1",
+    otherPlayer: "2",
+    turnPhase: { turnPhase: "A", caption: "Escolha uma ação" },
+    havePriority: true,
+    priorityPlayer: "1",
+    canPassPhase: true,
+    playerAP: 1,
+    playerPitchCount: 0,
+    opponentPitchCount: 0,
+    playerHealth: 20,
+    opponentHealth: 20,
+    playerDeckCount: 40,
+    opponentDeckCount: 40,
+    playerEquipment: [{ slot: "Hero", cardNumber: "alpha_hero", controller: "1" }],
+    opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero", controller: "2" }],
+    playerHand: [
+      { cardNumber: "strong_attack_red", controller: "1", action: 3, actionData: "0", pitchValue: 1 },
+      { cardNumber: "resource_card_blue", controller: "1", action: 3, actionData: "1", pitchValue: 3 },
+    ],
+    opponentHand: [{ cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }],
+    playerArse: [],
+    opponentArse: [],
+  };
+  return {
+    schemaVersion: "0.3.0",
+    exportedAt: "2026-08-25T12:01:00.000Z",
+    match: {
+      id,
+      schemaVersion: "0.3.0",
+      status: "finished",
+      startedAt: "2026-08-25T12:00:00.000Z",
+      endedAt: "2026-08-25T12:01:00.000Z",
+      frames: [
+        { sequence: 1, receivedAt: "2026-08-25T12:00:00.000Z", payload: decisionPayload },
+        {
+          sequence: 2,
+          receivedAt: "2026-08-25T12:01:00.000Z",
+          payload: {
+            ...decisionPayload,
+            turnPhase: { turnPhase: "OVER", caption: "Fim" },
+            opponentHealth: 0,
+          },
+        },
+      ],
+      decisionEvents: [{
+        sequence: 1,
+        frameSequence: 1,
+        occurredAt: "2026-08-25T12:00:01.000Z",
+        choice: { action: "3", zone: "MYHAND", identifier: "1" },
+      }],
+    },
+  };
+}
+
 function telemetryReplayDocument(id) {
   const equipment = [
     { slot: "Hero", cardNumber: "alpha_hero", controller: "1" },
@@ -1243,6 +1406,20 @@ async function waitForServer(url) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Next.js did not start within 30 seconds.\n${serverOutput}`);
+}
+
+async function waitForDecisionAnalysis(replayId, requestCookie) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(new URL(`/api/replays/${replayId}/analysis`, baseUrl), {
+      headers: { cookie: requestCookie },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    if (payload.status !== "pending") return payload;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Decision analysis did not finish.\n${serverOutput}`);
 }
 
 function getCookie(response) {
