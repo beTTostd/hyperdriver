@@ -24,7 +24,11 @@ test("compacts Talishar payloads to the state used by the replay", () => {
     newEvents: ["unused UI event"],
     initialLoad: {
       gameFormat: "cc",
-      playerName: "player",
+      gameGUID: "game-guid-123",
+      playerName: "  Drivér   One  ",
+      opponentName: "Opponent Two",
+      isOpponentAI: false,
+      authKey: "never-store",
       deckLink: "https://fabrary.net/decks/private-deck#notes",
     },
     turnNo: 4,
@@ -57,7 +61,12 @@ test("compacts Talishar payloads to the state used by the replay", () => {
   assert.deepEqual(compacted.initialLoad, {
     gameFormat: "cc",
     deckLink: "https://fabrary.net/decks/private-deck",
+    gameGUID: "game-guid-123",
+    playerName: "Drivér One",
+    opponentName: "Opponent Two",
+    isOpponentAI: false,
   });
+  assert.equal(JSON.stringify(compacted).includes("never-store"), false);
   assert.equal(compacted.otherPlayer, "1");
   assert.deepEqual(compacted.turnPhase, { turnPhase: "BUTTONINPUT", caption: "Escolha" });
   assert.deepEqual(compacted.playerEquipment, [{

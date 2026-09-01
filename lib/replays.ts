@@ -5,6 +5,7 @@ import { replayAnalyses, replayMetrics, replays, users } from "../db/schema";
 import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
 import { calculateReplayTelemetry, TELEMETRY_ALGORITHM_VERSION } from "./replay-telemetry";
 import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
+import { applyEloUploadInTransaction, recordEloUpload } from "./elo";
 
 export const MAX_REPLAY_BYTES = 50 * 1024 * 1024;
 export const REPLAY_PAGE_SIZE = 25;
@@ -42,7 +43,14 @@ export type ReplayPayload = {
   playerEquipment?: ReplayCard[];
   opponentEquipment?: ReplayCard[];
   activeChainLink?: ReplayChain | null;
-  initialLoad?: { gameFormat?: string; deckLink?: string };
+  initialLoad?: {
+    gameFormat?: string;
+    deckLink?: string;
+    gameGUID?: string | number;
+    playerName?: string;
+    opponentName?: string;
+    isOpponentAI?: string | number | boolean;
+  };
   [key: string]: unknown;
 };
 
@@ -277,9 +285,11 @@ export async function saveReplayUpload(userId: number, raw: string) {
           .where(eq(replays.id, existing.id))
           .returning()
           .get();
+        recordEloUpload(userId, document.match.id, document);
         return { replay: updated, duplicate: true, document };
       }
     }
+    recordEloUpload(userId, document.match.id, document);
     return { replay: existing, duplicate: true, document };
   }
 
@@ -323,6 +333,7 @@ export async function saveReplayUpload(userId: number, raw: string) {
         replayId: inserted.id,
         status: "pending",
       }).run();
+      applyEloUploadInTransaction(userId, document.match.id, document);
       return inserted;
     });
     return { replay, duplicate: false, document };
@@ -337,6 +348,7 @@ export async function saveReplayUpload(userId: number, raw: string) {
       if (concurrent.userId !== userId) {
         throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409, "DUPLICATE_REPLAY", document.match.id, document);
       }
+      recordEloUpload(userId, document.match.id, document);
       return { replay: concurrent, duplicate: true, document };
     }
     if (error instanceof ReplayUploadError) throw error;

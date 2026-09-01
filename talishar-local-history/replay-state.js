@@ -406,8 +406,9 @@ function compactIndicators(value) {
 /**
  * Keep only the state consumed by the replay table and telemetry.
  * Talishar sends chat, account metadata and UI plumbing in every SSE frame.
- * Keep the local player's sanitized deck link so the replay can reference the
- * exact list, while discarding fields that are not needed by the replay.
+ * Keep the local player's sanitized deck link and the four Talishar match
+ * identity fields used by the private administrative Elo ranking, while
+ * discarding authentication, chat and other unrelated response fields.
  */
 export function compactReplayPayload(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -420,6 +421,15 @@ export function compactReplayPayload(value) {
     }
     const deckLink = normalizeDeckLink(value.initialLoad.deckLink);
     if (deckLink) initialLoad.deckLink = deckLink;
+    const gameGUID = compactToken(value.initialLoad.gameGUID, 128);
+    if (gameGUID !== undefined) initialLoad.gameGUID = gameGUID;
+    const playerName = compactLabel(value.initialLoad.playerName);
+    if (playerName !== undefined) initialLoad.playerName = playerName;
+    const opponentName = compactLabel(value.initialLoad.opponentName);
+    if (opponentName !== undefined) initialLoad.opponentName = opponentName;
+    if (isScalar(value.initialLoad.isOpponentAI)) {
+      initialLoad.isOpponentAI = value.initialLoad.isOpponentAI;
+    }
     if (Object.keys(initialLoad).length) payload.initialLoad = initialLoad;
   }
   if (Object.prototype.hasOwnProperty.call(value, "turnPhase")) {

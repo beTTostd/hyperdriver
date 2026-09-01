@@ -38,6 +38,7 @@ yarn-error.log*
 next-env.d.ts
 *.tsbuildinfo
 /dist/
+/codex-supervisor/dist/
 # Local SQLite databases and uploaded files
 /data/
 /.npm-cache/

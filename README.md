@@ -24,6 +24,14 @@ npm run dev
 
 Abra a URL mostrada no terminal.
 
+## Supervisor local do Codex
+
+O diretório [`codex-supervisor`](codex-supervisor/README.md) contém um serviço
+Node.js/TypeScript separado da aplicação web. Ele mantém trabalhos longos do
+Codex em SQLite, reserva 10% de cada janela de uso da conta ChatGPT, interrompe
+o turno quando essa margem é alcançada e retoma depois do reset por meio de um
+serviço `systemd --user`.
+
 Para validar e executar o build de produção sem Docker:
 
 ```bash

@@ -2,13 +2,16 @@
   "name": "talishar-match-replay",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "codex-supervisor": "codex-supervisor/dist/cli.js"
+  },
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "npm run db:migrate && next dev --hostname 0.0.0.0",
-    "build": "bash scripts/build-verified.sh",
+    "build": "npm run supervisor:build && bash scripts/build-verified.sh",
     "start": "next start --hostname 0.0.0.0",
     "test": "npm run build && node --test tests/*.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
@@ -19,7 +22,9 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:backfill": "node scripts/backfill-replays.mjs",
     "db:cleanup": "node scripts/cleanup-quarantine.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "supervisor": "npm run supervisor:build --silent && node codex-supervisor/dist/cli.js",
+    "supervisor:build": "tsc -p codex-supervisor/tsconfig.json"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",

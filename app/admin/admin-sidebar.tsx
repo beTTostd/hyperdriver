@@ -10,6 +10,7 @@ const links = [
   { href: "/admin", label: "Saúde do sistema", icon: "chart" as const },
   { href: "/admin/usuarios", label: "Usuários", icon: "key" as const },
   { href: "/admin/replays", label: "Partidas", icon: "arrowRight" as const },
+  { href: "/admin/elo", label: "Elo", icon: "chart" as const },
   { href: "/admin/extensoes", label: "Versões da extensão", icon: "download" as const },
 ];
 

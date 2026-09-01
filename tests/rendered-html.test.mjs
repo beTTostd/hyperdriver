@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -601,16 +602,16 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Versões da extensão/);
-  assert.match(html, /v1\.1\.0/);
+  assert.match(html, /v1\.2\.0/);
   assert.match(html, /v1\.0\.0/);
   assert.match(html, /v0\.4\.4/);
   assert.match(html, /Data de criação|Arquivo criado em/);
-  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.1\.0\.zip"/);
-  assert.match(html, /download="hyperdriver-extension-v1\.1\.0\.zip"/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.2\.0\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v1\.2\.0\.zip"/);
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  for (const version of ["1.1.0", "1.0.0", "0.4.4"]) {
+  for (const version of ["1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
     const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
     assert.equal(download.status, 200);
     assert.ok((await download.arrayBuffer()).byteLength > 0);
@@ -1114,6 +1115,177 @@ test("lets admins list and open replays owned by different users", async () => {
   assert.equal(userAnalysis.status, 404);
 });
 
+test("scores Talishar Elo once, confirms inverted perspectives and audits conflicts", async () => {
+  const firstCookie = createDatabaseUserSession("elo-first");
+  const secondCookie = createDatabaseUserSession("elo-second");
+  const firstReplay = eloReplayDocument(
+    "e1000000-0000-4000-8000-000000000001",
+    {
+      gameGUID: "elo-guid-cc-001",
+      format: "cc",
+      playerName: "  Alice  ",
+      opponentName: "Bob",
+      result: "victory",
+    },
+  );
+
+  const firstUpload = await uploadDocument(firstCookie, firstReplay);
+  assert.equal(firstUpload.status, 201);
+  const repeatedUpload = await uploadDocument(firstCookie, firstReplay);
+  assert.equal(repeatedUpload.status, 200);
+
+  const confirmation = await uploadDocument(secondCookie, eloReplayDocument(
+    "e2000000-0000-4000-8000-000000000002",
+    {
+      gameGUID: "elo-guid-cc-001",
+      format: "CC",
+      playerName: "Bob",
+      opponentName: "ＡＬＩＣＥ",
+      result: "defeat",
+    },
+  ));
+  assert.equal(confirmation.status, 201);
+
+  const database = new Database(join(databaseDirectory, "test.sqlite"));
+  const ccRatings = database.prepare(`
+    SELECT p.normalized_name AS name, r.rating, r.games, r.wins, r.losses
+    FROM elo_ratings r
+    INNER JOIN talishar_players p ON p.id = r.player_id
+    WHERE r.format = 'cc'
+    ORDER BY p.normalized_name
+  `).all();
+  assert.deepEqual(ccRatings, [
+    { name: "alice", rating: 1016, games: 1, wins: 1, losses: 0 },
+    { name: "bob", rating: 984, games: 1, wins: 0, losses: 1 },
+  ]);
+  assert.deepEqual(
+    database.prepare(`
+      SELECT status, rating_change AS ratingChange
+      FROM elo_matches WHERE game_guid = 'elo-guid-cc-001'
+    `).get(),
+    { status: "confirmed", ratingChange: 16 },
+  );
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM elo_matches WHERE game_guid = 'elo-guid-cc-001'").get().count,
+    1,
+  );
+  database.close();
+
+  const concurrentUploads = await Promise.all([
+    uploadDocument(firstCookie, eloReplayDocument(
+      "e5000000-0000-4000-8000-000000000005",
+      {
+        gameGUID: "elo-guid-concurrent-001",
+        format: "cc",
+        playerName: "Charlie",
+        opponentName: "Dana",
+        result: "victory",
+      },
+    )),
+    uploadDocument(secondCookie, eloReplayDocument(
+      "e6000000-0000-4000-8000-000000000006",
+      {
+        gameGUID: "elo-guid-concurrent-001",
+        format: "cc",
+        playerName: "Dana",
+        opponentName: "Charlie",
+        result: "defeat",
+      },
+    )),
+  ]);
+  assert.deepEqual(concurrentUploads.map((response) => response.status), [201, 201]);
+  const concurrentDatabase = new Database(join(databaseDirectory, "test.sqlite"));
+  assert.equal(
+    concurrentDatabase.prepare("SELECT COUNT(*) AS count FROM elo_matches WHERE game_guid = 'elo-guid-concurrent-001'").get().count,
+    1,
+  );
+  assert.deepEqual(
+    concurrentDatabase.prepare(`
+      SELECT r.games, r.wins
+      FROM elo_ratings r
+      INNER JOIN talishar_players p ON p.id = r.player_id
+      WHERE p.normalized_name = 'charlie' AND r.format = 'cc'
+    `).get(),
+    { games: 1, wins: 1 },
+  );
+  concurrentDatabase.close();
+
+  const conflicting = await uploadDocument(secondCookie, eloReplayDocument(
+    "e3000000-0000-4000-8000-000000000003",
+    {
+      gameGUID: "elo-guid-cc-001",
+      format: "cc",
+      playerName: "Bob",
+      opponentName: "Alice",
+      result: "victory",
+    },
+  ));
+  assert.equal(conflicting.status, 201);
+
+  const blitz = await uploadDocument(firstCookie, eloReplayDocument(
+    "e4000000-0000-4000-8000-000000000004",
+    {
+      gameGUID: "elo-guid-blitz-001",
+      format: "blitz",
+      playerName: "Alice",
+      opponentName: "Bob",
+      result: "victory",
+    },
+  ));
+  assert.equal(blitz.status, 201);
+
+  const after = new Database(join(databaseDirectory, "test.sqlite"));
+  assert.equal(
+    after.prepare("SELECT status FROM elo_matches WHERE game_guid = 'elo-guid-cc-001'").get().status,
+    "conflict",
+  );
+  assert.deepEqual(
+    after.prepare(`
+      SELECT rating, games FROM elo_ratings r
+      INNER JOIN talishar_players p ON p.id = r.player_id
+      WHERE p.normalized_name = 'alice' AND r.format = 'cc'
+    `).get(),
+    { rating: 1016, games: 1 },
+  );
+  assert.deepEqual(
+    after.prepare(`
+      SELECT rating, games FROM elo_ratings r
+      INNER JOIN talishar_players p ON p.id = r.player_id
+      WHERE p.normalized_name = 'alice' AND r.format = 'blitz'
+    `).get(),
+    { rating: 1016, games: 1 },
+  );
+  const firstUserId = after.prepare("SELECT id FROM users WHERE username = 'elo-first'").get().id;
+  after.close();
+
+  const adminPage = await fetch(new URL("/admin/elo?format=cc", baseUrl), { headers: { cookie } });
+  assert.equal(adminPage.status, 200);
+  const adminHtml = await adminPage.text();
+  assert.match(adminHtml, /Elo Talishar/);
+  assert.match(adminHtml, /Alice/);
+  assert.match(adminHtml, />1016</);
+  assert.match(adminHtml, /elo-guid-cc-001/);
+  assert.match(adminHtml, /vencedor divergente/);
+  assert.match(adminHtml, /href="\/admin\/elo"/);
+
+  const forbidden = await fetch(new URL("/admin/elo", baseUrl), {
+    headers: { cookie: secondCookie },
+    redirect: "manual",
+  });
+  assert.equal(forbidden.status, 307);
+  assert.equal(new URL(forbidden.headers.get("location"), baseUrl).pathname, "/");
+
+  const deleted = await fetch(new URL(`/api/admin/users/${firstUserId}`, baseUrl), {
+    method: "DELETE",
+    headers: { cookie },
+  });
+  assert.equal(deleted.status, 200);
+  const preserved = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  assert.equal(preserved.prepare("SELECT COUNT(*) AS count FROM elo_matches WHERE game_guid LIKE 'elo-guid-%'").get().count, 3);
+  assert.equal(preserved.prepare("SELECT COUNT(*) AS count FROM elo_ratings").get().count >= 4, true);
+  preserved.close();
+});
+
 test("accepts a chunked replay body without Content-Length and enforces login limits", async () => {
   const body = JSON.stringify(replayDocument("c3333333-3333-4333-8333-333333333333", true));
   const stream = new ReadableStream({
@@ -1245,6 +1417,29 @@ function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
       }],
     },
   };
+}
+
+function eloReplayDocument(id, options) {
+  const document = replayDocument(id, true);
+  const payload = document.match.frames[0].payload;
+  payload.initialLoad = {
+    gameFormat: options.format,
+    gameGUID: options.gameGUID,
+    playerName: options.playerName,
+    opponentName: options.opponentName,
+    isOpponentAI: false,
+  };
+  payload.playerHealth = options.result === "defeat" ? "0" : "5";
+  payload.opponentHealth = options.result === "victory" ? "0" : "5";
+  return document;
+}
+
+function uploadDocument(requestCookie, document) {
+  return fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: requestCookie },
+    body: JSON.stringify(document),
+  });
 }
 
 function decisionReplayDocument(id) {
@@ -1451,6 +1646,23 @@ async function createTestUser(username) {
   });
   assert.equal(login.status, 200);
   return getCookie(login);
+}
+
+function createDatabaseUserSession(username) {
+  const token = `test-session-${username}-${Date.now()}`;
+  const database = new Database(join(databaseDirectory, "test.sqlite"));
+  const user = database.prepare(`
+    INSERT INTO users (username, role) VALUES (?, 'user') RETURNING id
+  `).get(username);
+  database.prepare(`
+    INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)
+  `).run(
+    user.id,
+    createHash("sha256").update(token).digest("hex"),
+    Date.now() + 60 * 60 * 1000,
+  );
+  database.close();
+  return `hyperdriver_session=${token}`;
 }
 
 async function availablePort() {

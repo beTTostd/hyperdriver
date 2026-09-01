@@ -296,6 +296,83 @@ export const uploadEvents = sqliteTable(
 // Named alias kept for callers that want to describe the table by its domain.
 export const uploadTelemetryEvents = uploadEvents;
 
+export const talisharPlayers = sqliteTable(
+  "talishar_players",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    normalizedName: text("normalized_name").notNull(),
+    displayName: text("display_name").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [uniqueIndex("talishar_players_normalized_name_unique").on(table.normalizedName)],
+);
+
+export const eloRatings = sqliteTable(
+  "elo_ratings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    playerId: integer("player_id").notNull().references(() => talisharPlayers.id, { onDelete: "restrict" }),
+    format: text("format").notNull(),
+    rating: real("rating").notNull().default(1000),
+    games: integer("games").notNull().default(0),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("elo_ratings_player_format_unique").on(table.playerId, table.format),
+    index("elo_ratings_format_rank_idx").on(table.format, table.rating),
+  ],
+);
+
+export const eloMatches = sqliteTable(
+  "elo_matches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    gameGuid: text("game_guid").notNull(),
+    format: text("format").notNull(),
+    winnerPlayerId: integer("winner_player_id").notNull().references(() => talisharPlayers.id, { onDelete: "restrict" }),
+    loserPlayerId: integer("loser_player_id").notNull().references(() => talisharPlayers.id, { onDelete: "restrict" }),
+    winnerRatingBefore: real("winner_rating_before").notNull(),
+    loserRatingBefore: real("loser_rating_before").notNull(),
+    ratingChange: real("rating_change").notNull(),
+    status: text("status", { enum: ["unconfirmed", "confirmed", "conflict"] }).notNull().default("unconfirmed"),
+    firstUploaderUserId: integer("first_uploader_user_id").notNull(),
+    firstSourceMatchId: text("first_source_match_id").notNull(),
+    conflictReason: text("conflict_reason"),
+    scoredAt: integer("scored_at").notNull().default(sql`(unixepoch() * 1000)`),
+    confirmedAt: integer("confirmed_at"),
+    conflictAt: integer("conflict_at"),
+  },
+  (table) => [
+    uniqueIndex("elo_matches_game_guid_unique").on(table.gameGuid),
+    index("elo_matches_conflict_idx").on(table.status, table.conflictAt),
+  ],
+);
+
+export const eloUploadReports = sqliteTable(
+  "elo_upload_reports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    eloMatchId: integer("elo_match_id").references(() => eloMatches.id, { onDelete: "restrict" }),
+    gameGuid: text("game_guid"),
+    sourceMatchId: text("source_match_id").notNull(),
+    uploaderUserId: integer("uploader_user_id").notNull(),
+    status: text("status", { enum: ["applied", "confirmed", "duplicate", "conflict", "ignored"] }).notNull(),
+    reason: text("reason"),
+    format: text("format"),
+    playerName: text("player_name"),
+    opponentName: text("opponent_name"),
+    winnerName: text("winner_name"),
+    uploadedAt: integer("uploaded_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("elo_upload_reports_match_uploader_idx").on(table.eloMatchId, table.uploaderUserId),
+    index("elo_upload_reports_uploaded_idx").on(table.uploadedAt),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   passwordSetupTokens: many(passwordSetupTokens),
   sessions: many(sessions),

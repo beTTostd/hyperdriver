@@ -1,0 +1,144 @@
+.filter {
+  min-width: min(100%, 280px);
+}
+
+.filter label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font: 800 9px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.filter div {
+  display: flex;
+}
+
+.filter select,
+.filter button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  color: var(--paper);
+  background: var(--carbon);
+  font: 800 11px var(--font-mono);
+  text-transform: uppercase;
+}
+
+.filter select {
+  min-width: 150px;
+  flex: 1;
+  padding: 0 12px;
+}
+
+.filter button {
+  padding: 0 14px;
+  border-color: var(--signal-red);
+  color: var(--carbon);
+  background: var(--signal-red);
+  cursor: pointer;
+}
+
+.section {
+  margin-top: 46px;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+}
+
+.table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.table th {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  font: 800 9px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.table th:nth-child(2),
+.table td:nth-child(2) {
+  text-align: left;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table td {
+  font: 12px var(--font-mono);
+}
+
+.table td:nth-child(2) {
+  color: var(--paper);
+  font: 800 14px var(--font-body);
+}
+
+.table td strong {
+  color: var(--signal-red);
+}
+
+.conflicts {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 1px;
+  background: var(--line);
+  list-style: none;
+}
+
+.conflicts li {
+  padding: 18px;
+  background: var(--carbon);
+}
+
+.conflicts div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.conflicts code {
+  overflow-wrap: anywhere;
+  color: var(--signal-red);
+  font-size: 12px;
+}
+
+.conflicts time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+}
+
+.conflicts p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 680px) {
+  .filter {
+    width: 100%;
+  }
+
+  .conflicts div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

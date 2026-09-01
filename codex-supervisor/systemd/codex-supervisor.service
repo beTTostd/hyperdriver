@@ -1,0 +1,16 @@
+[Unit]
+Description=Persistent local supervisor for Codex jobs
+After=default.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env codex-supervisor daemon
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

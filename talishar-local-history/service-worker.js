@@ -33,7 +33,7 @@ import {
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
-const SCHEMA_VERSION = "0.3.0";
+const SCHEMA_VERSION = "0.4.0";
 const CAPTURE_ERROR_KEY = "captureError";
 const enqueueCapture = createKeyedTaskQueue();
 
