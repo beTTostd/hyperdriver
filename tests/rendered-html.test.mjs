@@ -39,6 +39,11 @@ before(async () => {
       response.end(JSON.stringify({ error: "unavailable" }));
       return;
     }
+    if (name === "oversized") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ name: "a".repeat(1024 * 1024 + 1) }] }));
+      return;
+    }
 
     const cards = name === "many"
       ? Array.from({ length: 100 }, (_, index) => ({
@@ -212,6 +217,58 @@ test("rejects cross-origin mutations and always issues a secure production cooki
   assert.match(accepted.headers.get("cache-control") ?? "", /no-store/);
 });
 
+test("bounds small JSON APIs and rejects unsafe numeric identifiers", async () => {
+  const oversized = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "x".repeat(17 * 1024) }),
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).code, "BODY_TOO_LARGE");
+
+  const unsupported = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+  });
+  assert.equal(unsupported.status, 415);
+  assert.equal((await unsupported.json()).code, "UNSUPPORTED_MEDIA_TYPE");
+
+  const malformed = await fetch(new URL("/api/auth/login", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not-json",
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).code, "INVALID_JSON");
+
+  const hugeId = "9".repeat(100);
+  const replay = await fetch(new URL(`/api/replays/${hugeId}`, baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(replay.status, 404);
+
+  const user = await fetch(new URL(`/api/admin/users/${hugeId}`, baseUrl), {
+    method: "DELETE",
+    headers: { cookie },
+  });
+  assert.equal(user.status, 404);
+
+  const avatar = await fetch(new URL("/api/profile/avatar", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ cardId: "a".repeat(129) }),
+  });
+  assert.equal(avatar.status, 400);
+
+  const missingAvatar = await fetch(new URL("/api/profile/avatar", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: "{}",
+  });
+  assert.equal(missingAvatar.status, 400);
+});
+
 test("redirects authenticated users from the landing page to the replay library", async () => {
   const response = await fetch(new URL("/", baseUrl), {
     headers: { cookie },
@@ -361,6 +418,19 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.match(invitation.setupUrl, /\/set-password#token=/);
   assert.ok(invitation.expiresAt - Date.now() > 2 * 60 * 60 * 1000 - 5000);
   assert.ok(invitation.expiresAt - Date.now() <= 2 * 60 * 60 * 1000);
+
+  const overlongPassword = `A1!${"a".repeat(254)}`;
+  const rejectedPassword = await fetch(new URL("/api/auth/setup-password", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      token: invitationToken(invitation.setupUrl),
+      password: overlongPassword,
+      confirmation: overlongPassword,
+    }),
+  });
+  assert.equal(rejectedPassword.status, 400);
+  assert.match((await rejectedPassword.json()).error, /no máximo 256 caracteres/);
 
   const setupPage = await fetch(invitation.setupUrl);
   assert.equal(setupPage.status, 200);
@@ -702,6 +772,11 @@ test("reports truncated and unavailable avatar catalog searches", async () => {
     headers: { cookie },
   });
   assert.equal(failure.status, 502);
+
+  const oversized = await fetch(new URL("/api/profile/avatar-options?name=oversized", baseUrl), {
+    headers: { cookie },
+  });
+  assert.equal(oversized.status, 502);
 });
 
 test("keeps the avatar picker responsive across catalog states", () => {

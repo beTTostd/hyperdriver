@@ -8,6 +8,18 @@ type RequestLogContext = {
   userId: number | null;
 };
 
+export const MAX_JSON_BODY_BYTES = 16 * 1024;
+
+export class JsonBodyError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: "BODY_TOO_LARGE" | "INVALID_JSON" | "INVALID_UTF8" | "UNSUPPORTED_MEDIA_TYPE",
+  ) {
+    super(message);
+  }
+}
+
 const requestContext = new AsyncLocalStorage<RequestLogContext>();
 
 export function clientIp(request: Request): string {
@@ -17,6 +29,12 @@ export function clientIp(request: Request): string {
 
 export function rateLimitIdentity(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export function parsePositiveIntegerId(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export function validateMutationOrigin(request: Request): boolean {
@@ -34,6 +52,12 @@ export function validateMutationOrigin(request: Request): boolean {
 
 export function originError(): NextResponse {
   return privateJson({ error: "Origem da requisição não permitida." }, { status: 403 });
+}
+
+export function jsonBodyErrorResponse(error: unknown): NextResponse | null {
+  return error instanceof JsonBodyError
+    ? privateJson({ error: error.message, code: error.code }, { status: error.status })
+    : null;
 }
 
 export function privateJson(
@@ -89,9 +113,67 @@ export function withApiLogging<TArgs extends unknown[]>(
   };
 }
 
+export async function readJsonObjectBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<Record<string, unknown>> {
+  const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType !== "application/json" && !mediaType?.endsWith("+json")) {
+    throw new JsonBodyError(
+      "Envie o corpo como JSON.",
+      415,
+      "UNSUPPORTED_MEDIA_TYPE",
+    );
+  }
+
+  let raw: string;
+  try {
+    raw = await readBodyText(request, maxBytes);
+  } catch (error) {
+    if ((error as { code?: string }).code === "BODY_TOO_LARGE") {
+      throw new JsonBodyError(
+        "O corpo da requisição é grande demais.",
+        413,
+        "BODY_TOO_LARGE",
+      );
+    }
+    if (error instanceof TypeError) {
+      throw new JsonBodyError(
+        "O corpo da requisição não contém UTF-8 válido.",
+        400,
+        "INVALID_UTF8",
+      );
+    }
+    throw error;
+  }
+
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_object");
+    return value as Record<string, unknown>;
+  } catch {
+    throw new JsonBodyError(
+      "O corpo da requisição deve conter um objeto JSON válido.",
+      400,
+      "INVALID_JSON",
+    );
+  }
+}
+
 export async function readRequestBody(request: Request, maxBytes: number): Promise<string> {
-  if (!request.body) return "";
-  const reader = request.body.getReader();
+  return readBodyText(request, maxBytes);
+}
+
+export async function readBodyText(
+  source: Pick<Request, "body" | "headers"> | Pick<Response, "body" | "headers">,
+  maxBytes: number,
+): Promise<string> {
+  const declaredLength = Number(source.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw Object.assign(new Error("body_too_large"), { code: "BODY_TOO_LARGE" });
+  }
+  if (!source.body) return "";
+  const reader = source.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
   try {

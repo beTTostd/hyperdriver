@@ -7,6 +7,7 @@ import {
   privateJson,
   rateLimitIdentity,
   rateLimitedResponse,
+  readBodyText,
   withApiLogging,
 } from "../../../../lib/http";
 import { consumeRateLimit } from "../../../../lib/rate-limit";
@@ -16,6 +17,7 @@ export const runtime = "nodejs";
 const CARD_API_URL = process.env.CARD_CATALOG_API_URL || "https://api.goagain.dev/v1/cards";
 const PAGE_SIZE = 100;
 const CACHE_SECONDS = 24 * 60 * 60;
+const MAX_CATALOG_RESPONSE_BYTES = 1024 * 1024;
 
 type CatalogResponse = {
   data?: unknown;
@@ -66,7 +68,9 @@ async function avatarOptions(request: Request) {
     });
     if (!response.ok) throw new Error(`Card catalog returned ${response.status}`);
 
-    const payload = await response.json() as CatalogResponse;
+    const payload = JSON.parse(
+      await readBodyText(response, MAX_CATALOG_RESPONSE_BYTES),
+    ) as CatalogResponse;
     const cards = Array.isArray(payload.data) ? payload.data as CatalogCard[] : [];
     const total = typeof payload.meta?.total === "number" ? payload.meta.total : null;
 

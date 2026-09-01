@@ -10,7 +10,14 @@ import {
   PASSWORD_SETUP_DURATION_MS,
   normalizeUsername,
 } from "../../../../lib/auth";
-import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../lib/http";
+import {
+  jsonBodyErrorResponse,
+  originError,
+  privateJson,
+  readJsonObjectBody,
+  validateMutationOrigin,
+  withApiLogging,
+} from "../../../../lib/http";
 
 export const runtime = "nodejs";
 
@@ -21,7 +28,14 @@ async function createUser(request: Request) {
     return privateJson({ error: "Acesso negado." }, { status: 403 });
   }
 
-  const body = await readBody(request);
+  let body: Record<string, unknown>;
+  try {
+    body = await readJsonObjectBody(request);
+  } catch (error) {
+    const response = jsonBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
   const username = normalizeUsername(body?.username);
   const role = body?.role;
   if (!isValidUsername(username)) {
@@ -83,12 +97,3 @@ async function createUser(request: Request) {
 }
 
 export const POST = withApiLogging("/api/admin/users", createUser);
-
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const value: unknown = await request.json();
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}

@@ -8,7 +8,13 @@ import {
   hashToken,
   PASSWORD_SETUP_DURATION_MS,
 } from "../../../../../../lib/auth";
-import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../../../lib/http";
+import {
+  originError,
+  parsePositiveIntegerId,
+  privateJson,
+  validateMutationOrigin,
+  withApiLogging,
+} from "../../../../../../lib/http";
 
 export const runtime = "nodejs";
 
@@ -23,7 +29,8 @@ async function createPasswordLink(
   }
 
   const { id } = await context.params;
-  if (!/^\d+$/.test(id)) {
+  const userId = parsePositiveIntegerId(id);
+  if (userId === null) {
     return privateJson({ error: "Usuário não encontrado." }, { status: 404 });
   }
 
@@ -37,7 +44,6 @@ async function createPasswordLink(
     );
   }
 
-  const userId = Number(id);
   const token = createOpaqueToken();
   const expiresAt = Date.now() + PASSWORD_SETUP_DURATION_MS;
   const target = getDb().transaction((database) => {

@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "../db";
-import { uploadEvents, users, replays } from "../db/schema";
+import { uploadEvents, users } from "../db/schema";
 import type { ReplayDocument } from "./replays";
 
 export const UPLOAD_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -312,24 +312,23 @@ export function listUploadEventDetails(
   );
   const database = getDb();
   const total = database
-    .select({ id: uploadEvents.id })
+    .select({ value: count() })
     .from(uploadEvents)
     .where(condition)
-    .all().length;
+    .get()?.value ?? 0;
   const pageCount = Math.ceil(total / UPLOAD_EVENT_PAGE_SIZE);
   const offset = (Math.min(safePage, Math.max(pageCount, 1)) - 1) * UPLOAD_EVENT_PAGE_SIZE;
   const rows = database
-    .select({ event: uploadEvents, username: users.username, replaySourceMatchId: replays.sourceMatchId })
+    .select({ event: uploadEvents, username: users.username })
     .from(uploadEvents)
     .innerJoin(users, eq(users.id, uploadEvents.userId))
-    .leftJoin(replays, eq(replays.id, uploadEvents.replayId))
     .where(condition)
     .orderBy(desc(uploadEvents.attemptedAt), desc(uploadEvents.id))
     .limit(UPLOAD_EVENT_PAGE_SIZE)
     .offset(offset)
     .all();
   return {
-    items: rows.map(({ event, username, replaySourceMatchId }) => ({
+    items: rows.map(({ event, username }) => ({
       id: event.id,
       attemptedAt: event.attemptedAt,
       username,
@@ -338,7 +337,7 @@ export function listUploadEventDetails(
       httpStatus: event.httpStatus,
       errorCode: event.errorCode,
       technicalMessage: event.technicalMessage,
-      replayId: event.replayId ? event.replayId : replaySourceMatchId ? event.replayId : null,
+      replayId: event.replayId,
     })),
     page: Math.min(safePage, Math.max(pageCount, 1)),
     pageSize: UPLOAD_EVENT_PAGE_SIZE,

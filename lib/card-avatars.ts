@@ -1,6 +1,7 @@
 export const CARD_IMAGE_BASE_URL = "https://images.talishar.net/public/cardimages/english";
 export const CARD_ART_BASE_URL = "https://images.talishar.net/public/crops";
 export const DEFAULT_CARD_AVATAR = "dash_io";
+export const MAX_CARD_AVATAR_ID_LENGTH = 128;
 
 export type CardAvatarOption = {
   id: string;
@@ -54,6 +55,8 @@ export function normalizeCardAvatar(value: unknown): string | null {
   return cardId || null;
 }
 
-export function isValidCardAvatar(cardId: string | null): boolean {
-  return cardId === null || /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/.test(cardId);
+export function isValidCardAvatar(cardId: string | null): cardId is string {
+  return typeof cardId === "string"
+    && cardId.length <= MAX_CARD_AVATAR_ID_LENGTH
+    && /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/.test(cardId);
 }

@@ -4,8 +4,10 @@ import {
   saveAnalysisFeedback,
 } from "../../../../../../lib/decision-analysis";
 import {
+  jsonBodyErrorResponse,
   originError,
   privateJson,
+  readJsonObjectBody,
   validateMutationOrigin,
   withApiLogging,
 } from "../../../../../../lib/http";
@@ -39,18 +41,18 @@ async function submitFeedback(
     return privateJson({ error: "Replay não encontrado." }, { status: 404 });
   }
 
-  let body: unknown;
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
-  } catch {
-    return privateJson({ error: "Feedback inválido." }, { status: 400 });
+    body = await readJsonObjectBody(request);
+  } catch (error) {
+    const response = jsonBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
   }
   if (
-    !body
-    || typeof body !== "object"
-    || typeof (body as { helpful?: unknown }).helpful !== "boolean"
-    || typeof (body as { analysisFingerprint?: unknown }).analysisFingerprint !== "string"
-    || !FINGERPRINT_PATTERN.test((body as { analysisFingerprint: string }).analysisFingerprint)
+    typeof body.helpful !== "boolean"
+    || typeof body.analysisFingerprint !== "string"
+    || !FINGERPRINT_PATTERN.test(body.analysisFingerprint)
   ) {
     return privateJson({ error: "Feedback inválido." }, { status: 400 });
   }
@@ -58,8 +60,8 @@ async function submitFeedback(
   const saved = saveAnalysisFeedback({
     replayId: replay.id,
     userId: user.id,
-    analysisFingerprint: (body as { analysisFingerprint: string }).analysisFingerprint,
-    helpful: (body as { helpful: boolean }).helpful,
+    analysisFingerprint: body.analysisFingerprint,
+    helpful: body.helpful,
   });
   if (!saved) {
     return privateJson({ error: "Análise não encontrada." }, { status: 404 });

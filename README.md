@@ -97,7 +97,7 @@ npm run db:seed
 ```
 
 O seed cria o usuário `admin` apenas se ele ainda não existir. A senha deve ter
-no mínimo 12 caracteres, incluindo maiúscula, minúscula, número e símbolo.
+entre 12 e 256 caracteres, incluindo maiúscula, minúscula, número e símbolo.
 Administradores criam os demais usuários em `/admin`; o link de primeira senha
 é de uso único e expira em duas horas. Sessões permanecem válidas por 30 dias.
 

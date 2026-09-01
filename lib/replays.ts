@@ -457,11 +457,12 @@ export function findUserReplay(userId: number, replayId: string): ReplayMetadata
     .where(and(eq(replays.sourceMatchId, replayId), eq(replays.userId, userId)))
     .get();
   if (bySourceId) return bySourceId;
-  if (!/^\d+$/.test(replayId)) return null;
+  const numericReplayId = positiveIntegerId(replayId);
+  if (numericReplayId === null) return null;
   return database
     .select()
     .from(replays)
-    .where(and(eq(replays.id, Number(replayId)), eq(replays.userId, userId)))
+    .where(and(eq(replays.id, numericReplayId), eq(replays.userId, userId)))
     .get() ?? null;
 }
 
@@ -479,11 +480,12 @@ export function findAdminReplay(replayId: string): ReplayMetadata | null {
     .where(eq(replays.sourceMatchId, replayId))
     .get();
   if (bySourceId) return bySourceId;
-  if (!/^\d+$/.test(replayId)) return null;
+  const numericReplayId = positiveIntegerId(replayId);
+  if (numericReplayId === null) return null;
   return database
     .select()
     .from(replays)
-    .where(eq(replays.id, Number(replayId)))
+    .where(eq(replays.id, numericReplayId))
     .get() ?? null;
 }
 
@@ -511,4 +513,10 @@ export async function restoreReplayFiles(items: QuarantinedReplay[]): Promise<vo
 
 export async function deleteQuarantinedReplayFiles(items: QuarantinedReplay[]): Promise<void> {
   await getReplayStorage().deleteQuarantined(items);
+}
+
+function positiveIntegerId(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

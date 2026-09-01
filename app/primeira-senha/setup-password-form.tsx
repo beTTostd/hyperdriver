@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { MAX_PASSWORD_LENGTH } from "../../lib/password-policy";
 import Icon from "../components/ui-icons";
 import styles from "../auth.module.css";
 
@@ -59,12 +60,12 @@ export default function SetupPasswordForm({ token: initialToken = "" }: { token?
       {error && <p className={styles.error} role="alert">{error}</p>}
       <label className={styles.field}>
         Nova senha
-        <input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        <input type="password" autoComplete="new-password" maxLength={MAX_PASSWORD_LENGTH} value={password} onChange={(event) => setPassword(event.target.value)} required />
       </label>
-      <p className={styles.hint}>Mínimo de 12 caracteres, com maiúscula, minúscula, número e símbolo.</p>
+      <p className={styles.hint}>Entre 12 e {MAX_PASSWORD_LENGTH} caracteres, com maiúscula, minúscula, número e símbolo.</p>
       <label className={styles.field}>
         Confirmar senha
-        <input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
+        <input type="password" autoComplete="new-password" maxLength={MAX_PASSWORD_LENGTH} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
       </label>
       <button className={styles.submit} type="submit" disabled={pending}>
         {pending ? "Salvando…" : "Criar senha"}

@@ -2,7 +2,13 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { passwordSetupTokens, replays, sessions, users } from "../../../../../db/schema";
 import { getCurrentUser } from "../../../../../lib/auth";
-import { originError, privateJson, validateMutationOrigin, withApiLogging } from "../../../../../lib/http";
+import {
+  originError,
+  parsePositiveIntegerId,
+  privateJson,
+  validateMutationOrigin,
+  withApiLogging,
+} from "../../../../../lib/http";
 import {
   deleteQuarantinedReplayFiles,
   quarantineReplayFiles,
@@ -22,11 +28,10 @@ async function deleteUser(
   }
 
   const { id } = await context.params;
-  if (!/^\d+$/.test(id)) {
+  const userId = parsePositiveIntegerId(id);
+  if (userId === null) {
     return privateJson({ error: "Usuário não encontrado." }, { status: 404 });
   }
-
-  const userId = Number(id);
   if (userId === currentUser.id) {
     return privateJson(
       { error: "Você não pode apagar a própria conta administrativa." },
@@ -63,7 +68,16 @@ async function deleteUser(
       if (deleted.changes !== 1) throw new Error("User changed during deletion.");
     });
   } catch {
-    await restoreReplayFiles(quarantined);
+    try {
+      await restoreReplayFiles(quarantined);
+    } catch (restoreError) {
+      console.error(JSON.stringify({
+        level: "error",
+        type: "replay_quarantine_restore_failed",
+        userId,
+        message: restoreError instanceof Error ? restoreError.message : "Unknown restore error",
+      }));
+    }
     return privateJson({ error: "Não foi possível apagar o usuário." }, { status: 500 });
   }
 

@@ -71,24 +71,26 @@ export class LocalReplayStorage implements ReplayStorage {
 
   async restore(items: QuarantinedReplay[]): Promise<void> {
     for (const item of items.toReversed()) {
+      const quarantinedPath = this.quarantinedPath(item.quarantineKey);
       await rename(
-        resolve(this.directory, ".quarantine", item.quarantineKey),
+        quarantinedPath,
         this.path(item.storageKey),
-      ).catch(() => undefined);
+      );
     }
     const directories = new Set(items.map((item) => item.quarantineKey.split("/", 1)[0]));
     for (const directory of directories) {
-      await rm(resolve(this.directory, ".quarantine", directory), { recursive: true, force: true });
+      await rm(this.quarantineBatchPath(directory), { recursive: true, force: true });
     }
+    await this.syncDirectory(this.directory);
   }
 
   async deleteQuarantined(items: QuarantinedReplay[]): Promise<void> {
     for (const item of items) {
-      await rm(resolve(this.directory, ".quarantine", item.quarantineKey), { force: true });
+      await rm(this.quarantinedPath(item.quarantineKey), { force: true });
     }
     const directories = new Set(items.map((item) => item.quarantineKey.split("/", 1)[0]));
     for (const directory of directories) {
-      await rm(resolve(this.directory, ".quarantine", directory), { recursive: true, force: true });
+      await rm(this.quarantineBatchPath(directory), { recursive: true, force: true });
     }
   }
 
@@ -112,6 +114,24 @@ export class LocalReplayStorage implements ReplayStorage {
       throw new Error("Invalid replay storage key.");
     }
     return resolve(this.directory, storageKey);
+  }
+
+  private quarantinedPath(quarantineKey: string): string {
+    const [batch, storageKey, ...rest] = quarantineKey.split("/");
+    if (rest.length || !batch || !/^[a-f0-9-]+$/i.test(batch)) {
+      throw new Error("Invalid replay quarantine key.");
+    }
+    return resolve(this.quarantineBatchPath(batch), this.validatedStorageKey(storageKey));
+  }
+
+  private quarantineBatchPath(batch: string): string {
+    if (!/^[a-f0-9-]+$/i.test(batch)) throw new Error("Invalid replay quarantine batch.");
+    return resolve(this.directory, ".quarantine", batch);
+  }
+
+  private validatedStorageKey(storageKey: string): string {
+    this.path(storageKey);
+    return storageKey;
   }
 
   private async syncDirectory(directory: string): Promise<void> {

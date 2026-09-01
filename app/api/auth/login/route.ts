@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
+import { MAX_PASSWORD_LENGTH } from "../../../../lib/password-policy";
 import {
   createSession,
   normalizeUsername,
@@ -12,10 +13,12 @@ import {
 } from "../../../../lib/auth";
 import {
   clientIp,
+  jsonBodyErrorResponse,
   originError,
   privateJson,
   rateLimitIdentity,
   rateLimitedResponse,
+  readJsonObjectBody,
   validateMutationOrigin,
   withApiLogging,
 } from "../../../../lib/http";
@@ -27,7 +30,14 @@ const DUMMY_PASSWORD_HASH = `scrypt$00000000000000000000000000000000$${"0".repea
 
 async function login(request: Request) {
   if (!validateMutationOrigin(request)) return originError();
-  const body = await readBody(request);
+  let body: Record<string, unknown>;
+  try {
+    body = await readJsonObjectBody(request);
+  } catch (error) {
+    const response = jsonBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
   const username = normalizeUsername(body?.username);
   const password = typeof body?.password === "string" ? body.password : "";
   const ipIdentity = rateLimitIdentity(clientIp(request));
@@ -41,7 +51,10 @@ async function login(request: Request) {
     ? getDb().select().from(users).where(eq(users.username, username)).get()
     : null;
 
-  const passwordValid = await verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  const passwordValid = await verifyPassword(
+    password.length <= MAX_PASSWORD_LENGTH ? password : "",
+    user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
   if (!user || !user.isActive || !passwordValid) {
     recordRateLimit("login-ip-failure", ipIdentity);
     recordRateLimit("login-user-failure", userIdentity);
@@ -66,12 +79,3 @@ async function login(request: Request) {
 }
 
 export const POST = withApiLogging("/api/auth/login", login);
-
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const value: unknown = await request.json();
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}

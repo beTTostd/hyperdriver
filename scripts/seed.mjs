@@ -6,6 +6,7 @@ import { configureDatabase, runMigrations } from "./migration-runner.mjs";
 
 const databaseFile = resolve(process.env.DATABASE_FILE || "data/hyperdriver.sqlite");
 const password = process.env.ADMIN_INITIAL_PASSWORD;
+const MAX_PASSWORD_LENGTH = 256;
 
 runMigrations({ databaseFile });
 const database = new Database(databaseFile);
@@ -26,7 +27,7 @@ if (!existing) {
   if (!isStrongPassword(password)) {
     database.close();
     throw new Error(
-      "ADMIN_INITIAL_PASSWORD must have at least 12 characters, uppercase, lowercase, number and symbol.",
+      `ADMIN_INITIAL_PASSWORD must have between 12 and ${MAX_PASSWORD_LENGTH} characters, uppercase, lowercase, number and symbol.`,
     );
   }
 
@@ -51,6 +52,7 @@ async function hashPassword(value) {
 function isStrongPassword(value) {
   return (
     value.length >= 12 &&
+    value.length <= MAX_PASSWORD_LENGTH &&
     /[A-Z]/.test(value) &&
     /[a-z]/.test(value) &&
     /\d/.test(value) &&

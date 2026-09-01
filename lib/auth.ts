@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "../db";
 import { passwordSetupTokens, sessions, users } from "../db/schema";
 import { annotateRequestUser } from "./http";
+import { MAX_PASSWORD_LENGTH } from "./password-policy";
 
 export const SESSION_COOKIE = "hyperdriver_session";
 export const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -42,6 +43,9 @@ export function isValidUsername(username: string): boolean {
 export function validatePassword(password: unknown): string | null {
   if (typeof password !== "string" || password.length < 12) {
     return "A senha deve ter pelo menos 12 caracteres.";
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return `A senha deve ter no máximo ${MAX_PASSWORD_LENGTH} caracteres.`;
   }
   if (!/[A-Z]/.test(password)) return "A senha deve ter uma letra maiúscula.";
   if (!/[a-z]/.test(password)) return "A senha deve ter uma letra minúscula.";

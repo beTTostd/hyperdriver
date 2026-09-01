@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { MAX_PASSWORD_LENGTH } from "../../lib/password-policy";
 import styles from "../auth.module.css";
 
 export default function LoginForm({ returnTo }: { returnTo: string }) {
@@ -41,7 +42,7 @@ export default function LoginForm({ returnTo }: { returnTo: string }) {
       </label>
       <label className={styles.field}>
         Senha
-        <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        <input type="password" autoComplete="current-password" maxLength={MAX_PASSWORD_LENGTH} value={password} onChange={(event) => setPassword(event.target.value)} required />
       </label>
       <button className={styles.submit} type="submit" disabled={pending}>
         {pending ? "Verificando…" : "Entrar"}

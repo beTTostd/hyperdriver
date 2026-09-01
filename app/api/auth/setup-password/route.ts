@@ -1,10 +1,12 @@
 import { consumePasswordSetup, validatePassword } from "../../../../lib/auth";
 import {
   clientIp,
+  jsonBodyErrorResponse,
   originError,
   privateJson,
   rateLimitIdentity,
   rateLimitedResponse,
+  readJsonObjectBody,
   validateMutationOrigin,
   withApiLogging,
 } from "../../../../lib/http";
@@ -21,7 +23,14 @@ async function setupPassword(request: Request) {
     60 * 60 * 1000,
   );
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfter);
-  const body = await readBody(request);
+  let body: Record<string, unknown>;
+  try {
+    body = await readJsonObjectBody(request);
+  } catch (error) {
+    const response = jsonBodyErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
   const token = typeof body?.token === "string" ? body.token : "";
   const password = typeof body?.password === "string" ? body.password : "";
   const confirmation = typeof body?.confirmation === "string" ? body.confirmation : "";
@@ -42,12 +51,3 @@ async function setupPassword(request: Request) {
 }
 
 export const POST = withApiLogging("/api/auth/setup-password", setupPassword);
-
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const value: unknown = await request.json();
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}

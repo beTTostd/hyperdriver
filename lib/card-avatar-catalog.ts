@@ -1,5 +1,6 @@
 import {
   cardAvatarIdFromCatalog,
+  isValidCardAvatar,
   type CardAvatarOption,
 } from "./card-avatars";
 
@@ -21,7 +22,7 @@ export function buildCatalogAvatarOptions(cards: CatalogCard[]): CardAvatarOptio
     const color = typeof card.color === "string" ? card.color.trim().toLowerCase() : "";
     const groupId = cardAvatarIdFromCatalog(label);
     const id = cardAvatarIdFromCatalog(label, color);
-    if (!label || !groupId || !id) continue;
+    if (!label || label.length > 160 || !groupId || !id || !isValidCardAvatar(id)) continue;
 
     const candidate = { id, label, colorRank: avatarColorRank(color) };
     const current = options.get(groupId);
