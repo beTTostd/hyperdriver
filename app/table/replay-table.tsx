@@ -518,9 +518,17 @@ function DecisionSidebarPanel({
 export default function TalisharTable({
   replayId,
   decisionAnalysisEnabled = false,
+  workspaceEnabled = false,
+  source,
+  backHref = "/replays",
+  onFrameChange,
 }: {
   replayId?: string;
   decisionAnalysisEnabled?: boolean;
+  workspaceEnabled?: boolean;
+  source?: { replayEndpoint: string; analysisEndpoint?: string; token?: string };
+  backHref?: string;
+  onFrameChange?: (frameIndex: number) => void;
 } = {}) {
   const [replay, setReplay] = useState<Replay | null>(null);
   const [decisionMarkers, setDecisionMarkers] = useState<ReplayDecisionMarker[]>([]);
@@ -532,6 +540,7 @@ export default function TalisharTable({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [bookmarkStatus, setBookmarkStatus] = useState("");
 
   const updateSidebarWidth = useCallback((width: number) => {
     setSidebarWidth(Math.min(maximumSidebarWidth, Math.max(minimumSidebarWidth, width)));
@@ -573,11 +582,12 @@ export default function TalisharTable({
   useEffect(() => {
     const legacyReplayId = new URLSearchParams(window.location.search).get("replay");
     const requestedReplayId = replayId ?? legacyReplayId;
-    const endpoint = requestedReplayId && isReplayId(requestedReplayId)
+    const endpoint = source?.replayEndpoint ?? (requestedReplayId && isReplayId(requestedReplayId)
       ? `/api/replays/${requestedReplayId}`
-      : "/api/replays/recorded-match";
+      : "/api/replays/recorded-match");
+    const requestInit = source?.token ? { headers: { "x-hyperdriver-coach-token": source.token } } : undefined;
     let active = true;
-    fetch(endpoint)
+    fetch(endpoint, requestInit)
       .then((response) => {
         if (!response.ok) throw new Error("Não foi possível abrir a partida.");
         return response.json();
@@ -594,10 +604,12 @@ export default function TalisharTable({
         if (active) setError(reason.message);
       });
 
-    if (decisionAnalysisEnabled && requestedReplayId && isReplayId(requestedReplayId)) {
-      fetch(`/api/replays/${requestedReplayId}/analysis`)
+    const analysisEndpoint = source?.analysisEndpoint ?? (requestedReplayId && isReplayId(requestedReplayId) ? `/api/replays/${requestedReplayId}/analysis` : null);
+    if (decisionAnalysisEnabled && analysisEndpoint) {
+      fetch(analysisEndpoint, requestInit)
         .then((response) => response.ok ? response.json() : null)
-        .then((data: ReplayDecisionAnalysisResponse | null) => {
+        .then((payload: ReplayDecisionAnalysisResponse | { analysis?: ReplayDecisionAnalysisResponse } | null) => {
+          const data = payload ? ((payload as { analysis?: ReplayDecisionAnalysisResponse }).analysis ?? payload as ReplayDecisionAnalysisResponse) : null;
           if (!active || data?.status !== "ready" || !data.recommendationsVisible) return;
           setDecisionMarkers(data.handAnalyses.filter(
             (item): item is ReplayDecisionMarker => Boolean(item.marker) && item.confidence !== "low",
@@ -608,7 +620,18 @@ export default function TalisharTable({
     return () => {
       active = false;
     };
-  }, [decisionAnalysisEnabled, replayId]);
+  }, [decisionAnalysisEnabled, replayId, source]);
+
+  useEffect(() => { onFrameChange?.(index); }, [index, onFrameChange]);
+
+  async function bookmarkCurrentFrame() {
+    if (!replayId) return;
+    const title = window.prompt("Título do bookmark", `Momento no frame ${index + 1}`)?.trim();
+    if (!title) return;
+    const response = await fetch(`/api/replays/${replayId}/bookmarks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ frameIndex: index, title }) });
+    const body = await response.json();
+    setBookmarkStatus(response.ok ? "Momento salvo" : body.error || "Não foi possível salvar");
+  }
 
   const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
   const currentFrame = frames[index];
@@ -772,7 +795,9 @@ export default function TalisharTable({
 
         <section className={styles.timeline} aria-label="Controles do replay">
           <div className={styles.transport}>
-            <Link className={styles.backButton} href="/replays" aria-label="Voltar para seus replays" title="Voltar para seus replays"><TransportIcon name="back" /></Link>
+            <Link className={styles.backButton} href={backHref} aria-label="Voltar" title="Voltar"><TransportIcon name="back" /></Link>
+            {workspaceEnabled && <button type="button" onClick={bookmarkCurrentFrame} aria-label="Criar bookmark no frame atual" title={bookmarkStatus || "Criar bookmark no frame atual"}>☆</button>}
+            {workspaceEnabled && replayId && <Link className={styles.backButton} href={`/replays/${replayId}#workspace-title`} aria-label="Compartilhar com treinador" title="Compartilhar com treinador">↗</Link>}
             <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
             <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
             <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>

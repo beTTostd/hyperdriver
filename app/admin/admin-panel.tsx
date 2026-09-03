@@ -111,12 +111,12 @@ export default function AdminPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ username, role }),
       });
-      const data = await response.json() as { error?: string; id?: number; setupUrl?: string; expiresAt?: number; username?: string; role?: "admin" | "user" };
-      if (!response.ok || !data.id || !data.setupUrl || !data.expiresAt || !data.username || !data.role) {
+      const data = await response.json() as { error?: string; id?: number; setupUrl?: string; expiresAt?: number; username?: string; role?: "admin" | "user"; avatarCardId?: string };
+      if (!response.ok || !data.id || !data.setupUrl || !data.expiresAt || !data.username || !data.role || !data.avatarCardId) {
         setError(data.error || "Não foi possível criar o usuário.");
         return;
       }
-      setUsers((current) => [{ id: data.id!, username: data.username!, role: data.role!, avatarCardId: null, isActive: true, hasPassword: false, lastLoginAt: null }, ...current]);
+      setUsers((current) => [{ id: data.id!, username: data.username!, role: data.role!, avatarCardId: data.avatarCardId!, isActive: true, hasPassword: false, lastLoginAt: null }, ...current]);
       setInvite({ url: data.setupUrl, expiresAt: data.expiresAt, username: data.username });
       setUsername("");
       setModalOpen(false);

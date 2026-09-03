@@ -27,6 +27,8 @@ export function proxy(request: NextRequest) {
     pathname === "/favicon.svg" ||
     pathname.startsWith("/api/health/") ||
     pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/coach/") ||
+    pathname.startsWith("/coach/") ||
     pathname === "/api/profile/avatar-options" ||
     pathname.startsWith("/api/replays");
   const authenticated = request.cookies.has(SESSION_COOKIE);
@@ -45,7 +47,7 @@ export function proxy(request: NextRequest) {
   response.headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   response.headers.set(
     "referrer-policy",
-    pathname === "/set-password" || pathname === "/primeira-senha" ? "no-referrer" : "strict-origin-when-cross-origin",
+    pathname === "/set-password" || pathname === "/primeira-senha" || pathname.startsWith("/coach/") || pathname.startsWith("/api/coach/") ? "no-referrer" : "strict-origin-when-cross-origin",
   );
   response.headers.set("x-request-id", requestId);
   if (process.env.NODE_ENV === "production") {
@@ -53,6 +55,10 @@ export function proxy(request: NextRequest) {
   }
   if (authenticated || pathname.startsWith("/api/")) {
     response.headers.set("cache-control", "private, no-store, max-age=0");
+  }
+  if (pathname.startsWith("/coach/") || pathname.startsWith("/api/coach/")) {
+    response.headers.set("cache-control", "private, no-store, max-age=0");
+    response.headers.set("x-robots-tag", "noindex, nofollow");
   }
   return response;
 }

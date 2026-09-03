@@ -1,0 +1,24 @@
+.panel { margin: 2rem 0; padding: 1.4rem; border: 1px solid rgba(255,255,255,.16); background: #10151b; color: #f4f5f6; }
+.header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1rem; }
+.header h2,.panel h3 { margin:.2rem 0; text-transform:uppercase; letter-spacing:.04em; }
+.header p,.muted { color:#9ba6b0; margin:.2rem 0; }
+.grid { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr); gap:1rem; }
+.block { border:1px solid rgba(255,255,255,.1); padding:1rem; background:rgba(255,255,255,.025); }
+.field { display:grid; gap:.35rem; margin:.65rem 0; font-size:.82rem; color:#bac1c8; }
+.field input,.field textarea,.field select,.composer input,.composer textarea { width:100%; box-sizing:border-box; background:#090d11; color:#fff; border:1px solid #39434d; padding:.7rem; font:inherit; }
+.field textarea { min-height:130px; resize:vertical; }
+.checks { display:flex; flex-wrap:wrap; gap:.8rem; margin:.7rem 0; }
+.checks label { display:flex; gap:.4rem; align-items:center; font-size:.82rem; }
+.actions { display:flex; gap:.55rem; flex-wrap:wrap; align-items:center; }
+.actions button,.primary,.linkButton { border:1px solid #d9463e; background:#d9463e; color:#fff; padding:.55rem .75rem; cursor:pointer; text-decoration:none; font:inherit; }
+.actions button.secondary,.secondary { background:transparent; border-color:#59636d; }
+.list { display:grid; gap:.6rem; margin:.75rem 0; padding:0; list-style:none; }
+.list li { border-left:3px solid #d9463e; background:#090d11; padding:.65rem; }
+.list a { color:#fff; }
+.list small { display:block; color:#9ba6b0; margin-top:.25rem; }
+.status { min-height:1.2rem; color:#f0ad5e; font-size:.84rem; }
+.shareUrl { overflow-wrap:anywhere; color:#8fc5ff; }
+.thread { margin-top:.6rem; border-top:1px solid #303943; padding-top:.6rem; }
+.thread p { margin:.3rem 0; }
+.badge { display:inline-block; padding:.2rem .45rem; margin:.15rem; background:#29313a; font-size:.75rem; }
+@media(max-width:760px){.grid{grid-template-columns:1fr}.header{display:block}}

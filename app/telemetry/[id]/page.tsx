@@ -14,6 +14,7 @@ import {
 import { calculateReplayTelemetry, type TelemetryCycle } from "../../../lib/replay-telemetry";
 import { readAdminReplay, readUserReplay, type ReplayDocument } from "../../../lib/replays";
 import AnalysisFeedback from "./analysis-feedback";
+import WorkspacePanel, { CreatePatternGoalButton } from "../../replays/workspace-panel";
 import styles from "./page.module.css";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -158,7 +159,7 @@ function DecisionCoach({
             <div className={styles.patternSummary}>
               <strong>Padrões controláveis</strong>
               <div>{analysis.summary.controllablePatterns.slice(0, 3).map((pattern) => (
-                <span key={pattern.tag}>{pattern.label} · {pattern.occurrences}×</span>
+                <span key={pattern.tag}>{pattern.label} · {pattern.occurrences}× <CreatePatternGoalButton replayId={replayId} patternTag={pattern.tag} label={pattern.label} /></span>
               ))}</div>
             </div>
           )}
@@ -305,6 +306,7 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
         </section>
 
         {decisionAnalysis && <DecisionCoach replayId={id} analysis={decisionAnalysis} />}
+        {metadata.userId === currentUser.id && <WorkspacePanel replayId={id} />}
 
         <section className={styles.panel} aria-labelledby="cycle-chart-title">
           <div className={styles.panelHeader}>

@@ -142,6 +142,10 @@ export default function AuthControls({
             Estatísticas
             <Icon name="chart" size={14} />
           </Link>
+          <Link className={styles.statsLink} href="/me/goals" role="menuitem" onClick={() => setProfileOpen(false)}>
+            Metas de treinamento
+            <Icon name="arrowRight" size={14} />
+          </Link>
           {isAdmin && (
             <Link
               className={styles.adminLink}
@@ -227,8 +231,11 @@ export default function AuthControls({
             <Link href="/me/stats" aria-current={pathname === "/me/stats" ? "page" : undefined} onClick={closeMobileMenu}>
               <span><small>02</small> Estatísticas</span><Icon name="chart" size={17} />
             </Link>
+            <Link href="/me/goals" aria-current={pathname === "/me/goals" ? "page" : undefined} onClick={closeMobileMenu}>
+              <span><small>03</small> Metas</span><Icon name="arrowRight" size={17} />
+            </Link>
             <Link href="/me/profile" aria-current={pathname === "/me/profile" ? "page" : undefined} onClick={closeMobileMenu}>
-              <span><small>03</small> Editar perfil</span><Icon name="externalLink" size={17} />
+              <span><small>04</small> Editar perfil</span><Icon name="externalLink" size={17} />
             </Link>
             {isAdmin && (
               <>

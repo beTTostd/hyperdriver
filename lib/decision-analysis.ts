@@ -352,6 +352,10 @@ export async function processReplayAnalysis(
         })
         .run();
     });
+    if (result.status === "ready") {
+      const { recalculateActiveGoals } = await import("./training-goals");
+      recalculateActiveGoals(metadata.userId);
+    }
     return result.status;
   } catch (error) {
     const now = Date.now();
@@ -368,7 +372,7 @@ export async function processReplayAnalysis(
 }
 
 export function decisionAnalysisVisibleTo(role: "admin" | "user") {
-  return role === "admin";
+  return role === "admin" || role === "user";
 }
 
 export function getReplayDecisionAnalysis(
@@ -407,7 +411,7 @@ export function getReplayDecisionAnalysis(
       .orderBy(asc(handAnalyses.frameSequence), asc(handAnalyses.id))
       .all()
       .map(({ analysisJson }) => parseJson<HandAnalysis | null>(analysisJson, null))
-      .filter((analysis): analysis is HandAnalysis => Boolean(analysis))
+      .filter((analysis): analysis is HandAnalysis => analysis !== null && analysis.confidence !== "low")
     : [];
   const versions = run.model ? {
     analysisSchema: run.model.analysisSchema,

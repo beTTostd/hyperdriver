@@ -7,6 +7,7 @@ import { requireUser } from "../../../lib/auth";
 import { cardArtImageUrl } from "../../../lib/card-avatars";
 import { decisionAnalysisVisibleTo } from "../../../lib/decision-analysis";
 import { getUserStats, type UserStatsFilters } from "../../../lib/user-stats";
+import { activeGoalSummary } from "../../../lib/training-goals";
 import styles from "./page.module.css";
 
 type PageProps = {
@@ -113,6 +114,7 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
   const stats = await getUserStats(currentUser.id, filters);
   const maxEvolutionMatches = Math.max(1, ...stats.evolution.map((point) => point.matches));
   const decisionAnalysisVisible = decisionAnalysisVisibleTo(currentUser.role);
+  const activeGoals = activeGoalSummary(currentUser.id);
 
   return (
     <main className={styles.page}>
@@ -327,6 +329,11 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
             ) : <div className={styles.inlineEmpty}>Ainda não há decisões com confiança suficiente nos replays filtrados.</div>}
           </section>
         )}
+
+        <section className={styles.panel} aria-labelledby="goals-title">
+          {sectionHeading("06", "Treinamento / foco", "Metas ativas", "goals-title")}
+          {activeGoals.length ? <div className={styles.recentList}>{activeGoals.map((goal) => <article className={styles.recentMatch} key={goal.id}><div className={styles.recentInfo}><strong>{goal.title}</strong><small>{goal.progressMatches} de {goal.targetMatches} partidas acompanhadas</small></div><Link href="/me/goals">Abrir metas</Link></article>)}</div> : <div className={styles.inlineEmpty}>Nenhuma meta ativa. <Link href="/me/goals">Criar uma meta</Link></div>}
+        </section>
 
         <section className={styles.panel} aria-labelledby="recent-title">
           {sectionHeading(decisionAnalysisVisible ? "06" : "05", "Histórico / recente", "Últimas partidas", "recent-title")}

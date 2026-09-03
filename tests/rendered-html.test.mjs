@@ -81,7 +81,7 @@ before(async () => {
       ...process.env,
       DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
       UPLOADS_DIR: join(databaseDirectory, "uploads"),
-      ADMIN_INITIAL_PASSWORD: "TestPassword!123",
+      ADMIN_INITIAL_PASSWORD: "Test1!xy",
     },
     encoding: "utf8",
   });
@@ -122,7 +122,7 @@ before(async () => {
   const login = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
   });
   assert.equal(login.status, 200);
   cookie = getCookie(login);
@@ -204,14 +204,14 @@ test("rejects cross-origin mutations and always issues a secure production cooki
   const rejected = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", origin: "https://evil.example" },
-    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
   });
   assert.equal(rejected.status, 403);
 
   const accepted = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", origin: baseUrl },
-    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
   });
   assert.equal(accepted.status, 200);
   assert.match(accepted.headers.get("set-cookie") ?? "", /; Secure(?:;|$)/i);
@@ -230,7 +230,7 @@ test("bounds small JSON APIs and rejects unsafe numeric identifiers", async () =
   const unsupported = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "text/plain" },
-    body: JSON.stringify({ username: "admin", password: "TestPassword!123" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
   });
   assert.equal(unsupported.status, 415);
   assert.equal((await unsupported.json()).code, "UNSUPPORTED_MEDIA_TYPE");
@@ -306,7 +306,7 @@ test("renders the authenticated statistics page with shareable filters", async (
   assert.match(html, /href="\/me\/stats"[^>]*>Estatísticas/);
 });
 
-test("keeps decision analysis and feedback visible only to administrators", async () => {
+test("shows decision analysis and feedback to the replay owner and administrators", async () => {
   const ownerCookie = await createTestUser("analysis-admin-only-owner");
   const document = decisionReplayDocument("e3333333-3333-4333-8333-333333333333");
   const uploaded = await fetch(new URL("/api/replays", baseUrl), {
@@ -323,9 +323,9 @@ test("keeps decision analysis and feedback visible only to administrators", asyn
   const ownerAnalysis = await fetch(new URL(`/api/replays/${replayId}/analysis`, baseUrl), {
     headers: { cookie: ownerCookie },
   });
-  assert.equal(ownerAnalysis.status, 404);
+  assert.equal(ownerAnalysis.status, 200);
 
-  const adminAnalysis = await waitForDecisionAnalysis(replayId, cookie);
+  const adminAnalysis = await waitForDecisionAnalysis(replayId, ownerCookie);
   assert.equal(adminAnalysis.status, "ready");
   assert.equal(adminAnalysis.recommendationsVisible, true);
   assert.equal(adminAnalysis.methodology.primaryObjective, "estimated_win_probability");
@@ -346,11 +346,11 @@ test("keeps decision analysis and feedback visible only to administrators", asyn
       helpful: false,
     }),
   });
-  assert.equal(ownerFeedback.status, 404);
+  assert.equal(ownerFeedback.status, 200);
 
   const feedback = await fetch(new URL(`/api/replays/${replayId}/analysis/feedback`, baseUrl), {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", cookie: ownerCookie },
     body: JSON.stringify({
       analysisFingerprint: adminAnalysis.handAnalyses[0].stateFingerprint,
       helpful: true,
@@ -375,17 +375,18 @@ test("keeps decision analysis and feedback visible only to administrators", asyn
   const ownerReport = await fetch(new URL(`/replays/${replayId}`, baseUrl), { headers: { cookie: ownerCookie } });
   assert.equal(ownerReport.status, 200);
   const ownerReportHtml = await ownerReport.text();
-  assert.doesNotMatch(ownerReportHtml, /Treinador pós-partida/);
-  assert.doesNotMatch(ownerReportHtml, /Melhor linha encontrada/);
-  assert.doesNotMatch(ownerReportHtml, /Como usar os marcadores/);
-  assert.doesNotMatch(ownerReportHtml, /Abrir decisão na mesa/);
+  assert.match(ownerReportHtml, /Treinador pós-partida/);
+  assert.match(ownerReportHtml, /Melhor linha encontrada/);
+  assert.match(ownerReportHtml, /Como usar os marcadores/);
+  assert.match(ownerReportHtml, /Abrir decisão na mesa/);
+  assert.match(ownerReportHtml, /Meu caderno/);
 
   const ownerStats = await fetch(new URL("/me/stats", baseUrl), { headers: { cookie: ownerCookie } });
   assert.equal(ownerStats.status, 200);
   const ownerStatsHtml = await ownerStats.text();
-  assert.doesNotMatch(ownerStatsHtml, /Decisões \/ pós-partida/);
-  assert.doesNotMatch(ownerStatsHtml, /Potencial das mãos/);
-  assert.doesNotMatch(ownerStatsHtml, /Qualidade da execução/);
+  assert.match(ownerStatsHtml, /Decisões \/ pós-partida/);
+  assert.match(ownerStatsHtml, /Potencial das mãos/);
+  assert.match(ownerStatsHtml, /Qualidade da execução/);
 
   const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
   try {
@@ -403,6 +404,117 @@ test("keeps decision analysis and feedback visible only to administrators", asyn
   }
 });
 
+test("persists the player notebook and protects temporary coach links", async () => {
+  const ownerCookie = createDatabaseUserSession("workspace-coach-owner");
+  const strangerCookie = createDatabaseUserSession("workspace-coach-stranger");
+  const replayId = "e4444444-4444-4444-8444-444444444444";
+  const uploaded = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify(decisionReplayDocument(replayId)),
+  });
+  assert.equal(uploaded.status, 201);
+
+  const workspaceUpdate = await fetch(new URL(`/api/replays/${replayId}/workspace`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ note: "Rever a defesa no turno dois.", isFavorite: true, reviewed: true, tags: ["Defesa", "Pitch"] }),
+  });
+  assert.equal(workspaceUpdate.status, 200);
+  const workspace = await workspaceUpdate.json();
+  assert.equal(workspace.isFavorite, true);
+  assert.ok(workspace.reviewedAt);
+  assert.deepEqual(workspace.tags.map((tag) => tag.name).sort(), ["Defesa", "Pitch"]);
+
+  const forbiddenWorkspace = await fetch(new URL(`/api/replays/${replayId}/workspace`, baseUrl), { headers: { cookie: strangerCookie } });
+  assert.equal(forbiddenWorkspace.status, 404);
+  const invalidBookmark = await fetch(new URL(`/api/replays/${replayId}/bookmarks`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ frameIndex: 99999, title: "Fora" }),
+  });
+  assert.equal(invalidBookmark.status, 400);
+  const bookmarkResponse = await fetch(new URL(`/api/replays/${replayId}/bookmarks`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ frameIndex: 0, title: "Início da decisão", note: "Compare as linhas." }),
+  });
+  assert.equal(bookmarkResponse.status, 201);
+
+  const shareResponse = await fetch(new URL(`/api/replays/${replayId}/shares`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ coachName: "Treinador Teste", durationDays: 7, includeAnalysis: true, includeNote: true, includeBookmarks: true, includeGoals: false }),
+  });
+  assert.equal(shareResponse.status, 201);
+  const createdShare = await shareResponse.json();
+  const shareUrl = new URL(createdShare.url, baseUrl);
+  const shareId = shareUrl.pathname.split("/").at(-1);
+  const token = new URLSearchParams(shareUrl.hash.slice(1)).get("token");
+  assert.ok(shareId);
+  assert.ok(token);
+  assert.doesNotMatch(JSON.stringify(createdShare), /tokenHash|token_hash/);
+
+  const missingToken = await fetch(new URL(`/api/coach/shares/${shareId}`, baseUrl));
+  assert.equal(missingToken.status, 404);
+  const publicShare = await fetch(new URL(`/api/coach/shares/${shareId}`, baseUrl), { headers: { "x-hyperdriver-coach-token": token } });
+  assert.equal(publicShare.status, 200);
+  assert.equal(publicShare.headers.get("referrer-policy"), "no-referrer");
+  assert.match(publicShare.headers.get("x-robots-tag") ?? "", /noindex/);
+  const shared = await publicShare.json();
+  assert.equal(shared.note, "Rever a defesa no turno dois.");
+  assert.equal(shared.bookmarks.length, 1);
+  assert.equal(shared.analysis.recommendationsVisible, true);
+  assert.doesNotMatch(JSON.stringify(shared), new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+  const threadResponse = await fetch(new URL(`/api/coach/shares/${shareId}/threads`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-hyperdriver-coach-token": token },
+    body: JSON.stringify({ frameIndex: 0, body: "Por que esta linha foi escolhida?" }),
+  });
+  assert.equal(threadResponse.status, 201);
+  const thread = await threadResponse.json();
+  const ownerReply = await fetch(new URL(`/api/replays/${replayId}/coaching/threads/${thread.id}/messages`, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ body: "Eu estava preservando uma carta azul." }),
+  });
+  assert.equal(ownerReply.status, 201);
+  const resolved = await fetch(new URL(`/api/replays/${replayId}/coaching/threads/${thread.id}`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ resolved: true }),
+  });
+  assert.equal(resolved.status, 200);
+
+  const goalResponse = await fetch(new URL("/api/goals", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ origin: "manual", title: "Planejar o pitch", description: "Revisar antes de confirmar.", targetMatches: 10 }),
+  });
+  assert.equal(goalResponse.status, 201);
+  const goalsPage = await fetch(new URL("/me/goals", baseUrl), { headers: { cookie: ownerCookie } });
+  assert.equal(goalsPage.status, 200);
+  assert.match(await goalsPage.text(), /Planejar o pitch/);
+
+  const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  try {
+    const storedShare = database.prepare("SELECT token_hash AS tokenHash FROM replay_shares WHERE id = ?").get(shareId);
+    assert.equal(storedShare.tokenHash, createHash("sha256").update(token).digest("hex"));
+    assert.notEqual(storedShare.tokenHash, token);
+  } finally {
+    database.close();
+  }
+  const revoked = await fetch(new URL(`/api/replays/${replayId}/shares/${shareId}`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ revoked: true }),
+  });
+  assert.equal(revoked.status, 200);
+  const revokedPublic = await fetch(new URL(`/api/coach/shares/${shareId}`, baseUrl), { headers: { "x-hyperdriver-coach-token": token } });
+  assert.equal(revokedPublic.status, 404);
+});
+
 test("requires authentication and supports one-time user invitations", async () => {
   const anonymous = await fetch(new URL("/admin", baseUrl), { redirect: "manual" });
   assert.equal(anonymous.status, 307);
@@ -416,6 +528,8 @@ test("requires authentication and supports one-time user invitations", async () 
   assert.equal(created.status, 201);
   const invitation = await created.json();
   assert.equal(typeof invitation.id, "number");
+  assert.match(invitation.avatarCardId, /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/);
+  assert.equal(readUserAvatar("jogador-01"), invitation.avatarCardId);
   assert.match(invitation.setupUrl, /\/set-password#token=/);
   assert.ok(invitation.expiresAt - Date.now() > 2 * 60 * 60 * 1000 - 5000);
   assert.ok(invitation.expiresAt - Date.now() <= 2 * 60 * 60 * 1000);
@@ -435,7 +549,9 @@ test("requires authentication and supports one-time user invitations", async () 
 
   const setupPage = await fetch(invitation.setupUrl);
   assert.equal(setupPage.status, 200);
-  assert.match(await setupPage.text(), /Crie sua/);
+  const setupHtml = await setupPage.text();
+  assert.match(setupHtml, /Crie sua/);
+  assert.match(setupHtml.replace(/<[^>]*>/g, ""), /Entre 8 e 256 caracteres/);
 
   const regenerated = await fetch(
     new URL(`/api/admin/users/${invitation.id}/password-link`, baseUrl),
@@ -445,14 +561,15 @@ test("requires authentication and supports one-time user invitations", async () 
   const regeneratedInvitation = await regenerated.json();
   assert.match(regeneratedInvitation.setupUrl, /\/set-password#token=/);
   assert.notEqual(regeneratedInvitation.setupUrl, invitation.setupUrl);
+  const minimumPassword = "Abcd1!xy";
 
   const staleSetup = await fetch(new URL("/api/auth/setup-password", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       token: invitationToken(invitation.setupUrl),
-      password: "PlayerPassword!123",
-      confirmation: "PlayerPassword!123",
+      password: minimumPassword,
+      confirmation: minimumPassword,
     }),
   });
   assert.equal(staleSetup.status, 400);
@@ -462,8 +579,8 @@ test("requires authentication and supports one-time user invitations", async () 
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       token: invitationToken(regeneratedInvitation.setupUrl),
-      password: "PlayerPassword!123",
-      confirmation: "PlayerPassword!123",
+      password: minimumPassword,
+      confirmation: minimumPassword,
     }),
   });
   assert.equal(setup.status, 200);
@@ -473,8 +590,8 @@ test("requires authentication and supports one-time user invitations", async () 
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       token: invitationToken(regeneratedInvitation.setupUrl),
-      password: "PlayerPassword!123",
-      confirmation: "PlayerPassword!123",
+      password: minimumPassword,
+      confirmation: minimumPassword,
     }),
   });
   assert.equal(reused.status, 400);
@@ -482,7 +599,7 @@ test("requires authentication and supports one-time user invitations", async () 
   const userLogin = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "jogador-01", password: "PlayerPassword!123" }),
+    body: JSON.stringify({ username: "jogador-01", password: minimumPassword }),
   });
   assert.equal(userLogin.status, 200);
   const userCookie = getCookie(userLogin);
@@ -546,7 +663,7 @@ test("requires authentication and supports one-time user invitations", async () 
   const oldPasswordLogin = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "jogador-01", password: "PlayerPassword!123" }),
+    body: JSON.stringify({ username: "jogador-01", password: minimumPassword }),
   });
   assert.equal(oldPasswordLogin.status, 401);
   const resetLogin = await fetch(new URL("/api/auth/login", baseUrl), {
@@ -1720,6 +1837,17 @@ function invitationToken(url) {
 
 function replayIdsInHtml(html) {
   return new Set([...html.matchAll(/\/replays\/(d[0-9a-f-]{35})\/table/g)].map((match) => match[1]));
+}
+
+function readUserAvatar(username) {
+  const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  try {
+    return database
+      .prepare("SELECT avatar_card_id AS avatarCardId FROM users WHERE username = ?")
+      .get(username)?.avatarCardId ?? null;
+  } finally {
+    database.close();
+  }
 }
 
 function readLastLogin(username) {

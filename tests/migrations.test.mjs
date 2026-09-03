@@ -34,9 +34,12 @@ test("migrations create a new database once with checksums and hardening tables"
         "0007_upload_events",
         "0008_decision_analysis",
         "0009_talishar_elo",
+        "0010_player_workspace",
+        "0011_coaching_shares",
+        "0012_training_goals",
       ],
     );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 10);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 13);
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='replay_metrics'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_events'").get());
@@ -47,6 +50,9 @@ test("migrations create a new database once with checksums and hardening tables"
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='elo_ratings'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='elo_matches'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='elo_upload_reports'").get());
+    for (const table of ["replay_workspace", "user_tags", "replay_tags", "replay_bookmarks", "replay_shares", "coaching_threads", "coaching_messages", "training_goals", "training_goal_checkins"]) {
+      assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), table);
+    }
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "size_bytes"));
     assert.ok(database.pragma("table_info(replay_metrics)").some((column) => column.name === "calculation_version"));
     assert.ok(database.prepare("SELECT checksum FROM schema_migrations").all().every((row) => /^[a-f0-9]{64}$/.test(row.checksum)));
@@ -83,7 +89,7 @@ test("migration adoption preserves an existing legacy user and replay", () => {
       migrated.prepare("SELECT category, http_status AS httpStatus, replay_id AS replayId FROM upload_events").get(),
       { category: "success", httpStatus: 201, replayId: 1 },
     );
-    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 10);
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 13);
   } finally {
     migrated.close();
   }
@@ -129,6 +135,15 @@ test("replay deletion cascades through decision observations, analyses, feedback
         replay_id, model_version_id, example_key, user_cohort, decision_kind, payload_json
       ) VALUES (?, 'model-1', 'example-1', 'cohort-1', 'action', '{}')
     `).run(replay.id);
+    database.prepare("INSERT INTO replay_workspace (replay_id, user_id, note, is_favorite) VALUES (?, 1, 'note', 1)").run(replay.id);
+    const tag = database.prepare("INSERT INTO user_tags (user_id, name, normalized_name) VALUES (1, 'Defense', 'defense') RETURNING id").get();
+    database.prepare("INSERT INTO replay_tags (replay_id, tag_id) VALUES (?, ?)").run(replay.id, tag.id);
+    database.prepare("INSERT INTO replay_bookmarks (replay_id, user_id, frame_index, title) VALUES (?, 1, 0, 'Start')").run(replay.id);
+    database.prepare("INSERT INTO replay_shares (id, replay_id, user_id, token_hash, coach_name, expires_at) VALUES ('share-1', ?, 1, 'hash', 'Coach', ?)").run(replay.id, Date.now() + 1000);
+    const thread = database.prepare("INSERT INTO coaching_threads (share_id, replay_id, frame_index) VALUES ('share-1', ?, 0) RETURNING id").get(replay.id);
+    database.prepare("INSERT INTO coaching_messages (thread_id, author_role, body) VALUES (?, 'coach', 'Review this')").run(thread.id);
+    const goal = database.prepare("INSERT INTO training_goals (user_id, title, origin, source_replay_id) VALUES (1, 'Historical goal', 'manual', ?) RETURNING id").get(replay.id);
+    database.prepare("INSERT INTO training_goal_checkins (goal_id, replay_id, state) VALUES (?, ?, 'met')").run(goal.id, replay.id);
 
     database.prepare("DELETE FROM replays WHERE id = ?").run(replay.id);
     for (const table of [
@@ -141,6 +156,11 @@ test("replay deletion cascades through decision observations, analyses, feedback
       assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0, table);
     }
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM analysis_model_versions").get().count, 1);
+    for (const table of ["replay_workspace", "replay_tags", "replay_bookmarks", "replay_shares", "coaching_threads", "coaching_messages"]) {
+      assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0, table);
+    }
+    assert.deepEqual(database.prepare("SELECT source_replay_id AS sourceReplayId FROM training_goals WHERE id = ?").get(goal.id), { sourceReplayId: null });
+    assert.deepEqual(database.prepare("SELECT replay_id AS replayId FROM training_goal_checkins WHERE goal_id = ?").get(goal.id), { replayId: null });
   } finally {
     database.close();
   }

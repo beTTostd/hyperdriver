@@ -259,6 +259,163 @@ export const rateLimitEvents = sqliteTable(
   ],
 );
 
+export const replayWorkspace = sqliteTable(
+  "replay_workspace",
+  {
+    replayId: integer("replay_id").primaryKey().references(() => replays.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    note: text("note").notNull().default(""),
+    isFavorite: integer("is_favorite", { mode: "boolean" }).notNull().default(false),
+    reviewedAt: integer("reviewed_at"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("replay_workspace_user_favorite_idx").on(table.userId, table.isFavorite),
+    index("replay_workspace_user_reviewed_idx").on(table.userId, table.reviewedAt),
+  ],
+);
+
+export const userTags = sqliteTable(
+  "user_tags",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [uniqueIndex("user_tags_user_name_unique").on(table.userId, table.normalizedName)],
+);
+
+export const replayTags = sqliteTable(
+  "replay_tags",
+  {
+    replayId: integer("replay_id").notNull().references(() => replays.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id").notNull().references(() => userTags.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("replay_tags_replay_tag_unique").on(table.replayId, table.tagId),
+    index("replay_tags_tag_idx").on(table.tagId, table.replayId),
+  ],
+);
+
+export const replayBookmarks = sqliteTable(
+  "replay_bookmarks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    replayId: integer("replay_id").notNull().references(() => replays.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    frameIndex: integer("frame_index").notNull(),
+    title: text("title").notNull(),
+    note: text("note"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("replay_bookmarks_replay_frame_idx").on(table.replayId, table.frameIndex)],
+);
+
+export const replayShares = sqliteTable(
+  "replay_shares",
+  {
+    id: text("id").primaryKey(),
+    replayId: integer("replay_id").notNull().references(() => replays.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    coachName: text("coach_name").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    revokedAt: integer("revoked_at"),
+    includeAnalysis: integer("include_analysis", { mode: "boolean" }).notNull().default(false),
+    includeNote: integer("include_note", { mode: "boolean" }).notNull().default(false),
+    includeBookmarks: integer("include_bookmarks", { mode: "boolean" }).notNull().default(false),
+    includeGoals: integer("include_goals", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("replay_shares_token_hash_unique").on(table.tokenHash),
+    index("replay_shares_replay_active_idx").on(table.replayId, table.revokedAt, table.expiresAt),
+  ],
+);
+
+export const coachingThreads = sqliteTable(
+  "coaching_threads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    shareId: text("share_id").notNull().references(() => replayShares.id, { onDelete: "cascade" }),
+    replayId: integer("replay_id").notNull().references(() => replays.id, { onDelete: "cascade" }),
+    frameIndex: integer("frame_index").notNull(),
+    title: text("title"),
+    resolvedAt: integer("resolved_at"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("coaching_threads_share_frame_idx").on(table.shareId, table.frameIndex)],
+);
+
+export const coachingMessages = sqliteTable(
+  "coaching_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    threadId: integer("thread_id").notNull().references(() => coachingThreads.id, { onDelete: "cascade" }),
+    authorRole: text("author_role", { enum: ["coach", "player"] }).notNull(),
+    body: text("body").notNull(),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("coaching_messages_thread_created_idx").on(table.threadId, table.createdAt)],
+);
+
+export const trainingGoals = sqliteTable(
+  "training_goals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    origin: text("origin", { enum: ["manual", "analysis_pattern"] }).notNull(),
+    status: text("status", { enum: ["active", "achieved", "not_achieved", "cancelled"] }).notNull().default("active"),
+    gameMode: text("game_mode"),
+    heroId: text("hero_id"),
+    targetMatches: integer("target_matches").notNull().default(10),
+    progressMatches: integer("progress_matches").notNull().default(0),
+    sourceReplayId: integer("source_replay_id").references(() => replays.id, { onDelete: "set null" }),
+    patternTag: text("pattern_tag"),
+    baselineReplayCount: integer("baseline_replay_count"),
+    baselineOccurrences: integer("baseline_occurrences"),
+    baselineDecisions: integer("baseline_decisions"),
+    baselineRate: real("baseline_rate"),
+    targetRate: real("target_rate"),
+    currentOccurrences: integer("current_occurrences"),
+    currentDecisions: integer("current_decisions"),
+    currentRate: real("current_rate"),
+    resultReduction: real("result_reduction"),
+    startedAt: integer("started_at").notNull().default(sql`(unixepoch() * 1000)`),
+    completedAt: integer("completed_at"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("training_goals_user_status_idx").on(table.userId, table.status, table.createdAt),
+    index("training_goals_source_replay_idx").on(table.sourceReplayId),
+  ],
+);
+
+export const trainingGoalCheckins = sqliteTable(
+  "training_goal_checkins",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    goalId: integer("goal_id").notNull().references(() => trainingGoals.id, { onDelete: "cascade" }),
+    replayId: integer("replay_id").references(() => replays.id, { onDelete: "set null" }),
+    state: text("state", { enum: ["met", "not_met"] }).notNull(),
+    note: text("note").notNull().default(""),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("training_goal_checkins_goal_replay_unique").on(table.goalId, table.replayId),
+    index("training_goal_checkins_replay_idx").on(table.replayId),
+  ],
+);
+
 export const uploadLeases = sqliteTable(
   "upload_leases",
   {

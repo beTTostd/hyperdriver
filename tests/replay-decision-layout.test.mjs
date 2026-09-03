@@ -49,7 +49,7 @@ test("keeps decision details at the bottom of the replay side panel", () => {
   assert.equal(
     tableSource.match(/showDecisionAnalysis && <DecisionSidebarPanel/g)?.length,
     2,
-    "both decision panels should require administrator visibility",
+    "both decision panels should require authorized analysis visibility",
   );
   assert.match(tableSource, /<aside className=\{styles\.sidebar\}[\s\S]*<LiveValuePanel[\s\S]*<DecisionSidebarPanel[\s\S]*<\/aside>/);
   assert.match(tableSource, /setSidebarCollapsed\(false\);\s+setValueOpen\(true\);/);
@@ -59,15 +59,15 @@ test("keeps decision details at the bottom of the replay side panel", () => {
   assert.doesNotMatch(tableStyles, /decisionOverlay/);
 });
 
-test("keeps decision analysis behind the administrator role in UI and APIs", () => {
-  assert.match(decisionAnalysisSource, /export function decisionAnalysisVisibleTo[\s\S]*return role === "admin";/);
+test("makes decision analysis available through owner-aware authorization", () => {
+  assert.match(decisionAnalysisSource, /export function decisionAnalysisVisibleTo[\s\S]*role === "admin" \|\| role === "user";/);
   assert.doesNotMatch(decisionAnalysisSource, /DECISION_ANALYSIS_RELEASE_MODE/);
   assert.match(replayTablePageSource, /decisionAnalysisEnabled=\{decisionAnalysisVisibleTo\(currentUser\.role\)\}/);
-  assert.match(tableSource, /if \(decisionAnalysisEnabled && requestedReplayId && isReplayId\(requestedReplayId\)\)/);
+  assert.match(tableSource, /if \(decisionAnalysisEnabled && analysisEndpoint\)/);
   assert.match(reportSource, /decisionAnalysisVisibleTo\(currentUser\.role\)[\s\S]*\? getReplayDecisionAnalysis[\s\S]*: null;/);
   assert.match(statsSource, /const decisionAnalysisVisible = decisionAnalysisVisibleTo\(currentUser\.role\);/);
-  assert.match(analysisRouteSource, /if \(!decisionAnalysisVisibleTo\(user\.role\)\)[\s\S]*status: 404/);
-  assert.match(feedbackRouteSource, /if \(!decisionAnalysisVisibleTo\(user\.role\)\)[\s\S]*status: 404/);
+  assert.match(analysisRouteSource, /user\.role === "admin" \? findAdminReplay\(id\) : findUserReplay\(user\.id, id\)/);
+  assert.match(feedbackRouteSource, /user\.role === "admin" \? findAdminReplay\(id\) : findUserReplay\(user\.id, id\)/);
 });
 
 test("hides improvement comparison cards when the marker is a good decision", () => {

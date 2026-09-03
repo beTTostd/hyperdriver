@@ -11,7 +11,7 @@ import {
   validateMutationOrigin,
   withApiLogging,
 } from "../../../../../../lib/http";
-import { findAdminReplay } from "../../../../../../lib/replays";
+import { findAdminReplay, findUserReplay } from "../../../../../../lib/replays";
 
 export const runtime = "nodejs";
 
@@ -36,7 +36,7 @@ async function submitFeedback(
   if (!REPLAY_ID_PATTERN.test(id)) {
     return privateJson({ error: "Replay não encontrado." }, { status: 404 });
   }
-  const replay = findAdminReplay(id);
+  const replay = user.role === "admin" ? findAdminReplay(id) : findUserReplay(user.id, id);
   if (!replay) {
     return privateJson({ error: "Replay não encontrado." }, { status: 404 });
   }

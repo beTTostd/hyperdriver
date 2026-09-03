@@ -19,5 +19,5 @@ export default async function ReplayTablePage({
     : findUserReplay(currentUser.id, id);
   if (!replay) notFound();
 
-  return <TalisharTable replayId={id} decisionAnalysisEnabled={decisionAnalysisVisibleTo(currentUser.role)} />;
+  return <TalisharTable replayId={id} workspaceEnabled={replay.userId === currentUser.id} decisionAnalysisEnabled={decisionAnalysisVisibleTo(currentUser.role)} />;
 }

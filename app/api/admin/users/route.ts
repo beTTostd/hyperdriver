@@ -1,6 +1,8 @@
+import { randomInt } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { passwordSetupTokens, users } from "../../../../db/schema";
+import { CARD_AVATAR_OPTIONS } from "../../../../lib/card-avatars";
 import {
   appUrl,
   createOpaqueToken,
@@ -60,6 +62,7 @@ async function createUser(request: Request) {
 
   const token = createOpaqueToken();
   const expiresAt = Date.now() + PASSWORD_SETUP_DURATION_MS;
+  const avatarCardId = CARD_AVATAR_OPTIONS[randomInt(CARD_AVATAR_OPTIONS.length)].id;
   let createdId: number;
   try {
     const created = getDb().transaction((database) => {
@@ -67,7 +70,7 @@ async function createUser(request: Request) {
       if (existing) return null;
       const inserted = database
         .insert(users)
-        .values({ username, role })
+        .values({ username, role, avatarCardId })
         .returning({ id: users.id })
         .get();
       database.insert(passwordSetupTokens).values({
@@ -91,6 +94,7 @@ async function createUser(request: Request) {
     id: createdId,
     username,
     role,
+    avatarCardId,
     expiresAt,
     setupUrl: `${origin}/set-password#token=${encodeURIComponent(token)}`,
   }, { status: 201 });

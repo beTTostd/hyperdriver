@@ -1,0 +1,9 @@
+import { authorizeCoachShare, COACH_TOKEN_HEADER, CoachingError, createCoachThread, listShareThreads } from "../../../../../../lib/coaching";
+import { clientIp, jsonBodyErrorResponse, privateJson, rateLimitIdentity, rateLimitedResponse, readJsonObjectBody, withApiLogging } from "../../../../../../lib/http";
+import { consumeRateLimit } from "../../../../../../lib/rate-limit";
+export const runtime = "nodejs";
+type Context = { params: Promise<{ shareId: string }> };
+async function getHandler(request: Request, { params }: Context) { const shareId = (await params).shareId; const limit = consumeRateLimit("coach-token", rateLimitIdentity(`${clientIp(request)}:${shareId}`), 60, 60_000); if (!limit.allowed) return rateLimitedResponse(limit.retryAfter); const share = authorizeCoachShare(shareId, request.headers.get(COACH_TOKEN_HEADER)); return share ? privateJson({ threads: listShareThreads(share.id) }) : privateJson({ error: "Compartilhamento não encontrado." }, { status: 404 }); }
+async function postHandler(request: Request, { params }: Context) { const shareId = (await params).shareId; const limit = consumeRateLimit("coach-comment", rateLimitIdentity(`${clientIp(request)}:${shareId}`), 20, 60_000); if (!limit.allowed) return rateLimitedResponse(limit.retryAfter); const share = authorizeCoachShare(shareId, request.headers.get(COACH_TOKEN_HEADER)); if (!share) return privateJson({ error: "Compartilhamento não encontrado." }, { status: 404 }); try { return privateJson(createCoachThread(share, await readJsonObjectBody(request)), { status: 201 }); } catch (error) { const body = jsonBodyErrorResponse(error); if (body) return body; if (error instanceof CoachingError) return privateJson({ error: error.message }, { status: error.status }); throw error; } }
+export const GET = withApiLogging("/api/coach/shares/:shareId/threads", getHandler);
+export const POST = withApiLogging("/api/coach/shares/:shareId/threads", postHandler);
