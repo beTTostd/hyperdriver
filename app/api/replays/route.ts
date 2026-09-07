@@ -29,6 +29,14 @@ async function uploadReplay(request: Request) {
   if (!user) {
     return privateJson({ error: "Autenticação necessária." }, { status: 401 });
   }
+  const extensionVersion = request.headers.get("x-hyperdriver-extension-version")?.match(/^\d+\.\d+\.\d+$/)?.[0] ?? null;
+  const uploadContext = () => {
+    const values = [
+      extensionVersion ? `extensão ${extensionVersion}` : null,
+      request.headers.get("content-length") ? `${request.headers.get("content-length")} bytes declarados` : null,
+    ].filter(Boolean);
+    return values.length ? ` (${values.join(", ")})` : "";
+  };
   const respond = (
     body: unknown,
     init: ResponseInit,
@@ -93,8 +101,8 @@ async function uploadReplay(request: Request) {
       return response;
     }
     const raw = await readRequestBody(request, MAX_REPLAY_BYTES);
-    const { replay, duplicate, document } = await saveReplayUpload(user.id, raw);
-    if (!duplicate) {
+    const { replay, duplicate, document, analysisNeeded } = await saveReplayUpload(user.id, raw);
+    if (analysisNeeded) {
       after(async () => {
         try {
           await processReplayAnalysis(replay.id, document);
@@ -128,12 +136,21 @@ async function uploadReplay(request: Request) {
         technicalMessage: "O corpo da requisição excedeu o limite de 50 MB.",
       });
     }
+    if ((error as { code?: string }).code === "BODY_TRUNCATED") {
+      const bodyError = error as Error & { declaredBytes?: number; receivedBytes?: number };
+      return respond({ error: "O upload chegou incompleto. Tente novamente.", code: "BODY_TRUNCATED" }, { status: 400 }, {
+        category: "truncated",
+        httpStatus: 400,
+        errorCode: "BODY_TRUNCATED",
+        technicalMessage: `Corpo incompleto: ${bodyError.receivedBytes ?? "?"} de ${bodyError.declaredBytes ?? "?"} bytes recebidos${uploadContext()}.`,
+      });
+    }
     if (error instanceof TypeError) {
       return respond({ error: "O arquivo enviado não contém UTF-8 válido.", code: "INVALID_UTF8" }, { status: 400 }, {
         category: "corrupt",
         httpStatus: 400,
         errorCode: "INVALID_UTF8",
-        technicalMessage: error.message,
+        technicalMessage: `${error.message}${uploadContext()}`,
       });
     }
     if (error instanceof ReplayUploadError) {
@@ -143,7 +160,7 @@ async function uploadReplay(request: Request) {
         httpStatus: error.status,
         sourceMatchId: error.sourceMatchId,
         errorCode: error.code || "UPLOAD_REJECTED",
-        technicalMessage: error.message,
+        technicalMessage: `${error.message}${uploadContext()}`,
       });
     }
     console.error(JSON.stringify({ level: "error", type: "replay_upload_failed", userId: user.id }));

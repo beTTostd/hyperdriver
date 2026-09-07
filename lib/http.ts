@@ -14,7 +14,7 @@ export class JsonBodyError extends Error {
   constructor(
     message: string,
     public readonly status: number,
-    public readonly code: "BODY_TOO_LARGE" | "INVALID_JSON" | "INVALID_UTF8" | "UNSUPPORTED_MEDIA_TYPE",
+    public readonly code: "BODY_TOO_LARGE" | "BODY_TRUNCATED" | "INVALID_JSON" | "INVALID_UTF8" | "UNSUPPORTED_MEDIA_TYPE",
   ) {
     super(message);
   }
@@ -128,7 +128,7 @@ export async function readJsonObjectBody(
 
   let raw: string;
   try {
-    raw = await readBodyText(request, maxBytes);
+    raw = await readRequestBody(request, maxBytes);
   } catch (error) {
     if ((error as { code?: string }).code === "BODY_TOO_LARGE") {
       throw new JsonBodyError(
@@ -142,6 +142,13 @@ export async function readJsonObjectBody(
         "O corpo da requisição não contém UTF-8 válido.",
         400,
         "INVALID_UTF8",
+      );
+    }
+    if ((error as { code?: string }).code === "BODY_TRUNCATED") {
+      throw new JsonBodyError(
+        "O corpo da requisição chegou incompleto.",
+        400,
+        "BODY_TRUNCATED",
       );
     }
     throw error;
@@ -161,18 +168,33 @@ export async function readJsonObjectBody(
 }
 
 export async function readRequestBody(request: Request, maxBytes: number): Promise<string> {
-  return readBodyText(request, maxBytes);
+  const bytes = await readRequestBytes(request, maxBytes);
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+export async function readRequestBytes(request: Request, maxBytes: number): Promise<Uint8Array> {
+  const bytes = await readBodyBytes(request, maxBytes);
+  assertCompleteRequestBody(request, bytes.byteLength);
+  return bytes;
 }
 
 export async function readBodyText(
   source: Pick<Request, "body" | "headers"> | Pick<Response, "body" | "headers">,
   maxBytes: number,
 ): Promise<string> {
+  const bytes = await readBodyBytes(source, maxBytes);
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+export async function readBodyBytes(
+  source: Pick<Request, "body" | "headers"> | Pick<Response, "body" | "headers">,
+  maxBytes: number,
+): Promise<Uint8Array> {
   const declaredLength = Number(source.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     throw Object.assign(new Error("body_too_large"), { code: "BODY_TOO_LARGE" });
   }
-  if (!source.body) return "";
+  if (!source.body) return new Uint8Array();
   const reader = source.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -197,5 +219,17 @@ export async function readBodyText(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return bytes;
+}
+
+function assertCompleteRequestBody(request: Request, receivedBytes: number): void {
+  const header = request.headers.get("content-length");
+  if (header === null) return;
+  const declaredBytes = Number(header);
+  if (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0 || declaredBytes === receivedBytes) return;
+  throw Object.assign(new Error("body_truncated"), {
+    code: "BODY_TRUNCATED",
+    declaredBytes,
+    receivedBytes,
+  });
 }

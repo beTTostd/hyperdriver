@@ -7,6 +7,7 @@ import { cardArtImageUrl } from "../../lib/card-avatars";
 import { listUserReplays, type AdminReplayMetadata, type ReplayMetadata } from "../../lib/replays";
 import { workspaceSummaries } from "../../lib/player-workspace";
 import WorkspaceActions from "./workspace-actions";
+import ParticipationControl from "./participation-control";
 import styles from "../page.module.css";
 
 type WorkspaceSummary = { isFavorite: boolean; reviewedAt: number | null; hasNote: boolean; tags: string[] };
@@ -20,6 +21,8 @@ type ReplayLibraryProps = {
   nextCursor?: string | null;
   paginationPath?: string;
   embedded?: boolean;
+  workspaceFilter?: "all" | "favorites" | "reviewed" | "unreviewed";
+  tagFilter?: string;
 };
 
 function cardName(cardId: string | null) {
@@ -62,18 +65,51 @@ export function ReplayLibrary({
   nextCursor = null,
   paginationPath = "/replays",
   embedded = false,
+  workspaceFilter = "all",
+  tagFilter = "",
 }: ReplayLibraryProps) {
+  const hasActiveFilters = workspaceFilter !== "all" || Boolean(tagFilter);
+  const paginationQuery = new URLSearchParams();
+  if (nextCursor) paginationQuery.set("cursor", nextCursor);
+  if (!embedded && workspaceFilter !== "all") paginationQuery.set("workspace", workspaceFilter);
+  if (!embedded && tagFilter) paginationQuery.set("tag", tagFilter);
   const content = (
     <section className={styles.library} aria-labelledby="replay-list-title">
         <div className={styles.libraryHeader}>
           <div><h2 id="replay-list-title">{title}</h2></div>
           <div className={styles.sectorBars} aria-hidden="true"><i /><i /><i /></div>
         </div>
-        {!embedded && <form action="/replays" method="get" className={styles.metadata} aria-label="Filtros do caderno">
-          <label><span>Estado</span><select name="workspace"><option value="all">Todos</option><option value="favorites">Favoritos</option><option value="reviewed">Revisados</option><option value="unreviewed">Não revisados</option></select></label>
-          <label><span>Tag</span><input name="tag" maxLength={24} placeholder="Ex.: defesa" /></label>
-          <button type="submit">Filtrar</button>
-        </form>}
+        {!embedded && (
+          <form action="/replays" method="get" className={styles.libraryFilters} aria-label="Filtros do caderno">
+            <div className={styles.filterHeading}>
+              <span>Filtros</span>
+              <strong>Refinar replays</strong>
+            </div>
+            <label className={styles.filterField}>
+              <span>Estado</span>
+              <span className={styles.filterControl}>
+                <select name="workspace" defaultValue={workspaceFilter}>
+                  <option value="all">Todos os replays</option>
+                  <option value="favorites">Favoritos</option>
+                  <option value="reviewed">Revisados</option>
+                  <option value="unreviewed">Não revisados</option>
+                </select>
+                <Icon name="chevronDown" size={14} />
+              </span>
+            </label>
+            <label className={styles.filterField}>
+              <span>Tag</span>
+              <span className={`${styles.filterControl} ${styles.tagFilterControl}`}>
+                <Icon name="search" size={15} />
+                <input name="tag" maxLength={24} defaultValue={tagFilter} placeholder="Buscar por tag" />
+              </span>
+            </label>
+            <div className={styles.filterActions}>
+              <button className={styles.filterSubmit} type="submit">Aplicar <Icon name="arrowRight" size={15} /></button>
+              {hasActiveFilters && <Link className={styles.clearFilters} href="/replays"><Icon name="x" size={14} /> Limpar</Link>}
+            </div>
+          </form>
+        )}
         {!replayList.length ? (
           <div className={styles.emptyLibrary}>
             <strong>Nenhum replay sincronizado</strong>
@@ -88,7 +124,7 @@ export function ReplayLibrary({
               const opponentHeroFirstName = firstName(opponentHero);
               const startedAt = new Date(replay.startedAt);
               return (
-                <article className={`${styles.replayCard} ${styles[replay.result] ?? ""}`} key={replay.id}>
+                <article className={`${styles.replayCard} ${styles[replay.result] ?? ""} ${replay.workspace ? styles.withWorkspace : ""}`} key={replay.id}>
                   <span className={styles.cardIndex}>RPL / {String(index + 1).padStart(3, "0")}</span>
                   <div className={styles.matchArt} aria-label={`${playerHero} contra ${opponentHero}`}>
                     <figure className={styles.heroCard}>
@@ -109,21 +145,31 @@ export function ReplayLibrary({
                       {"username" in replay && <div className={styles.metadataOwner}><dt>Usuário</dt><dd>{replay.username}</dd></div>}
                       <div><dt>Turno final</dt><dd>{replay.finalTurn ?? "—"}</dd></div>
                       <div><dt>Modo de jogo</dt><dd>{gameModeLabel(replay.gameMode)}</dd></div>
+                      <ParticipationControl
+                        replayId={replay.sourceMatchId}
+                        participation={replay.participation}
+                        source={replay.participationSource}
+                      />
                     </dl>
+                    {replay.workspace && (replay.workspace.hasNote || replay.workspace.tags.length > 0) && (
+                      <div className={styles.replayTags} aria-label="Marcadores do caderno">
+                        {replay.workspace.hasNote && <span className={styles.finished}>Tem notas</span>}
+                        {replay.workspace.tags.map((tag) => <span className={styles.finished} key={tag}>{tag}</span>)}
+                      </div>
+                    )}
                   </div>
                   <div className={styles.replayActions}>
                     <Link className={styles.openReplay} href={`/replays/${replay.sourceMatchId}/table`}>Abrir replay <Icon name="arrowRight" size={15} /></Link>
                     <Link className={styles.analyseReplay} href={`/replays/${replay.sourceMatchId}`}>Análise <Icon name="chart" size={15} /></Link>
                   </div>
-                  {replay.workspace && <WorkspaceActions replayId={replay.sourceMatchId} favorite={replay.workspace.isFavorite} reviewed={Boolean(replay.workspace.reviewedAt)} hasNote={replay.workspace.hasNote} />}
-                  {replay.workspace?.tags.map((tag) => <span className={styles.finished} key={tag}>{tag}</span>)}
+                  {replay.workspace && <WorkspaceActions replayId={replay.sourceMatchId} favorite={replay.workspace.isFavorite} />}
                 </article>
               );
             })}
           </div>
         )}
         {nextCursor && (
-          <Link className={styles.openReplay} href={`${paginationPath}?cursor=${encodeURIComponent(nextCursor)}`}>
+          <Link className={styles.openReplay} href={`${paginationPath}?${paginationQuery.toString()}`}>
             Carregar mais replays <Icon name="arrowRight" size={15} />
           </Link>
         )}
@@ -154,13 +200,17 @@ export default async function ReplayLibraryPage({
   const cursor = Array.isArray(query.cursor) ? query.cursor[0] : query.cursor;
   const replayPage = await listUserReplays(currentUser.id, cursor);
   const summaries = workspaceSummaries(currentUser.id, replayPage.items.map((replay) => replay.id));
-  const workspaceFilter = Array.isArray(query.workspace) ? query.workspace[0] : query.workspace;
-  const tagFilter = (Array.isArray(query.tag) ? query.tag[0] : query.tag)?.trim().toLocaleLowerCase("pt-BR");
+  const requestedWorkspaceFilter = Array.isArray(query.workspace) ? query.workspace[0] : query.workspace;
+  const workspaceFilter = requestedWorkspaceFilter === "favorites" || requestedWorkspaceFilter === "reviewed" || requestedWorkspaceFilter === "unreviewed"
+    ? requestedWorkspaceFilter
+    : "all";
+  const tagFilter = (Array.isArray(query.tag) ? query.tag[0] : query.tag)?.trim() ?? "";
+  const normalizedTagFilter = tagFilter.toLocaleLowerCase("pt-BR");
   const decorated = replayPage.items.map((replay) => ({ ...replay, workspace: summaries.get(replay.id)! })).filter((replay) => {
     if (workspaceFilter === "favorites" && !replay.workspace.isFavorite) return false;
     if (workspaceFilter === "reviewed" && !replay.workspace.reviewedAt) return false;
     if (workspaceFilter === "unreviewed" && replay.workspace.reviewedAt) return false;
-    return !tagFilter || replay.workspace.tags.some((tag) => tag.toLocaleLowerCase("pt-BR") === tagFilter);
+    return !normalizedTagFilter || replay.workspace.tags.some((tag) => tag.toLocaleLowerCase("pt-BR") === normalizedTagFilter);
   });
   return (
     <ReplayLibrary
@@ -168,6 +218,8 @@ export default async function ReplayLibraryPage({
       replayList={decorated}
       nextCursor={replayPage.nextCursor}
       title="Replays recentes"
+      workspaceFilter={workspaceFilter}
+      tagFilter={tagFilter}
     />
   );
 }

@@ -51,6 +51,17 @@ test("recognizes only /replays as the list page eligible for reload", () => {
   assert.equal(shouldReload("/replays", 1, true), false);
 });
 
+test("serializes replay uploads as valid JSON before sending", () => {
+  const { serializeReplayDocument } = loadSyncHelpers();
+  const document = { schemaVersion: "0.5.0", match: { id: "match", frames: [] } };
+  const body = serializeReplayDocument(document);
+  assert.deepEqual(JSON.parse(body), document);
+  assert.throws(() => serializeReplayDocument(undefined), /não pôde ser serializado/);
+  const circular = {};
+  circular.self = circular;
+  assert.throws(() => serializeReplayDocument(circular), /circular/i);
+});
+
 test("continues sequential uploads after a failed replay", async () => {
   const { synchronizePendingReplays } = loadSyncHelpers();
   const events = [];
@@ -83,4 +94,30 @@ test("continues sequential uploads after a failed replay", async () => {
     progress.filter(({ phase }) => phase !== "sending").map(({ percentage }) => percentage),
     [33, 67, 100],
   );
+});
+
+test("does not retry a replay that the extension omitted as partial", async () => {
+  const { synchronizePendingReplays } = loadSyncHelpers();
+  let uploads = 0;
+  const result = await synchronizePendingReplays({
+    ids: [],
+    getReplay: async () => {
+      throw new Error("partial replay must not be requested");
+    },
+    upload: async () => {
+      uploads += 1;
+      return response(201);
+    },
+    markSynced: async () => undefined,
+    markError: async () => undefined,
+  });
+
+  assert.equal(uploads, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    uploaded: 0,
+    errors: [],
+    interrupted: false,
+    processed: 0,
+    total: 0,
+  });
 });

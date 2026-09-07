@@ -19,6 +19,10 @@ const reportStyles = readFileSync(
   fileURLToPath(new URL("../app/telemetry/[id]/page.module.css", import.meta.url)),
   "utf8",
 );
+const analysisTabsSource = readFileSync(
+  fileURLToPath(new URL("../app/telemetry/[id]/analysis-tabs.tsx", import.meta.url)),
+  "utf8",
+);
 const replayTablePageSource = readFileSync(
   fileURLToPath(new URL("../app/replays/[id]/table/page.tsx", import.meta.url)),
   "utf8",
@@ -78,4 +82,20 @@ test("hides improvement comparison cards when the marker is a good decision", ()
   assert.match(reportSource, /item\.marker !== "good" && <p>\{item\.explanation\}<\/p>/);
   assert.match(reportSource, /item\.marker === "good" \? styles\.singleDecisionComparison/);
   assert.match(reportStyles, /\.singleDecisionComparison \{ grid-template-columns: 1fr; \}/);
+});
+
+test("organizes replay analysis sections into accessible tabs", () => {
+  assert.doesNotMatch(reportSource, /label: "Visão geral"/);
+  assert.match(reportSource, /<div className=\{styles\.tabSection\}>[\s\S]*<AnalysisTabs items=\{analysisTabs\}>/);
+  assert.match(reportSource, /const analysisTabs = \[\s*\{ id: "telemetry"/);
+  assert.match(reportSource, /label: "Treinador"/);
+  assert.doesNotMatch(reportSource, /label: "Caderno"/);
+  assert.doesNotMatch(reportSource, /<WorkspacePanel/);
+  assert.match(reportSource, /label: "Telemetria"/);
+  assert.match(analysisTabsSource, /role="tablist"/);
+  assert.match(analysisTabsSource, /role="tab"/);
+  assert.match(analysisTabsSource, /role="tabpanel"/);
+  assert.match(analysisTabsSource, /event\.key === "ArrowRight"/);
+  assert.match(analysisTabsSource, /event\.key === "ArrowLeft"/);
+  assert.match(reportStyles, /\.tabList \{[^}]*overflow-x: auto;/);
 });

@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "../db";
 import { uploadEvents, users } from "../db/schema";
-import type { ReplayDocument } from "./replays";
+import { replayStartedAtT0, type ReplayDocument } from "./replays";
 
 export const UPLOAD_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const UPLOAD_HEALTH_DAYS = 7;
@@ -14,6 +14,7 @@ export const UPLOAD_EVENT_CATEGORIES = [
   "error",
   "duplicate",
   "non_t0",
+  "truncated",
   "corrupt",
 ] as const;
 
@@ -24,7 +25,8 @@ export const UPLOAD_EVENT_CATEGORY_LABELS: Record<UploadEventCategory, string> =
   error: "Uploads com erro",
   duplicate: "Arquivos duplicados",
   non_t0: "Não começou no T0",
-  corrupt: "Arquivos corrompidos",
+  truncated: "Uploads truncados",
+  corrupt: "Arquivos inválidos",
 };
 
 export type UploadEventInput = {
@@ -174,26 +176,6 @@ function sanitizeSourceMatchId(value: unknown): string | null {
   return sanitized || null;
 }
 
-export function firstReplayTurnNo(document: ReplayDocument): number | null {
-  for (const frame of document.match.frames) {
-    const value = frame.payload?.turnNo;
-    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) continue;
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
-  }
-  return null;
-}
-
-export function replayStartedAtT0(document: ReplayDocument): boolean {
-  for (const frame of document.match.frames) {
-    const value = frame.payload?.turnNo;
-    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) continue;
-    // Older captures without a turn number are left to the existing replay validator.
-    return Number.isFinite(Number(value)) && Number(value) === 0;
-  }
-  return true;
-}
-
 export function classifyUploadAttempt(input: {
   document?: ReplayDocument | null;
   duplicate?: boolean;
@@ -201,6 +183,8 @@ export function classifyUploadAttempt(input: {
 }): UploadEventCategory {
   if (input.duplicate) return "duplicate";
   if (input.errorCode === "DUPLICATE_REPLAY") return "duplicate";
+  if (input.errorCode === "PARTIAL_REPLAY") return "non_t0";
+  if (input.errorCode === "BODY_TRUNCATED") return "truncated";
   if (["INVALID_UTF8", "INVALID_JSON", "INVALID_STRUCTURE", "STRUCTURE_LIMIT", "INVALID_TIMESTAMP"].includes(input.errorCode || "")) {
     return "corrupt";
   }

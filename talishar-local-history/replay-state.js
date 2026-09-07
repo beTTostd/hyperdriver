@@ -496,16 +496,29 @@ export function compactReplayMatch(match) {
     "capturedBytes",
   ]) || {};
   if (match.capture) {
-    compacted.capture = compactRecord(match.capture, ["source", "startedAt", "pageUrl", "privacy"]);
+    compacted.capture = compactRecord(match.capture, [
+      "source",
+      "startedAt",
+      "pageUrl",
+      "privacy",
+      "quality",
+      "startedTurn",
+      "interrupted",
+      "gameId",
+    ]);
   }
   if (match.summary) {
     compacted.summary = compactRecord(match.summary, ["turn", "activePlayer", "winner"]);
+  }
+  if (match.completion) {
+    compacted.completion = compactRecord(match.completion, ["reason", "source", "at", "result"]);
   }
   compacted.sync = replaySyncState(match);
   compacted.frames = Array.isArray(match.frames) ? match.frames.map(compactReplayFrame) : [];
   compacted.decisionEvents = Array.isArray(match.decisionEvents)
     ? match.decisionEvents.slice(0, 5_000).map(compactDecisionEvent).filter(Boolean)
     : [];
+  normalizeReplayCapture(compacted);
   return compacted;
 }
 
@@ -521,6 +534,36 @@ export function compactReplayDocument(document) {
     ...(isScalar(document.exportedAt) ? { exportedAt: document.exportedAt } : {}),
     match: compactedMatch,
   };
+}
+
+export function firstReplayTurnNo(match) {
+  const frames = Array.isArray(match?.frames) ? match.frames : [];
+  for (const frame of frames) {
+    const value = frame?.payload?.turnNo;
+    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) continue;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function replayCaptureQuality(match) {
+  if (!match || typeof match !== "object" || Array.isArray(match)) return "unknown";
+  if (match.capture?.interrupted === true || match.capture?.quality === "partial") return "partial";
+  const firstTurn = firstReplayTurnNo(match);
+  if (firstTurn === null) return "unknown";
+  return firstTurn === 0 ? "complete" : "partial";
+}
+
+export function normalizeReplayCapture(match) {
+  if (!match || typeof match !== "object" || Array.isArray(match)) return match;
+  if (!match.capture || typeof match.capture !== "object" || Array.isArray(match.capture)) {
+    match.capture = {};
+  }
+  const firstTurn = firstReplayTurnNo(match);
+  if (firstTurn !== null) match.capture.startedTurn = firstTurn;
+  match.capture.quality = replayCaptureQuality(match);
+  return match;
 }
 
 function winnerFromChatLog(value) {
@@ -556,8 +599,18 @@ export function isFinished(indicator) {
   return gameOver === true || gameOver === "true" || gameOver === "1" || gameOver === 1 || phase === "OVER";
 }
 
+export function replayCompletion(match) {
+  const completion = match?.completion;
+  if (!completion || typeof completion !== "object" || Array.isArray(completion)) return null;
+  if (!["concession", "claimed_victory", "manual"].includes(completion.reason)) return null;
+  if (!["victory", "defeat"].includes(completion.result)) return null;
+  if (typeof completion.at !== "string" || !Number.isFinite(Date.parse(completion.at))) return null;
+  return completion;
+}
+
 export function isCompleteMatch(match) {
   if (match.status === "finished") return true;
+  if (replayCompletion(match)) return true;
   return match.frames.some((frame) => isFinished(frame.indicators || indicators(frame.payload)));
 }
 
@@ -624,6 +677,8 @@ function pendingAttackResult(frame, localPlayer) {
 }
 
 export function replayResult(match) {
+  const completion = replayCompletion(match);
+  if (completion) return completion.result;
   const frame = finalFrame(match);
   const localPlayer = localPlayerNumber(match);
   const winner = winnerResult(frame?.indicators?.winner, localPlayer)

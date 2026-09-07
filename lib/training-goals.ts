@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lte, ne } from "drizzle-orm";
 import { getDb } from "../db";
 import {
   handAnalyses,
@@ -30,7 +30,11 @@ function tags(value: string) {
 }
 
 function analyzedReplayRows(userId: number, options: { before?: number; after?: number; gameMode?: string | null; heroId?: string | null }) {
-  const conditions = [eq(replays.userId, userId), eq(replayAnalyses.status, "ready")];
+  const conditions = [
+    eq(replays.userId, userId),
+    ne(replays.participation, "watched"),
+    eq(replayAnalyses.status, "ready"),
+  ];
   if (options.before !== undefined) conditions.push(lte(replays.startedAt, options.before));
   if (options.after !== undefined) conditions.push(gt(replays.startedAt, options.after));
   if (options.gameMode) conditions.push(eq(replays.gameMode, options.gameMode));
@@ -48,7 +52,7 @@ function patternMetrics(replayIds: number[], patternTag: string) {
 
 function baseline(userId: number, replayId: number, patternTag: string, gameMode: string | null, heroId: string | null) {
   const source = findUserReplay(userId, String(replayId));
-  if (!source) throw new GoalError("Replay de origem não encontrado.", 404);
+  if (!source || source.participation === "watched") throw new GoalError("Replay de origem não encontrado.", 404);
   const candidates = analyzedReplayRows(userId, { before: source.startedAt, gameMode, heroId }).filter((replay) => replay.id !== source.id);
   const eligibleIds: number[] = [];
   for (const replay of candidates) {
@@ -72,7 +76,7 @@ export function createGoal(userId: number, input: Record<string, unknown>) {
   let frozen: ReturnType<typeof baseline> | null = null;
   if (origin === "analysis_pattern") {
     const source = findUserReplay(userId, String(input.sourceReplayId ?? ""));
-    if (!source) throw new GoalError("Replay de origem não encontrado.", 404);
+    if (!source || source.participation === "watched") throw new GoalError("Replay de origem não encontrado.", 404);
     sourceReplayId = source.id;
     gameMode ??= source.gameMode;
     heroId ??= source.playerHeroId;
@@ -154,7 +158,7 @@ export function addGoalCheckin(userId: number, goalId: number, input: Record<str
   const goal = getGoal(userId, goalId);
   if (!goal || goal.origin !== "manual" || goal.status !== "active") return null;
   const replay = findUserReplay(userId, String(input.replayId ?? ""));
-  if (!replay || replay.startedAt <= goal.startedAt) throw new GoalError("O check-in precisa usar um replay posterior à criação da meta.", 422);
+  if (!replay || replay.participation === "watched" || replay.startedAt <= goal.startedAt) throw new GoalError("O check-in precisa usar uma partida jogada posterior à criação da meta.", 422);
   const state = input.state === "met" || input.state === "not_met" ? input.state : null;
   if (!state) throw new GoalError("Resultado do check-in inválido.");
   const note = input.note === undefined ? "" : textValue(input.note, 1000, "Nota", false);

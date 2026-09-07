@@ -23,6 +23,25 @@
     );
   };
 
+  const terminalAction = (choice) => {
+    if (choice?.action === "100002") return { reason: "concession", result: "defeat" };
+    if (choice?.action === "100007") return { reason: "claimed_victory", result: "victory" };
+    return null;
+  };
+
+  const postCompletion = (completion) => {
+    if (!completion) return;
+    window.postMessage(
+      {
+        channel: CHANNEL,
+        type: "completion-event",
+        reason: completion.reason,
+        occurredAt: new Date().toISOString()
+      },
+      window.location.origin
+    );
+  };
+
   const acceptedResponseBody = (body) => typeof body !== "string" || !body.trim().startsWith("Invalid");
 
   const isTalisharGameStream = (url) => {
@@ -70,6 +89,7 @@
       const decisionPromise = decisionCapture
         .decisionFromRequest(input, init, window.location.href)
         .catch(() => null);
+      decisionPromise.then((choice) => postCompletion(terminalAction(choice))).catch(() => undefined);
       const response = await NativeFetch(input, init);
       const choice = await decisionPromise;
       if (!choice || !response.ok) return response;
@@ -81,7 +101,7 @@
       } catch {
         // An unreadable clone does not alter the original response.
       }
-      if (accepted) {
+      if (accepted && !terminalAction(choice)) {
         postDecision(choice);
       }
       return response;
@@ -106,6 +126,7 @@
       const decisionPromise = decisionCapture
         .decisionFromRequest(metadata.url, { body }, window.location.href)
         .catch(() => null);
+      decisionPromise.then((choice) => postCompletion(terminalAction(choice))).catch(() => undefined);
 
       this.addEventListener("load", () => {
         if (this.status < 200 || this.status >= 300) return;
@@ -116,7 +137,9 @@
           responseBody = undefined;
         }
         if (!acceptedResponseBody(responseBody)) return;
-        decisionPromise.then(postDecision).catch(() => undefined);
+        decisionPromise.then((choice) => {
+          if (!terminalAction(choice)) postDecision(choice);
+        }).catch(() => undefined);
       }, { once: true });
 
       return nativeSend.call(this, body);

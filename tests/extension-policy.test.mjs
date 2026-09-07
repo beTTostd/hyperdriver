@@ -2,15 +2,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   canAppendCaptureFrame,
+  captureGameId,
+  captureMatchesGame,
   captureMatchesPage,
   createKeyedTaskQueue,
   isAllowedHttpsOrigin,
   isHyperdriverOrigin,
   isValidImportedCandidate,
   isTalisharOrigin,
+  matchPagination,
   matchesToPrune,
+  normalizeGameId,
+  resumableCaptureForPage,
   MAX_STORED_MATCHES,
   MAX_TOTAL_BYTES,
+  MATCHES_PER_PAGE,
 } from "../talishar-local-history/extension-policy.js";
 
 test("does not append repeated snapshots after a match is finished", () => {
@@ -22,6 +28,54 @@ test("associates a capture id with one Talishar game URL", () => {
   const match = { capture: { pageUrl: "/game/play/2026809" } };
   assert.equal(captureMatchesPage(match, "/game/play/2026809"), true);
   assert.equal(captureMatchesPage(match, "/game/play/2026810"), false);
+});
+
+test("resumes only the newest recording for the same Talishar game page", () => {
+  const older = {
+    id: "older",
+    status: "recording",
+    updatedAt: "2026-08-20T12:00:00.000Z",
+    capture: { pageUrl: "/game/play/2026809" },
+  };
+  const newer = {
+    id: "newer",
+    status: "recording",
+    updatedAt: "2026-08-20T12:01:00.000Z",
+    capture: { pageUrl: "/game/play/2026809" },
+  };
+  const finished = {
+    id: "finished",
+    status: "finished",
+    updatedAt: "2026-08-20T12:02:00.000Z",
+    capture: { pageUrl: "/game/play/2026809" },
+  };
+
+  assert.equal(resumableCaptureForPage([older, finished, newer], "/game/play/2026809"), newer);
+  assert.equal(resumableCaptureForPage([finished], "/game/play/2026809"), null);
+  assert.equal(resumableCaptureForPage([newer], "/game/play/other"), null);
+  assert.equal(resumableCaptureForPage([newer], "/game/create"), null);
+});
+
+test("uses Talishar gameGUID to separate matches across SPA route reuse", () => {
+  const first = {
+    status: "recording",
+    updatedAt: "2026-09-07T14:00:00.000Z",
+    capture: { pageUrl: "/game/create", gameId: "game-one" },
+    frames: [],
+  };
+  const legacy = {
+    status: "recording",
+    updatedAt: "2026-09-07T14:01:00.000Z",
+    capture: { pageUrl: "/game/create" },
+    frames: [{ payload: { initialLoad: { gameGUID: "game-two" } } }],
+  };
+
+  assert.equal(normalizeGameId(" game-one "), "game-one");
+  assert.equal(normalizeGameId("unsafe game"), null);
+  assert.equal(captureGameId(legacy), "game-two");
+  assert.equal(captureMatchesGame(first, "game-one"), true);
+  assert.equal(captureMatchesGame(first, "game-two"), false);
+  assert.equal(resumableCaptureForPage([first, legacy], "/game/create", "game-two"), legacy);
 });
 
 test("accepts only HTTPS origins inside the grouped Talishar and Hyperdriver domains", () => {
@@ -81,6 +135,29 @@ test("validates imported replay identifiers, dates, frames and payloads", () => 
   assert.equal(isValidImportedCandidate({ ...valid, startedAt: "invalid" }), false);
   assert.equal(isValidImportedCandidate({ ...valid, frames: [{}] }), false);
   assert.equal(isValidImportedCandidate({ ...valid, frames: [] }), false);
+});
+
+test("pagina históricos em grupos de cinco e corrige páginas fora do intervalo", () => {
+  assert.equal(MAX_STORED_MATCHES, 10);
+  assert.equal(MATCHES_PER_PAGE, 5);
+  assert.deepEqual(matchPagination(0, 1), {
+    page: 1,
+    pageCount: 1,
+    pageSize: 5,
+    total: 0,
+    offset: 0,
+  });
+  assert.equal(matchPagination(1, 1).pageCount, 1);
+  assert.equal(matchPagination(5, 1).pageCount, 1);
+  assert.equal(matchPagination(6, 1).pageCount, 2);
+  assert.equal(matchPagination(10, 2).offset, 5);
+  assert.deepEqual(matchPagination(13, 99), {
+    page: 3,
+    pageCount: 3,
+    pageSize: 5,
+    total: 13,
+    offset: 10,
+  });
 });
 
 test("retention removes only old finished matches that have a safe copy", () => {

@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { getDb } from "../db";
 import {
   analysisFeedback,
@@ -234,6 +234,7 @@ export async function processReplayAnalysis(
   const database = getDb();
   const metadata = database.select().from(replays).where(eq(replays.id, replayId)).get();
   if (!metadata) throw new Error("Replay not found.");
+  if (metadata.participation === "watched") return "insufficient_data";
 
   try {
     const document = suppliedDocument ?? JSON.parse(
@@ -380,6 +381,20 @@ export function getReplayDecisionAnalysis(
   role: "admin" | "user",
 ): ReplayDecisionAnalysis {
   const database = getDb();
+  if (replay.participation === "watched") {
+    return {
+      status: "insufficient_data",
+      observationCount: 0,
+      analysisCount: 0,
+      versions: null,
+      summary: null,
+      methodology: null,
+      handAnalyses: [],
+      recommendationsVisible: false,
+      shadowMode: false,
+      reason: "watched_replay",
+    };
+  }
   const run = database
     .select({ run: replayAnalyses, model: analysisModelVersions })
     .from(replayAnalyses)
@@ -498,7 +513,11 @@ export function aggregateDecisionAnalysis(
   userId: number,
   options: { startAt?: number | null; endAt?: number | null; mode?: string | null } = {},
 ): DecisionAnalysisAggregate {
-  const conditions = [eq(replays.userId, userId), inArray(handAnalyses.confidence, ["high", "medium"] as const)];
+  const conditions = [
+    eq(replays.userId, userId),
+    ne(replays.participation, "watched"),
+    inArray(handAnalyses.confidence, ["high", "medium"] as const),
+  ];
   if (options.startAt !== null && options.startAt !== undefined) conditions.push(gte(replays.startedAt, options.startAt));
   if (options.endAt !== null && options.endAt !== undefined) conditions.push(lte(replays.startedAt, options.endAt));
   if (options.mode && options.mode !== "all") conditions.push(eq(replays.gameMode, options.mode));

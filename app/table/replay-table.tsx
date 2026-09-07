@@ -23,6 +23,7 @@ import {
   markerSummary,
   squareCardImageUrl,
 } from "./card-presentation.js";
+import ReplayPlayerActions from "./replay-player-actions";
 import styles from "./replay-table.module.css";
 
 type Card = {
@@ -212,14 +213,13 @@ function MarkerIcon({ kind, abbreviation }: { kind: string; abbreviation: string
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="M12 1v5M12 18v5M1 12h5M18 12h5" /></svg>;
 }
 
-function TransportIcon({ name }: { name: "back" | "first" | "previous" | "play" | "pause" | "next" | "last" }) {
+function TransportIcon({ name }: { name: "back" | "previous" | "play" | "pause" | "next" }) {
   if (name === "play") return <svg className={`${styles.transportIcon} ${styles.transportIconFill}`} viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z" /></svg>;
   if (name === "pause") return <svg className={`${styles.transportIcon} ${styles.transportIconFill}`} viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z" /></svg>;
   if (name === "back") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16" /></svg>;
-  if (name === "first") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14m14-14-8 7 8 7V5Z" /></svg>;
   if (name === "previous") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>;
   if (name === "next") return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>;
-  return <svg className={styles.transportIcon} viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l8 7-8 7V5Z" /></svg>;
+  return null;
 }
 
 function CardMarkers({ card }: { card: Card }) {
@@ -540,7 +540,6 @@ export default function TalisharTable({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
-  const [bookmarkStatus, setBookmarkStatus] = useState("");
 
   const updateSidebarWidth = useCallback((width: number) => {
     setSidebarWidth(Math.min(maximumSidebarWidth, Math.max(minimumSidebarWidth, width)));
@@ -624,15 +623,6 @@ export default function TalisharTable({
 
   useEffect(() => { onFrameChange?.(index); }, [index, onFrameChange]);
 
-  async function bookmarkCurrentFrame() {
-    if (!replayId) return;
-    const title = window.prompt("Título do bookmark", `Momento no frame ${index + 1}`)?.trim();
-    if (!title) return;
-    const response = await fetch(`/api/replays/${replayId}/bookmarks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ frameIndex: index, title }) });
-    const body = await response.json();
-    setBookmarkStatus(response.ok ? "Momento salvo" : body.error || "Não foi possível salvar");
-  }
-
   const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
   const currentFrame = frames[index];
   const current = currentFrame?.payload;
@@ -676,7 +666,16 @@ export default function TalisharTable({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!frames.length || event.target instanceof HTMLInputElement) return;
+      const target = event.target;
+      if (
+        !frames.length
+        || target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || target instanceof HTMLButtonElement
+        || target instanceof HTMLAnchorElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
       if (event.key === "Escape") {
         closePreview();
         setValueOpen(false);
@@ -793,16 +792,12 @@ export default function TalisharTable({
           </button>
         </div>
 
-        <section className={styles.timeline} aria-label="Controles do replay">
+        <section className={`${styles.timeline} ${workspaceEnabled && replayId ? styles.timelineWithActions : ""}`} aria-label="Controles do replay">
           <div className={styles.transport}>
             <Link className={styles.backButton} href={backHref} aria-label="Voltar" title="Voltar"><TransportIcon name="back" /></Link>
-            {workspaceEnabled && <button type="button" onClick={bookmarkCurrentFrame} aria-label="Criar bookmark no frame atual" title={bookmarkStatus || "Criar bookmark no frame atual"}>☆</button>}
-            {workspaceEnabled && replayId && <Link className={styles.backButton} href={`/replays/${replayId}#workspace-title`} aria-label="Compartilhar com treinador" title="Compartilhar com treinador">↗</Link>}
-            <button type="button" onClick={() => { setPlaying(false); setIndex(0); }} aria-label="Primeiro snapshot" title="Primeiro snapshot"><TransportIcon name="first" /></button>
-            <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Snapshot anterior" title="Snapshot anterior"><TransportIcon name="previous" /></button>
+            <button type="button" disabled={index === 0} onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Frame anterior" title="Frame anterior"><TransportIcon name="previous" /></button>
             <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
-            <button type="button" onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo snapshot" title="Próximo snapshot"><TransportIcon name="next" /></button>
-            <button type="button" onClick={() => { setPlaying(false); setIndex(frames.length - 1); }} aria-label="Último snapshot" title="Último snapshot"><TransportIcon name="last" /></button>
+            <button type="button" disabled={index === frames.length - 1} onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo frame" title="Próximo frame"><TransportIcon name="next" /></button>
           </div>
           <div className={styles.scrubber}>
             <div className={styles.turns}>{markers.map((marker, markerIndex) => {
@@ -829,6 +824,7 @@ export default function TalisharTable({
             <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
           </div>
           <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
+          {workspaceEnabled && replayId && <ReplayPlayerActions replayId={replayId} frameIndex={index} onOpen={() => setPlaying(false)} />}
         </section>
         <CardPreview preview={preview?.frameIndex === index ? preview : null} onClose={closePreview} />
         {valueOpen && (

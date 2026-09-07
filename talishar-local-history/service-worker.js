@@ -3,6 +3,7 @@ import {
   compactReplayMatch,
   compactReplayPayload,
   compactDecisionChoice,
+  firstReplayTurnNo,
   indicators,
   isCompleteMatch,
   isFinished,
@@ -10,21 +11,29 @@ import {
   markReplaySynced,
   markReplaySyncError,
   normalizeCompletion,
+  normalizeReplayCapture,
   normalizeReplaySync,
+  replayCaptureQuality,
   SYNC_ORIGINS,
 } from "./replay-state.js";
 import {
   canAppendCaptureFrame,
+  captureGameId,
+  captureMatchesGame,
   captureMatchesPage,
   createKeyedTaskQueue,
   isValidImportedCandidate,
+  matchPagination,
   matchesToPrune,
+  normalizeGameId,
+  resumableCaptureForPage,
   MAX_BRIDGE_PAYLOAD_BYTES,
   MAX_FRAME_BYTES,
   MAX_IMPORT_BYTES,
   MAX_MATCH_BYTES,
   MAX_STORED_MATCHES,
   MAX_TOTAL_BYTES,
+  MATCHES_PER_PAGE,
   utf8Size,
   UUID_PATTERN,
   isTalisharOrigin,
@@ -33,9 +42,11 @@ import {
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
-const SCHEMA_VERSION = "0.4.0";
+const SCHEMA_VERSION = "0.6.0";
 const CAPTURE_ERROR_KEY = "captureError";
+const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 const enqueueCapture = createKeyedTaskQueue();
+let creatingOffscreenDocument = null;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -75,7 +86,47 @@ async function listMatches() {
   return withStore("readonly", (store) => store.getAll());
 }
 
-async function enforceRetention(protectedId = null, reservedSlots = 0, incomingBytes = 0) {
+async function listMatchPage(requestedPage) {
+  const total = await withStore("readonly", (store) => store.count());
+  const pagination = matchPagination(total, requestedPage);
+  if (total === 0) return { ...pagination, matches: [] };
+
+  const database = await openDatabase();
+  const matches = await new Promise((resolve, reject) => {
+    const results = [];
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).index("startedAt").openCursor(null, "prev");
+    let advanced = pagination.offset === 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor || results.length >= MATCHES_PER_PAGE) return;
+      if (!advanced) {
+        advanced = true;
+        cursor.advance(pagination.offset);
+        return;
+      }
+      results.push(cursor.value);
+      cursor.continue();
+    };
+    transaction.oncomplete = () => {
+      database.close();
+      resolve(results);
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(transaction.error);
+    };
+  });
+
+  return { ...pagination, matches };
+}
+
+async function cleanupRetention(protectedId = null, reservedSlots = 0, incomingBytes = 0) {
   const matches = await listMatches();
   const projected = [
     ...matches,
@@ -91,12 +142,24 @@ async function enforceRetention(protectedId = null, reservedSlots = 0, incomingB
     (total, match) => total + (Number(match.capturedBytes) || utf8Size(JSON.stringify(match))),
     incomingBytes,
   );
-  if (
-    matches.length + reservedSlots - ids.length > MAX_STORED_MATCHES ||
-    remainingBytes > MAX_TOTAL_BYTES
-  ) {
+  return {
+    deletedIds: ids,
+    overCount: remaining.length + reservedSlots > MAX_STORED_MATCHES,
+    overBytes: remainingBytes > MAX_TOTAL_BYTES,
+  };
+}
+
+async function enforceRetention(
+  protectedId = null,
+  reservedSlots = 0,
+  incomingBytes = 0,
+  enforceCount = true,
+) {
+  const result = await cleanupRetention(protectedId, reservedSlots, incomingBytes);
+  if ((enforceCount && result.overCount) || result.overBytes) {
     throw new Error("O limite de armazenamento local foi atingido. Exporte ou apague uma gravação antes de continuar.");
   }
+  return result;
 }
 
 async function setCaptureError(message) {
@@ -184,7 +247,7 @@ function parseImportedMatch(raw) {
     syncError: candidate.syncError,
     exportedAt: candidate.exportedAt || document.exportedAt || null
   };
-  const normalized = normalizeReplaySync(normalizeCompletion(match));
+  const normalized = normalizeReplayCapture(normalizeReplaySync(normalizeCompletion(match)));
   normalized.capturedBytes = utf8Size(JSON.stringify(normalized));
   if (normalized.capturedBytes > MAX_MATCH_BYTES) {
     throw new Error("O replay compactado excede o limite local de 40 MB.");
@@ -199,10 +262,14 @@ async function importMatch(raw) {
     && Array.isArray(existing.frames)
     && existing.frames.length >= match.frames.length
     && (existing.status === "finished" || match.status !== "finished");
-  if (existingIsCurrent) return { imported: false, id: match.id };
+  if (existingIsCurrent) {
+    await cleanupRetention();
+    return { imported: false, id: match.id };
+  }
   const existingBytes = Number(existing?.capturedBytes) || (existing ? utf8Size(JSON.stringify(existing)) : 0);
   await enforceRetention(match.id, existing ? 0 : 1, Math.max(0, match.capturedBytes - existingBytes));
   await putMatch(match);
+  await cleanupRetention(match.id);
   return { imported: true, id: match.id };
 }
 
@@ -216,15 +283,18 @@ async function requestSynchronization() {
   return { requested: responses.filter((response) => response?.ok).length };
 }
 
-function makeMatch(pageSessionId, startedAt, pageUrl) {
-  return {
+function makeMatch(pageSessionId, startedAt, pageUrl, gameId = null) {
+  const match = {
     id: pageSessionId,
     schemaVersion: SCHEMA_VERSION,
     capture: {
       source: "Talishar Local History",
       startedAt,
       pageUrl,
-      privacy: "Authentication fields, chat and raw requests are discarded; decisions keep only action code, zone and sanitized card or option identifiers."
+      privacy: "Authentication fields, chat and raw requests are discarded; decisions keep only action code, zone and sanitized card or option identifiers.",
+      quality: "unknown",
+      startedTurn: null,
+      interrupted: false
     },
     status: "recording",
     startedAt,
@@ -242,6 +312,8 @@ function makeMatch(pageSessionId, startedAt, pageUrl) {
     sync: { targets: {}, errors: {} },
     capturedBytes: 0
   };
+  if (gameId) match.capture.gameId = gameId;
+  return match;
 }
 
 async function ensureMatch(message) {
@@ -249,14 +321,33 @@ async function ensureMatch(message) {
     ? message.pageSessionId
     : crypto.randomUUID();
   const existing = await getMatch(pageSessionId);
-  if (captureMatchesPage(existing, message.pageUrl)) {
+  const gameId = normalizeGameId(message.gameId);
+  const existingGameId = captureGameId(existing);
+  const matchesIdentity = gameId
+    ? (!existingGameId && existing?.frames?.length === 0) || captureMatchesGame(existing, gameId)
+    : captureMatchesPage(existing, message.pageUrl);
+  if (matchesIdentity) {
     const compacted = compactReplayMatch(existing);
+    if (gameId) compacted.capture.gameId = gameId;
     await putMatch(compacted);
     return compacted;
   }
   if (existing) pageSessionId = crypto.randomUUID();
+  const resumed = resumableCaptureForPage(await listMatches(), message.pageUrl, gameId);
+  if (resumed) {
+    const compacted = compactReplayMatch(resumed);
+    compacted.capture.interrupted = true;
+    normalizeReplayCapture(compacted);
+    await putMatch(compacted);
+    return compacted;
+  }
   await enforceRetention(pageSessionId, 1);
-  const match = makeMatch(pageSessionId, message.startedAt || new Date().toISOString(), message.pageUrl || "/");
+  const match = makeMatch(
+    pageSessionId,
+    message.startedAt || new Date().toISOString(),
+    message.pageUrl || "/",
+    gameId,
+  );
   await putMatch(match);
   return match;
 }
@@ -265,14 +356,14 @@ async function recordFrame(message) {
   if (typeof message.pageSessionId !== "string" || !UUID_PATTERN.test(message.pageSessionId)) {
     throw new Error("A sessão de captura é inválida.");
   }
-  const match = await ensureMatch(message);
-  if (!canAppendCaptureFrame(match)) return;
-
   if (typeof message.payload !== "string" || utf8Size(message.payload) > MAX_BRIDGE_PAYLOAD_BYTES) {
     throw new Error("Uma atualização do Talishar excedeu o limite de captura de 5 MB.");
   }
 
   const parsedPayload = parseAndSanitize(message.payload);
+  const gameId = normalizeGameId(parsedPayload?.initialLoad?.gameGUID);
+  const match = await ensureMatch({ ...message, gameId });
+  if (!canAppendCaptureFrame(match)) return match;
   const indicator = indicators(parsedPayload);
   const payload = compactReplayPayload(parsedPayload);
   const frame = {
@@ -283,6 +374,13 @@ async function recordFrame(message) {
     payload
   };
 
+  if (match.frames.length === 0) {
+    const startedTurn = firstReplayTurnNo({ frames: [frame] });
+    match.capture = match.capture || {};
+    match.capture.startedTurn = startedTurn;
+    match.capture.quality = startedTurn === 0 ? "complete" : startedTurn === null ? "unknown" : "partial";
+  }
+
   const frameBytes = utf8Size(JSON.stringify(frame));
   if (frameBytes > MAX_FRAME_BYTES) {
     throw new Error("Um snapshot compactado excedeu o limite local de 512 KB.");
@@ -291,7 +389,7 @@ async function recordFrame(message) {
   if (capturedBytes + frameBytes > MAX_MATCH_BYTES) {
     throw new Error("A partida atingiu o limite local de 40 MB. Exporte ou apague gravações antigas.");
   }
-  await enforceRetention(match.id, 0, frameBytes);
+  await enforceRetention(match.id, 0, frameBytes, false);
 
   match.frames.push(frame);
   match.capturedBytes = capturedBytes + frameBytes;
@@ -309,6 +407,50 @@ async function recordFrame(message) {
   }
 
   await putMatch(match);
+  return match;
+}
+
+async function finishMatch(match, completion) {
+  if (!match || match.status === "finished") return match;
+  if (replayCaptureQuality(match) !== "complete") {
+    throw new Error("Somente uma captura iniciada no T0 pode ser finalizada.");
+  }
+  match.status = "finished";
+  match.endedAt = completion.at;
+  match.updatedAt = completion.at;
+  match.result = completion.result;
+  match.completion = completion;
+  await putMatch(compactReplayMatch(match));
+  return match;
+}
+
+async function recordCompletion(message) {
+  if (!["concession", "claimed_victory"].includes(message.reason)) {
+    throw new Error("O tipo de encerramento é inválido.");
+  }
+  const result = message.reason === "concession" ? "defeat" : "victory";
+  const match = await getMatch(message.pageSessionId);
+  if (!match) throw new Error("Replay não encontrado.");
+  return finishMatch(match, {
+    reason: message.reason,
+    source: "talishar-action",
+    at: message.occurredAt || new Date().toISOString(),
+    result,
+  });
+}
+
+async function finishMatchManually(message) {
+  if (!["victory", "defeat"].includes(message.result)) {
+    throw new Error("O resultado informado é inválido.");
+  }
+  const match = await getMatch(message.id);
+  if (!match) throw new Error("Replay não encontrado.");
+  return finishMatch(match, {
+    reason: "manual",
+    source: "extension-popup",
+    at: match.updatedAt || new Date().toISOString(),
+    result: message.result,
+  });
 }
 
 async function recordDecision(message) {
@@ -337,36 +479,96 @@ async function recordDecision(message) {
   if (capturedBytes + eventBytes > MAX_MATCH_BYTES) {
     throw new Error("A partida atingiu o limite local de 40 MB. Exporte ou apague gravações antigas.");
   }
-  await enforceRetention(match.id, 0, eventBytes);
+  await enforceRetention(match.id, 0, eventBytes, false);
   match.decisionEvents.push(event);
   match.capturedBytes = capturedBytes + eventBytes;
   match.updatedAt = event.occurredAt;
   await putMatch(match);
 }
 
-function fileName(match) {
-  const date = (match.startedAt || new Date().toISOString()).replace(/[:.]/g, "-");
-  return `talishar-history-${date}-${match.id.slice(0, 8)}.json`;
+async function ensureOffscreenDocument() {
+  const documentUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [documentUrl],
+  });
+  if (contexts.length) return;
+  if (!creatingOffscreenDocument) {
+    creatingOffscreenDocument = chrome.offscreen.createDocument({
+      url: OFFSCREEN_DOCUMENT_PATH,
+      reasons: ["BLOBS"],
+      justification: "Gerar arquivos JSON grandes sem bloquear o popup da extensão.",
+    }).finally(() => {
+      creatingOffscreenDocument = null;
+    });
+  }
+  await creatingOffscreenDocument;
 }
 
-async function exportMatch(match) {
-  match = compactReplayMatch(match);
-  await putMatch(match);
-  const exportDocument = {
-    schemaVersion: match.schemaVersion,
-    exportedAt: new Date().toISOString(),
-    match
-  };
-  const url = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(exportDocument, null, 2))}`;
-  await chrome.downloads.download({
-    url,
-    filename: `Talishar Local History/${fileName(match)}`,
-    saveAs: false,
-    conflictAction: "uniquify"
+async function notifyPopup(status) {
+  await chrome.runtime.sendMessage({ ...status, target: "popup" }).catch(() => undefined);
+}
+
+async function queueExportMatch(matchId) {
+  if (typeof matchId !== "string") throw new Error("Partida não encontrada.");
+  await ensureOffscreenDocument();
+  const response = await chrome.runtime.sendMessage({
+    type: "queue-export-match",
+    target: "offscreen",
+    matchId,
+    jobId: crypto.randomUUID(),
   });
-  match.exportedAt = new Date().toISOString();
-  await putMatch(match);
-  return { filename: fileName(match) };
+  if (!response?.ok) throw new Error(response?.error || "Não foi possível enfileirar o download.");
+  const result = response.result;
+  await notifyPopup({
+    type: "export-match-status",
+    status: "preparing",
+    matchId,
+    jobId: result.jobId,
+  });
+  return result;
+}
+
+async function startExportDownload(message, sender) {
+  if (sender.url !== chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)) {
+    throw new Error("Origem do download não autorizada.");
+  }
+  const blobPrefix = `blob:chrome-extension://${chrome.runtime.id}/`;
+  if (typeof message.url !== "string" || !message.url.startsWith(blobPrefix)) {
+    throw new Error("URL de download inválida.");
+  }
+  if (
+    typeof message.filename !== "string" ||
+    !/^talishar-history-[\p{L}\p{N}_.:-]+\.json$/u.test(message.filename)
+  ) {
+    throw new Error("Nome do arquivo de download inválido.");
+  }
+  return chrome.downloads.download({
+    url: message.url,
+    filename: `Talishar Local History/${message.filename}`,
+    saveAs: false,
+    conflictAction: "uniquify",
+  });
+}
+
+async function handleExportJobStatus(message) {
+  if (!(["started", "error"].includes(message.status))) return;
+  if (message.status === "started") {
+    const match = await getMatch(message.matchId);
+    if (match) {
+      match.exportedAt = message.exportedAt || new Date().toISOString();
+      await putMatch(match);
+      await cleanupRetention();
+    }
+  }
+  await notifyPopup({
+    type: "export-match-status",
+    status: message.status,
+    matchId: message.matchId,
+    jobId: message.jobId,
+    filename: message.filename,
+    error: message.error,
+  });
 }
 
 function senderOrigin(sender) {
@@ -383,7 +585,7 @@ function senderOrigin(sender) {
 
 function isTrustedMessage(message, sender) {
   const origin = senderOrigin(sender);
-  if (["capture-session-start", "capture-frame", "capture-decision"].includes(message?.type)) {
+  if (["capture-session-start", "capture-frame", "capture-decision", "capture-completion"].includes(message?.type)) {
     return isTalisharOrigin(origin);
   }
   if (["list-sync-pending", "get-sync-match", "mark-match-synced", "mark-sync-error"].includes(message?.type)) {
@@ -393,22 +595,44 @@ function isTrustedMessage(message, sender) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (["offscreen", "popup"].includes(message?.target)) return false;
   (async () => {
     if (!message?.type) return;
     if (!isTrustedMessage(message, sender)) throw new Error("Origem da mensagem não autorizada.");
+    if (message.type === "start-export-download" && message.target === "background") {
+      const downloadId = await startExportDownload(message, sender);
+      sendResponse({ ok: true, downloadId });
+      return;
+    }
+    if (message.type === "export-job-status" && message.target === "background") {
+      await handleExportJobStatus(message);
+      sendResponse({ ok: true });
+      return;
+    }
     if (message.type === "capture-session-start") {
+      await cleanupRetention(message.pageSessionId);
       const match = await ensureMatch(message);
       await clearCaptureError();
       sendResponse({ ok: true, pageSessionId: match.id });
       return;
     }
     if (message.type === "capture-frame") {
-      await enqueueCapture(message.pageSessionId, () => recordFrame(message));
-      sendResponse({ ok: true });
+      const match = await enqueueCapture(message.pageSessionId, () => recordFrame(message));
+      sendResponse({ ok: true, pageSessionId: match?.id || message.pageSessionId });
       return;
     }
     if (message.type === "capture-decision") {
       await enqueueCapture(message.pageSessionId, () => recordDecision(message));
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "capture-completion") {
+      await enqueueCapture(message.pageSessionId, () => recordCompletion(message));
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "finish-match-manually") {
+      await finishMatchManually(message);
       sendResponse({ ok: true });
       return;
     }
@@ -421,34 +645,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === "list-matches") {
-      const matches = (await listMatches())
-        .map((match) => normalizeCompletion(compactReplayMatch(match)))
-        .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
-      await Promise.all(matches.map(putMatch));
+      const result = await listMatchPage(message.page);
+      const matches = result.matches
+        .map((match) => normalizeReplayCapture(normalizeCompletion(compactReplayMatch(match))));
       const captureState = await chrome.storage.local.get(CAPTURE_ERROR_KEY);
-      sendResponse({ ok: true, captureError: captureState[CAPTURE_ERROR_KEY] || null, matches: matches.map((match) => ({
-        id: match.id,
-        status: match.status,
-        startedAt: match.startedAt,
-        updatedAt: match.updatedAt,
-        endedAt: match.endedAt,
-        frameCount: match.frames.length,
-        gameMode: gameMode(match),
-        summary: match.summary,
-        exportedAt: match.exportedAt,
-        sync: match.sync || null,
-        syncError: match.syncError || null
-      })) });
+      sendResponse({
+        ok: true,
+        captureError: captureState[CAPTURE_ERROR_KEY] || null,
+        page: result.page,
+        pageCount: result.pageCount,
+        total: result.total,
+        matches: matches.map((match) => ({
+          id: match.id,
+          status: match.status,
+          startedAt: match.startedAt,
+          updatedAt: match.updatedAt,
+          endedAt: match.endedAt,
+          frameCount: match.frames.length,
+          captureQuality: replayCaptureQuality(match),
+          startedTurn: match.capture?.startedTurn ?? null,
+          captureInterrupted: match.capture?.interrupted === true,
+          gameMode: gameMode(match),
+          summary: match.summary,
+          exportedAt: match.exportedAt,
+          sync: match.sync || null,
+          syncError: match.syncError || null,
+        })),
+      });
       return;
     }
     if (message.type === "list-sync-pending") {
       const origin = senderOrigin(sender);
-      const matches = (await listMatches()).map((match) => normalizeCompletion(compactReplayMatch(match)));
+      const matches = (await listMatches()).map((match) => normalizeReplayCapture(normalizeCompletion(compactReplayMatch(match))));
       await Promise.all(matches.map(putMatch));
       sendResponse({
         ok: true,
         ids: matches.filter((match) => (
-          match.status === "finished" && !isReplaySyncedToOrigin(match, origin)
+          match.status === "finished" &&
+          replayCaptureQuality(match) === "complete" &&
+          !isReplaySyncedToOrigin(match, origin)
         )).map((match) => match.id)
       });
       return;
@@ -456,7 +691,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "get-sync-match") {
       const origin = senderOrigin(sender);
       const match = compactReplayMatch(await getMatch(message.id));
-      if (!match || !isCompleteMatch(match) || isReplaySyncedToOrigin(match, origin)) {
+      if (
+        !match ||
+        !isCompleteMatch(match) ||
+        replayCaptureQuality(match) !== "complete" ||
+        isReplaySyncedToOrigin(match, origin)
+      ) {
         sendResponse({ ok: true, document: null });
         return;
       }
@@ -477,6 +717,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         replayId: message.replayId
       });
       await putMatch(match);
+      await cleanupRetention();
       sendResponse({ ok: true });
       return;
     }
@@ -490,15 +731,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === "export-match") {
-      const match = await getMatch(message.id);
-      if (!match) throw new Error("Partida não encontrada.");
-      const result = await exportMatch(match);
-      sendResponse({ ok: true, result });
+      sendResponse({ ok: true, result: await queueExportMatch(message.id) });
       return;
     }
     if (message.type === "delete-match") {
       await deleteMatch(message.id);
+      await cleanupRetention();
       sendResponse({ ok: true });
+      return;
     }
   })().catch(async (error) => {
     if (["capture-frame", "capture-decision"].includes(message?.type)) {

@@ -1,0 +1,133 @@
+.uploadForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--signal-red);
+  background: var(--panel);
+}
+
+.uploadForm label {
+  display: grid;
+  gap: 9px;
+  color: var(--muted);
+  font: 800 9px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.uploadForm input {
+  min-height: var(--touch-target);
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  color: var(--paper);
+  background: #181b1d;
+  font: 10px var(--font-mono);
+}
+
+.uploadForm input::file-selector-button {
+  margin-right: 12px;
+  padding: 7px 10px;
+  border: 0;
+  color: var(--carbon);
+  background: var(--paper);
+  cursor: pointer;
+  font: 800 9px var(--font-body);
+  text-transform: uppercase;
+}
+
+.uploadForm button,
+.download {
+  display: inline-flex;
+  min-height: var(--touch-target);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--signal-red);
+  color: var(--carbon);
+  background: var(--signal-red);
+  cursor: pointer;
+  font: 850 10px var(--font-body);
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.uploadForm button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.success,
+.error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font: 10px var(--font-mono);
+}
+
+.success { color: #4ade80; }
+.error { color: var(--signal-red); }
+
+.files { margin-top: 38px; }
+
+.fileList {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  background: var(--line);
+  list-style: none;
+}
+
+.file {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  background: var(--panel);
+}
+
+.index {
+  align-self: start;
+  color: var(--signal-red);
+  font: 9px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.fileInfo {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.fileInfo strong {
+  width: 100%;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.fileInfo span,
+.fileInfo time {
+  color: var(--muted);
+  font: 9px var(--font-mono);
+}
+
+.download:hover {
+  color: var(--signal-red);
+  background: transparent;
+}
+
+@media (max-width: 680px) {
+  .uploadForm,
+  .file { grid-template-columns: 1fr; }
+  .index { grid-column: 1; }
+  .download { width: 100%; }
+}

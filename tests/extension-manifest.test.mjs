@@ -7,9 +7,14 @@ const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(readFileSync(`${projectRoot}/talishar-local-history/manifest.json`, "utf8"));
 const popup = readFileSync(`${projectRoot}/talishar-local-history/popup.html`, "utf8");
 const popupStyles = readFileSync(`${projectRoot}/talishar-local-history/popup.css`, "utf8");
+const serviceWorker = readFileSync(`${projectRoot}/talishar-local-history/service-worker.js`, "utf8");
+const offscreenScript = readFileSync(`${projectRoot}/talishar-local-history/offscreen.js`, "utf8");
 
-test("publica a extensão 1.2.0 com permissões agrupadas", () => {
-  assert.equal(manifest.version, "1.2.0");
+test("publica a extensão 1.5.0 com permissões agrupadas e documento offscreen", () => {
+  assert.equal(manifest.version, "1.5.0");
+  assert.deepEqual(manifest.permissions, ["downloads", "offscreen", "storage"]);
+  assert.doesNotMatch(offscreenScript, /chrome\.downloads/);
+  assert.match(serviceWorker, /chrome\.downloads\.download/);
   assert.deepEqual(manifest.host_permissions, [
     "https://*.talishar.net/*",
     "https://*.hyperdriver.com.br/*",
@@ -35,6 +40,19 @@ test("publica a extensão 1.2.0 com permissões agrupadas", () => {
 });
 
 test("exibe a versão no rodapé semântico do popup", () => {
-  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.2\.0<\/small>[\s\S]*<\/footer>/);
+  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.5\.0<\/small>[\s\S]*<\/footer>/);
   assert.match(popupStyles, /\.popup-footer\s*\{/);
+});
+
+test("lista somente a página solicitada pelo índice sem regravar replays", () => {
+  assert.match(serviceWorker, /index\("startedAt"\)\.openCursor\(null, "prev"\)/);
+  assert.match(serviceWorker, /listMatchPage\(message\.page\)/);
+  const listHandler = serviceWorker.slice(
+    serviceWorker.indexOf('if (message.type === "list-matches")'),
+    serviceWorker.indexOf('if (message.type === "list-sync-pending")'),
+  );
+  assert.doesNotMatch(listHandler, /putMatch\(/);
+  assert.match(popup, /id="previous-page"/);
+  assert.match(popup, /id="next-page"/);
+  assert.match(popup, /id="page-indicator"/);
 });

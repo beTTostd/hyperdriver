@@ -116,12 +116,18 @@
       result = await syncHelpers.synchronizePendingReplays({
         ids,
         getReplay: (id) => send({ type: "get-sync-match", id }),
-        upload: (document) => fetch("/api/replays", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(document)
-        }),
+        upload: (document) => {
+          const body = syncHelpers.serializeReplayDocument(document);
+          return fetch("/api/replays", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "content-type": "application/json",
+              "x-hyperdriver-extension-version": chrome.runtime.getManifest().version
+            },
+            body
+          });
+        },
         markError: (id, error) => send({ type: "mark-sync-error", id, error }),
         markSynced: (id, response) => send({
           type: "mark-match-synced",

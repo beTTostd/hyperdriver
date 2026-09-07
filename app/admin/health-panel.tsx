@@ -10,13 +10,14 @@ import type {
 } from "../../lib/upload-telemetry";
 import styles from "./health-panel.module.css";
 
-const categories: UploadEventCategory[] = ["success", "error", "duplicate", "non_t0", "corrupt"];
+const categories: UploadEventCategory[] = ["success", "error", "duplicate", "non_t0", "truncated", "corrupt"];
 const labels: Record<UploadEventCategory, string> = {
   success: "Partidas aceitas",
   error: "Uploads com erro",
   duplicate: "Arquivos duplicados",
   non_t0: "Não começou no T0",
-  corrupt: "Arquivos corrompidos",
+  truncated: "Uploads truncados",
+  corrupt: "Arquivos inválidos",
 };
 
 type Selection = { date: string; label: string; category: UploadEventCategory } | null;

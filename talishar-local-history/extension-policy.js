@@ -3,7 +3,8 @@ export const MAX_BRIDGE_PAYLOAD_BYTES = 5 * 1024 * 1024;
 export const MAX_FRAME_BYTES = 512 * 1024;
 export const MAX_MATCH_BYTES = 40 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
-export const MAX_STORED_MATCHES = 100;
+export const MAX_STORED_MATCHES = 10;
+export const MATCHES_PER_PAGE = 5;
 
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -55,8 +56,70 @@ export function canAppendCaptureFrame(match) {
   return match?.status !== "finished";
 }
 
+export function matchPagination(total, requestedPage, pageSize = MATCHES_PER_PAGE) {
+  const normalizedTotal = Number.isSafeInteger(total) && total > 0 ? total : 0;
+  const normalizedPageSize = Number.isSafeInteger(pageSize) && pageSize > 0
+    ? pageSize
+    : MATCHES_PER_PAGE;
+  const pageCount = Math.max(1, Math.ceil(normalizedTotal / normalizedPageSize));
+  const parsedPage = Number(requestedPage);
+  const page = Math.min(
+    pageCount,
+    Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
+  );
+
+  return {
+    page,
+    pageCount,
+    pageSize: normalizedPageSize,
+    total: normalizedTotal,
+    offset: (page - 1) * normalizedPageSize,
+  };
+}
+
 export function captureMatchesPage(match, pageUrl) {
   return Boolean(match && match.capture?.pageUrl === pageUrl);
+}
+
+export function normalizeGameId(value) {
+  if (!["string", "number"].includes(typeof value)) return null;
+  const normalized = String(value).trim();
+  return normalized && normalized.length <= 128 && /^[\p{L}\p{N}_.:-]+$/u.test(normalized)
+    ? normalized
+    : null;
+}
+
+export function captureGameId(match) {
+  const stored = normalizeGameId(match?.capture?.gameId);
+  if (stored) return stored;
+  const frames = Array.isArray(match?.frames) ? match.frames : [];
+  for (const frame of frames) {
+    const gameId = normalizeGameId(frame?.payload?.initialLoad?.gameGUID);
+    if (gameId) return gameId;
+  }
+  return null;
+}
+
+export function captureMatchesGame(match, gameId) {
+  const normalized = normalizeGameId(gameId);
+  return Boolean(normalized && captureGameId(match) === normalized);
+}
+
+export function resumableCaptureForPage(matches, pageUrl, gameId = null) {
+  if (!Array.isArray(matches) || typeof pageUrl !== "string" || !pageUrl) return null;
+  const normalizedGameId = normalizeGameId(gameId);
+  const stableGamePage = /^\/game\/play\/[^/]+$/.test(pageUrl);
+  if (!normalizedGameId && !stableGamePage) return null;
+  return [...matches]
+    .filter((match) => (
+      match?.status === "recording" && (
+        normalizedGameId
+          ? captureMatchesGame(match, normalizedGameId)
+          : captureMatchesPage(match, pageUrl)
+      )
+    ))
+    .sort((left, right) => String(right.updatedAt || right.startedAt || "").localeCompare(String(left.updatedAt || left.startedAt || "")))[0]
+    ?? null;
 }
 
 export function isValidImportedCandidate(candidate) {

@@ -79,12 +79,33 @@ export const replays = sqliteTable(
     finalTurn: integer("final_turn"),
     frameCount: integer("frame_count").notNull(),
     sizeBytes: integer("size_bytes").notNull().default(0),
+    participation: text("participation", { enum: ["played", "watched", "unknown"] }).notNull().default("unknown"),
+    participationSource: text("participation_source", { enum: ["automatic", "manual"] }),
     uploadedAt: integer("uploaded_at").notNull().default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
     uniqueIndex("replays_source_match_unique").on(table.sourceMatchId),
     uniqueIndex("replays_storage_key_unique").on(table.storageKey),
     index("replays_user_uploaded_idx").on(table.userId, table.uploadedAt),
+  ],
+);
+
+export const adminJsonFiles = sqliteTable(
+  "admin_json_files",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    adminUserId: integer("admin_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    originalName: text("original_name").notNull(),
+    storageKey: text("storage_key").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    uploadedAt: integer("uploaded_at").notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("admin_json_files_storage_key_unique").on(table.storageKey),
+    index("admin_json_files_uploaded_idx").on(table.uploadedAt),
+    index("admin_json_files_admin_idx").on(table.adminUserId, table.uploadedAt),
   ],
 );
 
@@ -537,6 +558,14 @@ export const usersRelations = relations(users, ({ many }) => ({
   uploadLeases: many(uploadLeases),
   uploadEvents: many(uploadEvents),
   analysisFeedback: many(analysisFeedback),
+  adminJsonFiles: many(adminJsonFiles),
+}));
+
+export const adminJsonFilesRelations = relations(adminJsonFiles, ({ one }) => ({
+  admin: one(users, {
+    fields: [adminJsonFiles.adminUserId],
+    references: [users.id],
+  }),
 }));
 
 export const passwordSetupTokensRelations = relations(

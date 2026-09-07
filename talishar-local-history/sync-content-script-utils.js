@@ -15,6 +15,13 @@
     return pathname === "/replays";
   }
 
+  function serializeReplayDocument(document) {
+    const body = JSON.stringify(document);
+    if (typeof body !== "string") throw new Error("O replay local não pôde ser serializado.");
+    JSON.parse(body);
+    return body;
+  }
+
   function shouldReload(pathname, uploaded, interrupted = false, completed = false, hasErrors = false) {
     return (uploaded > 0 || completed) && !interrupted && !hasErrors && isReplayLibraryPathname(pathname);
   }
@@ -112,6 +119,7 @@
     isReplayLibraryPathname,
     progressPercentage,
     shouldReload,
+    serializeReplayDocument,
     synchronizePendingReplays,
   });
 })();

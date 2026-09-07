@@ -12,6 +12,11 @@
 .actions { display:flex; gap:.55rem; flex-wrap:wrap; align-items:center; }
 .actions button,.primary,.linkButton { border:1px solid #d9463e; background:#d9463e; color:#fff; padding:.55rem .75rem; cursor:pointer; text-decoration:none; font:inherit; }
 .actions button.secondary,.secondary { background:transparent; border-color:#59636d; }
+.cardActions { position:absolute; z-index:6; top:10px; left:10px; }
+.cardActions .favoriteButton { display:grid; width:36px; height:36px; min-height:36px; place-items:center; padding:0; border:0; color:#f2f1ec; background:transparent; cursor:pointer; font-size:23px; line-height:1; text-shadow:0 2px 8px rgba(0,0,0,.9); }
+.cardActions .favoriteButton[aria-pressed="true"] { color:#ff4d3d; }
+.cardActions .favoriteButton:hover,.cardActions .favoriteButton:focus-visible { color:#ff4d3d; background:transparent; outline:none; text-shadow:0 0 5px rgba(255,77,61,.9),0 2px 8px rgba(0,0,0,.9); }
+.cardActions .favoriteButton:disabled { cursor:wait; opacity:.65; }
 .list { display:grid; gap:.6rem; margin:.75rem 0; padding:0; list-style:none; }
 .list li { border-left:3px solid #d9463e; background:#090d11; padding:.65rem; }
 .list a { color:#fff; }

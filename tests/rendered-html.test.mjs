@@ -379,7 +379,7 @@ test("shows decision analysis and feedback to the replay owner and administrator
   assert.match(ownerReportHtml, /Melhor linha encontrada/);
   assert.match(ownerReportHtml, /Como usar os marcadores/);
   assert.match(ownerReportHtml, /Abrir decisão na mesa/);
-  assert.match(ownerReportHtml, /Meu caderno/);
+  assert.doesNotMatch(ownerReportHtml, /Meu caderno/);
 
   const ownerStats = await fetch(new URL("/me/stats", baseUrl), { headers: { cookie: ownerCookie } });
   assert.equal(ownerStats.status, 200);
@@ -404,6 +404,129 @@ test("shows decision analysis and feedback to the replay owner and administrator
   }
 });
 
+test("classifies replay participation, protects manual corrections and excludes watched analysis", async () => {
+  const ownerCookie = createDatabaseUserSession("participation-owner");
+  const strangerCookie = createDatabaseUserSession("participation-stranger");
+  const playedId = "c9000000-0000-4000-8000-000000000001";
+  const watchedId = "c9000000-0000-4000-8000-000000000002";
+  const legacyId = "c9000000-0000-4000-8000-000000000003";
+  const playedDocument = decisionReplayDocument(playedId);
+  const watchedDocument = decisionReplayDocument(watchedId);
+  watchedDocument.match.decisionEvents = [];
+  const legacyDocument = replayDocument(legacyId, true);
+
+  for (const document of [playedDocument, watchedDocument, legacyDocument]) {
+    const response = await uploadDocument(ownerCookie, document);
+    assert.equal(response.status, 201);
+  }
+  await waitForDecisionAnalysis(playedId, ownerCookie);
+
+  const database = new Database(join(databaseDirectory, "test.sqlite"));
+  try {
+    assert.deepEqual(
+      database.prepare(`
+        SELECT source_match_id AS id, participation, participation_source AS source
+        FROM replays WHERE source_match_id IN (?, ?, ?) ORDER BY source_match_id
+      `).all(playedId, watchedId, legacyId),
+      [
+        { id: playedId, participation: "played", source: "automatic" },
+        { id: watchedId, participation: "watched", source: "automatic" },
+        { id: legacyId, participation: "unknown", source: null },
+      ],
+    );
+    const watchedReplay = database.prepare("SELECT id FROM replays WHERE source_match_id = ?").get(watchedId);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM replay_analyses WHERE replay_id = ?").get(watchedReplay.id).count, 0);
+  } finally {
+    database.close();
+  }
+
+  const library = await fetch(new URL("/replays", baseUrl), { headers: { cookie: ownerCookie } });
+  const libraryHtml = await library.text();
+  assert.match(libraryHtml, /Participação/);
+  assert.match(libraryHtml, /Jogada/);
+  assert.match(libraryHtml, /Assistida/);
+  assert.match(libraryHtml, /Não identificado/);
+
+  const stats = await fetch(new URL("/me/stats?period=all", baseUrl), { headers: { cookie: ownerCookie } });
+  assert.match(await stats.text(), /2(?:<!-- -->)? vitórias em (?:<!-- -->)?2(?:<!-- -->)? partidas/);
+
+  const hiddenAnalysis = await fetch(new URL(`/api/replays/${watchedId}/analysis`, baseUrl), { headers: { cookie: ownerCookie } });
+  assert.deepEqual(await hiddenAnalysis.json(), {
+    status: "insufficient_data",
+    observationCount: 0,
+    analysisCount: 0,
+    versions: null,
+    summary: null,
+    methodology: null,
+    handAnalyses: [],
+    recommendationsVisible: false,
+    shadowMode: false,
+    reason: "watched_replay",
+  });
+
+  const anonymous = await fetch(new URL(`/api/replays/${playedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ participation: "watched" }),
+  });
+  assert.equal(anonymous.status, 401);
+  const crossOrigin = await fetch(new URL(`/api/replays/${playedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie, origin: "https://evil.example" },
+    body: JSON.stringify({ participation: "watched" }),
+  });
+  assert.equal(crossOrigin.status, 403);
+  const invalid = await fetch(new URL(`/api/replays/${playedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ participation: "spectated" }),
+  });
+  assert.equal(invalid.status, 400);
+  const stranger = await fetch(new URL(`/api/replays/${playedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: strangerCookie },
+    body: JSON.stringify({ participation: "watched" }),
+  });
+  assert.equal(stranger.status, 404);
+
+  const manualUnknown = await fetch(new URL(`/api/replays/${legacyId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ participation: "unknown" }),
+  });
+  assert.equal(manualUnknown.status, 200);
+  const duplicateWithCapture = structuredClone(legacyDocument);
+  duplicateWithCapture.match.decisionEvents = [{ sequence: 1, frameSequence: 1, choice: { action: "0" } }];
+  assert.equal((await uploadDocument(ownerCookie, duplicateWithCapture)).status, 200);
+
+  const correctedToPlayed = await fetch(new URL(`/api/replays/${watchedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: ownerCookie },
+    body: JSON.stringify({ participation: "played" }),
+  });
+  assert.equal(correctedToPlayed.status, 200);
+  await waitForDecisionAnalysis(watchedId, ownerCookie);
+
+  const adminCorrection = await fetch(new URL(`/api/replays/${playedId}/participation`, baseUrl), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ participation: "watched" }),
+  });
+  assert.equal(adminCorrection.status, 200);
+
+  const verified = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+  try {
+    assert.deepEqual(
+      verified.prepare("SELECT participation, participation_source AS source FROM replays WHERE source_match_id = ?").get(legacyId),
+      { participation: "unknown", source: "manual" },
+    );
+    const watchedReplay = verified.prepare("SELECT id FROM replays WHERE source_match_id = ?").get(watchedId);
+    assert.equal(verified.prepare("SELECT COUNT(*) AS count FROM replay_analyses WHERE replay_id = ?").get(watchedReplay.id).count, 1);
+  } finally {
+    verified.close();
+  }
+});
+
 test("persists the player notebook and protects temporary coach links", async () => {
   const ownerCookie = createDatabaseUserSession("workspace-coach-owner");
   const strangerCookie = createDatabaseUserSession("workspace-coach-stranger");
@@ -425,6 +548,13 @@ test("persists the player notebook and protects temporary coach links", async ()
   assert.equal(workspace.isFavorite, true);
   assert.ok(workspace.reviewedAt);
   assert.deepEqual(workspace.tags.map((tag) => tag.name).sort(), ["Defesa", "Pitch"]);
+
+  const replayLibrary = await fetch(new URL("/replays", baseUrl), { headers: { cookie: ownerCookie } });
+  const replayLibraryHtml = await replayLibrary.text();
+  assert.match(replayLibraryHtml, /aria-label="Remover dos favoritos"/);
+  assert.match(replayLibraryHtml, /aria-pressed="true"/);
+  assert.doesNotMatch(replayLibraryHtml, /★ Favorito|☆ Favoritar/);
+  assert.doesNotMatch(replayLibraryHtml, /Marcar revisado|Revisado ✓/);
 
   const forbiddenWorkspace = await fetch(new URL(`/api/replays/${replayId}/workspace`, baseUrl), { headers: { cookie: strangerCookie } });
   assert.equal(forbiddenWorkspace.status, 404);
@@ -719,16 +849,16 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Versões da extensão/);
-  assert.match(html, /v1\.2\.0/);
+  assert.match(html, /v1\.5\.0/);
   assert.match(html, /v1\.0\.0/);
   assert.match(html, /v0\.4\.4/);
   assert.match(html, /Data de criação|Arquivo criado em/);
-  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.2\.0\.zip"/);
-  assert.match(html, /download="hyperdriver-extension-v1\.2\.0\.zip"/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.5\.0\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v1\.5\.0\.zip"/);
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  for (const version of ["1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
+  for (const version of ["1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
     const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
     assert.equal(download.status, 200);
     assert.ok((await download.arrayBuffer()).byteLength > 0);
@@ -984,14 +1114,31 @@ test("stores complete replays idempotently and isolates them by user", async () 
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).replayId, uploaded.replayId);
 
-  const t0Document = replayDocument("5f777777-7777-4777-8777-777777777777", true);
-  t0Document.match.frames[0].payload.turnNo = "0";
-  const t0Upload = await fetch(new URL("/api/replays", baseUrl), {
+  const redirectedCompletion = replayDocument("5e666666-6666-4666-8666-666666666666", true);
+  redirectedCompletion.match.frames.at(-1).payload.turnPhase = { turnPhase: "DOCRANK" };
+  redirectedCompletion.match.result = "defeat";
+  redirectedCompletion.match.completion = {
+    reason: "manual",
+    source: "extension-popup",
+    at: redirectedCompletion.match.endedAt,
+    result: "defeat",
+  };
+  const redirectedUpload = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify(t0Document),
+    body: JSON.stringify(redirectedCompletion),
   });
-  assert.equal(t0Upload.status, 201);
+  assert.equal(redirectedUpload.status, 201);
+
+  const partialDocument = replayDocument("5f777777-7777-4777-8777-777777777777", true);
+  partialDocument.match.frames[0].payload.turnNo = "2";
+  const partialUpload = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(partialDocument),
+  });
+  assert.equal(partialUpload.status, 422);
+  assert.equal((await partialUpload.json()).code, "PARTIAL_REPLAY");
 
   const corruptUpload = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
@@ -1010,7 +1157,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const healthResponse = await fetch(new URL("/api/admin/upload-health", baseUrl), { headers: { cookie } });
   assert.equal(healthResponse.status, 200);
   const health = await healthResponse.json();
-  assert.deepEqual(health.summary.categories.map((category) => category.key), ["success", "error", "duplicate", "non_t0", "corrupt"]);
+  assert.deepEqual(health.summary.categories.map((category) => category.key), ["success", "error", "duplicate", "non_t0", "truncated", "corrupt"]);
   assert.ok(health.summary.total >= 2);
   assert.ok(health.summary.categories.find((category) => category.key === "success").total >= 1);
   assert.ok(health.summary.categories.find((category) => category.key === "error").total >= 1);
@@ -1020,7 +1167,7 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const nonT0Details = await fetch(new URL(`/api/admin/upload-health?date=${nonT0Day.date}&category=non_t0`, baseUrl), { headers: { cookie } });
   assert.equal(nonT0Details.status, 200);
   const nonT0Payload = await nonT0Details.json();
-  assert.ok(nonT0Payload.details.items.some((item) => item.sourceMatchId === uploaded.replayId));
+  assert.ok(nonT0Payload.details.items.some((item) => item.sourceMatchId === partialDocument.match.id && item.errorCode === "PARTIAL_REPLAY"));
 
   const adminLibrary = await fetch(new URL("/replays", baseUrl), { headers: { cookie } });
   const adminHtml = await adminLibrary.text();
@@ -1066,6 +1213,10 @@ test("stores complete replays idempotently and isolates them by user", async () 
   const telemetryHtml = await telemetry.text();
   assert.equal(telemetry.status, 200);
   assert.match(telemetryHtml, /Análise da/);
+  assert.match(telemetryHtml, /role="tablist"/);
+  assert.match(telemetryHtml, /Treinador/);
+  assert.doesNotMatch(telemetryHtml, /Caderno/);
+  assert.match(telemetryHtml, /Telemetria/);
   assert.match(telemetryHtml, /Dano recebido/);
   assert.match(telemetryHtml, /Bloqueado por equipamento/);
   assert.match(telemetryHtml, /Bloqueado por carta/);
@@ -1232,6 +1383,89 @@ test("lets admins list and open replays owned by different users", async () => {
   assert.equal(userAnalysis.status, 404);
 });
 
+test("stores arbitrary JSON uploads privately and downloads their original bytes", async () => {
+  const userCookie = createDatabaseUserSession("json-box-user");
+  const bytes = Uint8Array.from([0, 255, 123, 110, 111, 116, 45, 106, 115, 111, 110, 125, 10]);
+  const uploadForm = new FormData();
+  uploadForm.set("file", new Blob([bytes], { type: "application/json" }), "captura inválida.json");
+
+  const anonymous = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    body: uploadForm,
+  });
+  assert.equal(anonymous.status, 401);
+  const forbidden = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    headers: { cookie: userCookie },
+    body: uploadForm,
+  });
+  assert.equal(forbidden.status, 403);
+  const crossOrigin = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    headers: { cookie, origin: "https://evil.example" },
+    body: uploadForm,
+  });
+  assert.equal(crossOrigin.status, 403);
+
+  const invalidNameForm = new FormData();
+  invalidNameForm.set("file", new Blob(["{}"]), "captura.txt");
+  const invalidName = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    headers: { cookie },
+    body: invalidNameForm,
+  });
+  assert.equal(invalidName.status, 400);
+
+  const acceptedForm = new FormData();
+  acceptedForm.set("file", new Blob([bytes], { type: "application/json" }), "captura inválida.json");
+  const accepted = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    headers: { cookie },
+    body: acceptedForm,
+  });
+  assert.equal(accepted.status, 201);
+  const record = (await accepted.json()).file;
+  assert.equal(record.originalName, "captura inválida.json");
+  assert.equal(record.sizeBytes, bytes.byteLength);
+  assert.equal(record.adminUsername, "admin");
+
+  const emptyForm = new FormData();
+  emptyForm.set("file", new Blob([]), "vazio.json");
+  const empty = await fetch(new URL("/api/admin/json", baseUrl), {
+    method: "POST",
+    headers: { cookie },
+    body: emptyForm,
+  });
+  assert.equal(empty.status, 201);
+
+  const anonymousDownload = await fetch(new URL(`/api/admin/json/${record.id}`, baseUrl));
+  assert.equal(anonymousDownload.status, 401);
+  const forbiddenDownload = await fetch(new URL(`/api/admin/json/${record.id}`, baseUrl), { headers: { cookie: userCookie } });
+  assert.equal(forbiddenDownload.status, 403);
+  const download = await fetch(new URL(`/api/admin/json/${record.id}`, baseUrl), { headers: { cookie } });
+  assert.equal(download.status, 200);
+  assert.deepEqual(new Uint8Array(await download.arrayBuffer()), bytes);
+  assert.match(download.headers.get("content-disposition") ?? "", /captura.*\.json/);
+  assert.match(download.headers.get("cache-control") ?? "", /private.*no-store/);
+
+  const page = await fetch(new URL("/admin/json", baseUrl), { headers: { cookie } });
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /Arquivos JSON/);
+  assert.match(html, /captura inválida\.json/);
+  assert.match(html, /vazio\.json/);
+  assert.match(html, /Enviado por.*admin/);
+  assert.match(html, /href="\/api\/admin\/json\//);
+  assert.ok(html.indexOf("vazio.json") < html.indexOf("captura inválida.json"));
+
+  const userPage = await fetch(new URL("/admin/json", baseUrl), {
+    headers: { cookie: userCookie },
+    redirect: "manual",
+  });
+  assert.equal(userPage.status, 307);
+  assert.equal(new URL(userPage.headers.get("location"), baseUrl).pathname, "/");
+});
+
 test("scores Talishar Elo once, confirms inverted perspectives and audits conflicts", async () => {
   const firstCookie = createDatabaseUserSession("elo-first");
   const secondCookie = createDatabaseUserSession("elo-second");
@@ -1245,6 +1479,7 @@ test("scores Talishar Elo once, confirms inverted perspectives and audits confli
       result: "victory",
     },
   );
+  firstReplay.match.decisionEvents = [];
 
   const firstUpload = await uploadDocument(firstCookie, firstReplay);
   assert.equal(firstUpload.status, 201);
@@ -1281,6 +1516,10 @@ test("scores Talishar Elo once, confirms inverted perspectives and audits confli
       FROM elo_matches WHERE game_guid = 'elo-guid-cc-001'
     `).get(),
     { status: "confirmed", ratingChange: 16 },
+  );
+  assert.equal(
+    database.prepare("SELECT participation FROM replays WHERE source_match_id = ?").get(firstReplay.match.id).participation,
+    "watched",
   );
   assert.equal(
     database.prepare("SELECT COUNT(*) AS count FROM elo_matches WHERE game_guid = 'elo-guid-cc-001'").get().count,
@@ -1442,6 +1681,21 @@ test("accepts a chunked replay body without Content-Length and enforces login li
   assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
 
+test("accepts a valid replay body above the former 10 MB proxy limit", async () => {
+  const document = replayDocument("c4444444-4444-4444-8444-444444444444", true);
+  document.padding = Array.from({ length: 21 }, () => "x".repeat(512 * 1024));
+  const body = JSON.stringify(document);
+  assert.ok(Buffer.byteLength(body) > 10 * 1024 * 1024);
+  assert.ok(Buffer.byteLength(body) < 50 * 1024 * 1024);
+
+  const uploaded = await fetch(new URL("/api/replays", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body,
+  });
+  assert.equal(uploaded.status, 201);
+});
+
 test("rejects structural replay abuse and paginates from SQLite without reading files", async () => {
   const deepReplay = replayDocument("e4444444-4444-4444-8444-444444444444", true);
   let nested = deepReplay;
@@ -1503,6 +1757,22 @@ test("rejects structural replay abuse and paginates from SQLite without reading 
 });
 
 function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
+  const finalPayload = {
+    chatLog: "não persistir",
+    initialLoad: { gameFormat: "cc" },
+    turnNo: "3",
+    turnPlayer: "1",
+    turnPhase: { turnPhase: complete ? "OVER" : "A" },
+    playerHealth: "5",
+    opponentHealth: "0",
+    playerEquipment: [{ slot: "Hero", cardNumber: "alpha_hero" }],
+    opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero" }],
+    activeChainLink: {
+      attackingCard: { cardNumber: "final_attack_red" },
+      totalPower: 7,
+      totalDefense: 3,
+    },
+  };
   return {
     schemaVersion: "0.1.0",
     exportedAt: "2026-08-20T12:01:00.000Z",
@@ -1512,42 +1782,35 @@ function replayDocument(id, complete, startedAt = "2026-08-20T12:00:00.000Z") {
       status: complete ? "finished" : "recording",
       startedAt,
       endedAt: complete ? "2026-08-20T12:01:00.000Z" : null,
-      frames: [{
-        sequence: 1,
-        receivedAt: "2026-08-20T12:01:00.000Z",
-        payload: {
-          chatLog: "não persistir",
-          initialLoad: { gameFormat: "cc" },
-          turnNo: "3",
-          turnPlayer: "1",
-          turnPhase: { turnPhase: complete ? "OVER" : "A" },
-          playerHealth: "5",
-          opponentHealth: "0",
-          playerEquipment: [{ slot: "Hero", cardNumber: "alpha_hero" }],
-          opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero" }],
-          activeChainLink: {
-            attackingCard: { cardNumber: "final_attack_red" },
-            totalPower: 7,
-            totalDefense: 3,
-          },
+      frames: [
+        {
+          sequence: 1,
+          receivedAt: startedAt,
+          payload: { ...finalPayload, turnNo: "0", turnPhase: { turnPhase: "A" } },
         },
-      }],
+        {
+          sequence: 2,
+          receivedAt: "2026-08-20T12:01:00.000Z",
+          payload: finalPayload,
+        },
+      ],
     },
   };
 }
 
 function eloReplayDocument(id, options) {
   const document = replayDocument(id, true);
-  const payload = document.match.frames[0].payload;
-  payload.initialLoad = {
+  document.match.frames[0].payload.initialLoad = {
     gameFormat: options.format,
     gameGUID: options.gameGUID,
     playerName: options.playerName,
     opponentName: options.opponentName,
     isOpponentAI: false,
   };
-  payload.playerHealth = options.result === "defeat" ? "0" : "5";
-  payload.opponentHealth = options.result === "victory" ? "0" : "5";
+  for (const frame of document.match.frames) {
+    frame.payload.playerHealth = options.result === "defeat" ? "0" : "5";
+    frame.payload.opponentHealth = options.result === "victory" ? "0" : "5";
+  }
   return document;
 }
 
@@ -1599,9 +1862,14 @@ function decisionReplayDocument(id) {
       startedAt: "2026-08-25T12:00:00.000Z",
       endedAt: "2026-08-25T12:01:00.000Z",
       frames: [
-        { sequence: 1, receivedAt: "2026-08-25T12:00:00.000Z", payload: decisionPayload },
         {
-          sequence: 2,
+          sequence: 1,
+          receivedAt: "2026-08-25T11:59:59.000Z",
+          payload: { ...decisionPayload, turnNo: 0, havePriority: false },
+        },
+        { sequence: 2, receivedAt: "2026-08-25T12:00:00.000Z", payload: decisionPayload },
+        {
+          sequence: 3,
           receivedAt: "2026-08-25T12:01:00.000Z",
           payload: {
             ...decisionPayload,
@@ -1612,7 +1880,7 @@ function decisionReplayDocument(id) {
       ],
       decisionEvents: [{
         sequence: 1,
-        frameSequence: 1,
+        frameSequence: 2,
         occurredAt: "2026-08-25T12:00:01.000Z",
         choice: { action: "3", zone: "MYHAND", identifier: "1" },
       }],
@@ -1719,6 +1987,7 @@ function rollbackTelemetryReplayDocument(id) {
       startedAt: "2026-08-20T12:00:00.000Z",
       endedAt: "2026-08-20T12:01:00.000Z",
       frames: [
+        frame(0, payload(0, 1, 20, null)),
         frame(1, payload(1, 1, 20, null)),
         frame(2, payload(2, 2, 20, null)),
         frame(3, payload(2, 2, 20, opponentAttack)),

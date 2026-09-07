@@ -14,7 +14,8 @@ import {
 import { calculateReplayTelemetry, type TelemetryCycle } from "../../../lib/replay-telemetry";
 import { readAdminReplay, readUserReplay, type ReplayDocument } from "../../../lib/replays";
 import AnalysisFeedback from "./analysis-feedback";
-import WorkspacePanel, { CreatePatternGoalButton } from "../../replays/workspace-panel";
+import AnalysisTabs from "./analysis-tabs";
+import { CreatePatternGoalButton } from "../../replays/workspace-panel";
 import styles from "./page.module.css";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -242,6 +243,10 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
     ]),
   ) as Record<Metric["key"], number>;
   const scale = Math.max(1, ...cycles.map(total));
+  const analysisTabs = [
+    { id: "telemetry", label: "Telemetria", description: "Ciclos e números" },
+    ...(decisionAnalysis ? [{ id: "coach", label: "Treinador", description: "Decisões e recomendações" }] : []),
+  ];
 
   return (
     <main className={styles.page}>
@@ -256,7 +261,8 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
           <h1>Análise da<br /><em>partida</em></h1>
         </header>
 
-        <section className={`${styles.matchBriefing} ${styles[metadata.result] ?? ""}`} aria-labelledby="match-briefing-title">
+        <div className={styles.tabSection}>
+            <section className={`${styles.matchBriefing} ${styles[metadata.result] ?? ""}`} aria-labelledby="match-briefing-title">
           <h2 className={styles.srOnly} id="match-briefing-title">Resumo da partida</h2>
           <article className={styles.heroProfile}>
             <div className={styles.heroArt}>
@@ -293,22 +299,22 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
             <div><dt>Data da partida</dt><dd><time dateTime={startedAt.toISOString()}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(startedAt)}</time></dd></div>
             <div><dt>Iniciativa</dt><dd>{firstPlayer} começou</dd></div>
           </dl>
-        </section>
+            </section>
 
-        <section className={styles.summary} aria-label="Resumo da telemetria">
-          {metrics.map((metric) => (
-            <article className={styles[metric.className]} key={metric.key}>
-              <small>{metric.label}</small>
-              <strong>{totals[metric.key]}</strong>
-              <span>{cycles.length} {cycles.length === 1 ? "ciclo registrado" : "ciclos registrados"}</span>
-            </article>
-          ))}
-        </section>
+            <section className={styles.summary} aria-label="Resumo da telemetria">
+              {metrics.map((metric) => (
+                <article className={styles[metric.className]} key={metric.key}>
+                  <small>{metric.label}</small>
+                  <strong>{totals[metric.key]}</strong>
+                  <span>{cycles.length} {cycles.length === 1 ? "ciclo registrado" : "ciclos registrados"}</span>
+                </article>
+              ))}
+            </section>
+        </div>
 
-        {decisionAnalysis && <DecisionCoach replayId={id} analysis={decisionAnalysis} />}
-        {metadata.userId === currentUser.id && <WorkspacePanel replayId={id} />}
-
-        <section className={styles.panel} aria-labelledby="cycle-chart-title">
+        <AnalysisTabs items={analysisTabs}>
+          <div className={styles.tabSection}>
+            <section className={styles.panel} aria-labelledby="cycle-chart-title">
           <div className={styles.panelHeader}>
             <div><p>Comparação</p><h2 id="cycle-chart-title">Dano por ciclo</h2></div>
             <aside className={styles.legend} aria-label="Legenda">
@@ -348,9 +354,9 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
               </div>
             ))}
           </div> : <p className={styles.emptyState}>Este replay não contém ciclos de combate suficientes para desenhar o gráfico.</p>}
-        </section>
+            </section>
 
-        <section className={styles.panel} aria-labelledby="cycle-table-title">
+            <section className={styles.panel} aria-labelledby="cycle-table-title">
           <div className={styles.panelHeader}>
             <div><p>Detalhamento</p><h2 id="cycle-table-title">Números por ciclo</h2></div>
           </div>
@@ -367,12 +373,15 @@ export async function ReplayTelemetryPage({ params }: PageProps) {
               </tbody>
             </table>
           </div> : <p className={styles.emptyState}>Os números por ciclo aparecerão quando houver telemetria de combate válida.</p>}
-        </section>
+            </section>
 
-        <footer>
-          <strong>Como calculamos</strong>
-          <span>O dano recebido considera o poder que passou pelos bloqueios. O dano oferecido soma o poder final dos seus ataques. A vida ganha soma os aumentos de vida registrados nos snapshots. Defesa acima do poder do ataque não é contabilizada.</span>
-        </footer>
+            <footer>
+              <strong>Como calculamos</strong>
+              <span>O dano recebido considera o poder que passou pelos bloqueios. O dano oferecido soma o poder final dos seus ataques. A vida ganha soma os aumentos de vida registrados nos snapshots. Defesa acima do poder do ataque não é contabilizada.</span>
+            </footer>
+          </div>
+          {decisionAnalysis && <div className={styles.tabSection}><DecisionCoach replayId={id} analysis={decisionAnalysis} /></div>}
+        </AnalysisTabs>
       </div>
     </main>
   );

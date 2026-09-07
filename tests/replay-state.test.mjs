@@ -9,6 +9,9 @@ import {
   markReplaySynced,
   markReplaySyncError,
   normalizeDeckLink,
+  normalizeReplayCapture,
+  replayCompletion,
+  replayCaptureQuality,
   replaySyncProgress,
   replaySyncState,
   replayResult,
@@ -173,6 +176,48 @@ test("compacts imported replay envelopes as well", () => {
   assert.equal(compacted.match.chatLog, undefined);
   assert.equal(compacted.match.frames[0].payload.chatLog, undefined);
   assert.deepEqual(compacted.match.frames[0].payload.turnPhase, { turnPhase: "OVER" });
+});
+
+test("classifies capture quality from T0 and preserves interruption evidence", () => {
+  const complete = {
+    capture: {},
+    frames: [{ payload: { turnNo: "0" } }, { payload: { turnNo: "1" } }],
+  };
+  assert.equal(replayCaptureQuality(complete), "complete");
+  normalizeReplayCapture(complete);
+  assert.deepEqual(complete.capture, { quality: "complete", startedTurn: 0 });
+
+  const late = { capture: {}, frames: [{ payload: { turnNo: "7" } }] };
+  assert.equal(replayCaptureQuality(late), "partial");
+  normalizeReplayCapture(late);
+  assert.deepEqual(late.capture, { quality: "partial", startedTurn: 7 });
+
+  const interrupted = {
+    capture: { interrupted: true },
+    frames: [{ payload: { turnNo: "0" } }],
+  };
+  assert.equal(replayCaptureQuality(interrupted), "partial");
+  normalizeReplayCapture(interrupted);
+  assert.deepEqual(interrupted.capture, { interrupted: true, quality: "partial", startedTurn: 0 });
+  assert.equal(replayCaptureQuality({ frames: [{ payload: {} }] }), "unknown");
+});
+
+test("accepts explicit completion evidence when Talishar redirects before OVER", () => {
+  const match = {
+    status: "finished",
+    result: "defeat",
+    completion: {
+      reason: "concession",
+      source: "talishar-action",
+      at: "2026-09-07T14:41:20.350Z",
+      result: "defeat",
+    },
+    frames: [{ payload: { turnNo: "0", turnPhase: { turnPhase: "M" } } }],
+  };
+  assert.equal(replayCompletion(match)?.result, "defeat");
+  assert.equal(replayResult(match), "defeat");
+  assert.deepEqual(compactReplayDocument({ schemaVersion: "0.5.0", match }).match.completion, match.completion);
+  assert.equal(replayCompletion({ completion: { ...match.completion, result: "unknown" } }), null);
 });
 
 test("migrates legacy synchronization only to its recorded origin", () => {

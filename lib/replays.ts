@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, lt, or, sum } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, ne, or, sum } from "drizzle-orm";
 import { getDb } from "../db";
 import { replayAnalyses, replayMetrics, replays, users } from "../db/schema";
-import { compactReplayDocument, replayResult } from "../talishar-local-history/replay-state.js";
+import { compactReplayDocument, replayCompletion, replayResult } from "../talishar-local-history/replay-state.js";
 import { calculateReplayTelemetry, TELEMETRY_ALGORITHM_VERSION } from "./replay-telemetry";
 import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
 import { applyEloUploadInTransaction, recordEloUpload } from "./elo";
@@ -15,6 +15,10 @@ const MAX_STRING_LENGTH = 1024 * 1024;
 const MAX_DOCUMENT_DEPTH = 40;
 const MAX_OBJECT_KEYS = 10_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const automaticParticipationSymbol = Symbol("automaticReplayParticipation");
+
+export type ReplayParticipation = "played" | "watched" | "unknown";
+export type ReplayParticipationSource = "automatic" | "manual" | null;
 
 export type ReplayCard = {
   cardNumber?: string;
@@ -54,6 +58,8 @@ export type ReplayPayload = {
   [key: string]: unknown;
 };
 
+export type ReplayCaptureQuality = "complete" | "partial" | "unknown";
+
 export type ReplayFrame = {
   sequence?: number;
   receivedAt?: string;
@@ -69,7 +75,21 @@ export type ReplayDocument = {
     status?: string;
     startedAt: string;
     endedAt?: string | null;
+    completion?: {
+      reason?: "concession" | "claimed_victory" | "manual";
+      source?: string;
+      at?: string;
+      result?: "victory" | "defeat";
+      [key: string]: unknown;
+    };
+    capture?: {
+      interrupted?: boolean;
+      quality?: ReplayCaptureQuality;
+      startedTurn?: string | number;
+      [key: string]: unknown;
+    };
     frames: ReplayFrame[];
+    decisionEvents?: unknown[];
     [key: string]: unknown;
   };
 };
@@ -134,9 +154,24 @@ function gameMode(document: ReplayDocument) {
 }
 
 export function isCompleteReplay(document: ReplayDocument): boolean {
-  return document.match.frames.some(
+  return Boolean(replayCompletion(document.match)) || document.match.frames.some(
     (frame) => frame.payload?.turnPhase?.turnPhase === "OVER",
   );
+}
+
+export function firstReplayTurnNo(document: ReplayDocument): number | null {
+  for (const frame of document.match.frames) {
+    const value = frame.payload?.turnNo;
+    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) continue;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function replayStartedAtT0(document: ReplayDocument): boolean {
+  if (document.match.capture?.interrupted === true || document.match.capture?.quality === "partial") return false;
+  return firstReplayTurnNo(document) === 0;
 }
 
 export function parseReplayDocument(raw: string): ReplayDocument {
@@ -172,11 +207,38 @@ export function parseReplayDocument(raw: string): ReplayDocument {
   if (parseTimestamp(match.startedAt) === null) {
     throw new ReplayUploadError("A data inicial do replay é inválida.", 400, "INVALID_TIMESTAMP", match.id);
   }
+  if (match.completion !== undefined && !replayCompletion(match)) {
+    throw new ReplayUploadError("Os dados de encerramento do replay são inválidos.", 400, "INVALID_COMPLETION", match.id);
+  }
+  const supportsDecisionCapture = Array.isArray(match.decisionEvents);
   const compacted = compactReplayDocument(document as ReplayDocument) as ReplayDocument;
+  const automaticParticipation: ReplayParticipation = supportsDecisionCapture
+    ? (compacted.match.decisionEvents?.length ?? 0) > 0 ? "played" : "watched"
+    : "unknown";
+  Object.defineProperty(compacted, automaticParticipationSymbol, {
+    value: automaticParticipation,
+    enumerable: false,
+  });
   if (!isCompleteReplay(compacted)) {
     throw new ReplayUploadError("A partida ainda não foi concluída.", 422, "INCOMPLETE_REPLAY", match.id, compacted);
   }
+  if (!replayStartedAtT0(compacted)) {
+    const firstTurn = firstReplayTurnNo(compacted);
+    const detail = firstTurn === null ? "sem um turno inicial verificável" : `no turno ${firstTurn}`;
+    throw new ReplayUploadError(
+      `A captura começou ${detail}, e não no T0.`,
+      422,
+      "PARTIAL_REPLAY",
+      match.id,
+      compacted,
+    );
+  }
   return compacted;
+}
+
+export function replayAutomaticParticipation(document: ReplayDocument): ReplayParticipation {
+  return (document as ReplayDocument & { [automaticParticipationSymbol]?: ReplayParticipation })[automaticParticipationSymbol]
+    ?? "unknown";
 }
 
 function validateStructuralLimits(value: unknown): void {
@@ -276,27 +338,21 @@ export async function saveReplayUpload(userId: number, raw: string) {
     if (existing.userId !== userId) {
       throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409, "DUPLICATE_REPLAY", document.match.id, document);
     }
-    if (!existing.gameMode) {
-      const metadata = extractedMetadata(document);
-      if (metadata.gameMode) {
-        const updated = database
-          .update(replays)
-          .set({ gameMode: metadata.gameMode })
-          .where(eq(replays.id, existing.id))
-          .returning()
-          .get();
-        recordEloUpload(userId, document.match.id, document);
-        return { replay: updated, duplicate: true, document };
-      }
-    }
+    const updated = enrichDuplicateReplay(existing, document);
     recordEloUpload(userId, document.match.id, document);
-    return { replay: existing, duplicate: true, document };
+    return {
+      replay: updated,
+      duplicate: true,
+      document,
+      analysisNeeded: updated.participation !== "watched" && markReplayAnalysisPendingIfMissing(updated.id),
+    };
   }
 
   const storageKey = `${randomUUID()}.json`;
   const normalizedRaw = JSON.stringify(document);
   const sizeBytes = Buffer.byteLength(normalizedRaw, "utf8");
   const metrics = extractedMetrics(document);
+  const participation = replayAutomaticParticipation(document);
   assertQuota(userId, sizeBytes, document.match.id);
   const storage = getReplayStorage();
   try {
@@ -320,6 +376,8 @@ export async function saveReplayUpload(userId: number, raw: string) {
           sourceMatchId: document.match.id,
           storageKey,
           sizeBytes,
+          participation,
+          participationSource: participation === "unknown" ? null : "automatic",
           ...extractedMetadata(document),
         })
         .returning()
@@ -329,14 +387,16 @@ export async function saveReplayUpload(userId: number, raw: string) {
         ...metrics,
         calculationVersion: TELEMETRY_ALGORITHM_VERSION,
       }).run();
-      transaction.insert(replayAnalyses).values({
-        replayId: inserted.id,
-        status: "pending",
-      }).run();
+      if (participation !== "watched") {
+        transaction.insert(replayAnalyses).values({
+          replayId: inserted.id,
+          status: "pending",
+        }).run();
+      }
       applyEloUploadInTransaction(userId, document.match.id, document);
       return inserted;
     });
-    return { replay, duplicate: false, document };
+    return { replay, duplicate: false, document, analysisNeeded: participation !== "watched" };
   } catch (error) {
     await storage.delete(storageKey).catch(() => undefined);
     const concurrent = database
@@ -348,12 +408,62 @@ export async function saveReplayUpload(userId: number, raw: string) {
       if (concurrent.userId !== userId) {
         throw new ReplayUploadError("Esta captura já pertence a outra conta.", 409, "DUPLICATE_REPLAY", document.match.id, document);
       }
+      const updated = enrichDuplicateReplay(concurrent, document);
       recordEloUpload(userId, document.match.id, document);
-      return { replay: concurrent, duplicate: true, document };
+      return {
+        replay: updated,
+        duplicate: true,
+        document,
+        analysisNeeded: updated.participation !== "watched" && markReplayAnalysisPendingIfMissing(updated.id),
+      };
     }
     if (error instanceof ReplayUploadError) throw error;
     throw new ReplayUploadError("Não foi possível salvar o replay.", 500, "STORAGE_ERROR", document.match.id, document);
   }
+}
+
+function enrichDuplicateReplay(existing: ReplayMetadata, document: ReplayDocument): ReplayMetadata {
+  let updated = existing;
+  if (!existing.gameMode) {
+    const mode = extractedMetadata(document).gameMode;
+    if (mode) {
+      updated = getDb()
+        .update(replays)
+        .set({ gameMode: mode })
+        .where(and(eq(replays.id, existing.id), isNull(replays.gameMode)))
+        .returning()
+        .get() ?? updated;
+    }
+  }
+  const automaticParticipation = replayAutomaticParticipation(document);
+  if (
+    existing.participation === "unknown" &&
+    existing.participationSource !== "manual" &&
+    automaticParticipation !== "unknown"
+  ) {
+    updated = getDb()
+      .update(replays)
+      .set({
+        participation: automaticParticipation,
+        participationSource: "automatic",
+      })
+      .where(and(
+        eq(replays.id, existing.id),
+        eq(replays.participation, "unknown"),
+        or(isNull(replays.participationSource), ne(replays.participationSource, "manual")),
+      ))
+      .returning()
+      .get() ?? getDb().select().from(replays).where(eq(replays.id, existing.id)).get() ?? updated;
+  }
+  return updated;
+}
+
+function markReplayAnalysisPendingIfMissing(replayId: number): boolean {
+  return getDb()
+    .insert(replayAnalyses)
+    .values({ replayId, status: "pending" })
+    .onConflictDoNothing()
+    .run().changes > 0;
 }
 
 function quotaLimit(name: string, fallback: number): number {
@@ -445,7 +555,7 @@ export function listUserReplayStats(userId: number): ReplayStatsRecord[] {
     .select({ replay: replays, metrics: replayMetrics })
     .from(replays)
     .leftJoin(replayMetrics, eq(replayMetrics.replayId, replays.id))
-    .where(eq(replays.userId, userId))
+    .where(and(eq(replays.userId, userId), ne(replays.participation, "watched")))
     .orderBy(desc(replays.startedAt), desc(replays.id))
     .all()
     .map(({ replay, metrics }) => ({
@@ -505,6 +615,29 @@ export async function readAdminReplay(replayId: string) {
   const replay = findAdminReplay(replayId);
   if (!replay) return null;
   return readReplay(replay);
+}
+
+export function updateReplayParticipation(
+  userId: number,
+  role: "admin" | "user",
+  replayId: string,
+  participation: ReplayParticipation,
+): { replay: ReplayMetadata; analysisNeeded: boolean } | null {
+  const replay = role === "admin"
+    ? findAdminReplay(replayId)
+    : findUserReplay(userId, replayId);
+  if (!replay) return null;
+  const updated = getDb()
+    .update(replays)
+    .set({ participation, participationSource: "manual" })
+    .where(eq(replays.id, replay.id))
+    .returning()
+    .get();
+  const analysisNeeded = participation === "played" && markReplayAnalysisPendingIfMissing(updated.id);
+  return {
+    replay: updated,
+    analysisNeeded,
+  };
 }
 
 async function readReplay(replay: ReplayMetadata) {

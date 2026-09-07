@@ -112,10 +112,11 @@ export default function PrivacyPolicyPage() {
             <p>Estados técnicos de erro podem ser mantidos no <code>chrome.storage.local</code> para que o popup informe problemas ocorridos durante a captura.</p>
             <p>A extensão mantém no máximo:</p>
             <ul>
-              <li><strong>100 partidas armazenadas;</strong></li>
+              <li><strong>10 partidas armazenadas;</strong></li>
               <li><strong>200 MB de replays compactados.</strong></li>
             </ul>
             <p>Quando um desses limites é atingido, a extensão pode remover automaticamente apenas partidas concluídas que já tenham sido exportadas ou sincronizadas. Gravações que ainda não possuem cópia não são removidas silenciosamente.</p>
+            <p>Históricos antigos acima desse limite permanecem disponíveis de forma paginada enquanto não houver uma cópia segura. Novas capturas e importações ficam bloqueadas até que o excedente seja baixado, sincronizado ou excluído.</p>
             <p>O usuário pode excluir individualmente os replays pelo popup da extensão.</p>
             <p>Quando o usuário solicita um download, um arquivo JSON é salvo na pasta <code>Downloads/Talishar Local History</code>. Esse arquivo permanece sob o controle do usuário, inclusive após a desinstalação da extensão.</p>
           </section>

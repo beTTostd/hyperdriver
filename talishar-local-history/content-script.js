@@ -102,28 +102,46 @@
     if (!data || data.channel !== CHANNEL) return;
     const captureFrame = data.type === "sse-frame" && acceptsFrame(data);
     const captureDecision = data.type === "decision-event" && acceptsDecision(data);
-    if (!captureFrame && !captureDecision) return;
+    const captureCompletion = data.type === "completion-event" &&
+      ["concession", "claimed_victory"].includes(data.reason);
+    if (!captureFrame && !captureDecision && !captureCompletion) return;
 
     frameQueue = frameQueue
       .catch(() => undefined)
       .then(() => sessionReady)
       .then(async (ready) => {
         if (!ready) throw new Error("A sessão de captura não foi iniciada.");
-        const response = await chrome.runtime.sendMessage(captureFrame ? {
-          type: "capture-frame",
-          pageSessionId,
-          pageUrl,
-          endpoint: "/GetUpdateSSE.php",
-          payload: data.payload,
-          receivedAt: new Date().toISOString()
-        } : {
-          type: "capture-decision",
-          pageSessionId,
-          pageUrl,
-          choice: data.choice,
-          occurredAt: data.occurredAt || new Date().toISOString()
-        });
+        const response = await chrome.runtime.sendMessage(
+          captureFrame ? {
+            type: "capture-frame",
+            pageSessionId,
+            pageUrl,
+            endpoint: "/GetUpdateSSE.php",
+            payload: data.payload,
+            receivedAt: data.receivedAt || new Date().toISOString()
+          } : captureDecision ? {
+            type: "capture-decision",
+            pageSessionId,
+            pageUrl,
+            choice: data.choice,
+            occurredAt: data.occurredAt || new Date().toISOString()
+          } : {
+            type: "capture-completion",
+            pageSessionId,
+            pageUrl,
+            reason: data.reason,
+            occurredAt: data.occurredAt || new Date().toISOString()
+          },
+        );
         if (!response?.ok) throw new Error(response?.error || "Não foi possível salvar um snapshot.");
+        if (response.pageSessionId && response.pageSessionId !== pageSessionId) {
+          pageSessionId = response.pageSessionId;
+          try {
+            sessionStorage.setItem(sessionStorageKey, JSON.stringify({ id: pageSessionId, pageUrl }));
+          } catch {
+            // Capturing can continue without persisting the rotated session id.
+          }
+        }
         if (captureErrorActive) {
           await chrome.storage.local.remove(CAPTURE_ERROR_KEY);
           captureErrorActive = false;

@@ -27,6 +27,8 @@ export function proxy(request: NextRequest) {
     pathname === "/favicon.svg" ||
     pathname.startsWith("/api/health/") ||
     pathname.startsWith("/api/auth/") ||
+    pathname === "/api/admin/json" ||
+    pathname.startsWith("/api/admin/json/") ||
     pathname.startsWith("/api/coach/") ||
     pathname.startsWith("/coach/") ||
     pathname === "/api/profile/avatar-options" ||
@@ -64,7 +66,10 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  // Large uploads validate authentication, origin and size inside their route.
+  // Keeping the exact POST endpoints outside Proxy avoids Next.js truncating
+  // their cloned request bodies at its 10 MB proxy buffer limit.
+  matcher: ["/((?!_next/static|_next/image|api/replays$|api/admin/json$).*)"],
 };
 
 function safeRelativePath(value: string): string {

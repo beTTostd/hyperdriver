@@ -5,6 +5,13 @@ const matchesElement = document.querySelector("#matches");
 const importButton = document.querySelector("#import-button");
 const importFiles = document.querySelector("#import-files");
 const syncButton = document.querySelector("#sync-button");
+const paginationElement = document.querySelector("#pagination");
+const previousPageButton = document.querySelector("#previous-page");
+const nextPageButton = document.querySelector("#next-page");
+const pageIndicator = document.querySelector("#page-indicator");
+const downloadStates = new Map();
+let currentPage = 1;
+let pageCount = 1;
 
 function formatDate(value) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
@@ -34,16 +41,16 @@ async function send(message) {
   return response;
 }
 
-function render(matches) {
+function render(matches, total) {
   matchesElement.replaceChildren();
   if (!matches.length) {
     matchesElement.textContent = "Abra uma partida no Talishar para iniciar a captura.";
-    return;
   }
 
   for (const match of matches) {
     const item = document.createElement("article");
     item.className = "match";
+    item.dataset.matchId = match.id;
     const title = document.createElement("strong");
     title.textContent = gameModeLabel(match.gameMode);
     const metadata = document.createElement("span");
@@ -58,7 +65,17 @@ function render(matches) {
     const errors = SYNC_ORIGINS
       .map((origin) => perOriginSync.errors[origin])
       .filter((error) => error?.message);
-    if (match.status === "recording") {
+    if (match.captureQuality === "partial") {
+      syncState.classList.add("error");
+      syncState.textContent = "Captura parcial";
+      const start = match.startedTurn === null ? "sem T0 verificável" : `iniciada no T${match.startedTurn}`;
+      const interruption = match.captureInterrupted ? " e interrompida durante a partida" : "";
+      syncState.title = `Captura ${start}${interruption}. Ela pode ser baixada, mas não será sincronizada nem analisada.`;
+    } else if (match.captureQuality !== "complete" && match.status !== "recording") {
+      syncState.classList.add("error");
+      syncState.textContent = "Início não verificado";
+      syncState.title = "O início no T0 não pôde ser comprovado. A partida não será sincronizada nem analisada.";
+    } else if (match.status === "recording") {
       syncState.classList.add("recording");
       syncState.textContent = "Gravando";
     } else if (progress.synced === 0 && errors.length) {
@@ -87,18 +104,48 @@ function render(matches) {
       syncState.title = details.join(" ");
     }
     const actions = document.createElement("div");
+    const downloadMessage = document.createElement("span");
+    downloadMessage.className = "download-message";
+    const downloadState = downloadStates.get(match.id);
+    if (downloadState?.status === "preparing") {
+      downloadMessage.textContent = "Preparando download…";
+    } else if (downloadState?.status === "error") {
+      downloadMessage.classList.add("error");
+      downloadMessage.textContent = `Falha no download: ${downloadState.message}`;
+    }
+    if (match.status === "recording" && match.captureQuality === "complete") {
+      for (const [result, label] of [["victory", "Finalizar: vitória"], ["defeat", "Finalizar: derrota"]]) {
+        const finishButton = document.createElement("button");
+        finishButton.className = "secondary";
+        finishButton.textContent = label;
+        finishButton.addEventListener("click", async () => {
+          const translated = result === "victory" ? "vitória" : "derrota";
+          if (!confirm(`Confirma que esta partida terminou em ${translated}? Use somente quando o Talishar já encerrou a partida.`)) return;
+          finishButton.disabled = true;
+          try {
+            await send({ type: "finish-match-manually", id: match.id, result });
+            setStatus(`Partida finalizada como ${translated}; abra o Hyperdriver autenticado para sincronizar.`);
+            await load();
+          } catch (error) {
+            setStatus(error.message, true);
+          } finally {
+            finishButton.disabled = false;
+          }
+        });
+        actions.append(finishButton);
+      }
+    }
     const exportButton = document.createElement("button");
-    exportButton.textContent = "Baixar JSON";
+    exportButton.dataset.action = "export";
+    exportButton.disabled = downloadState?.status === "preparing";
+    exportButton.textContent = downloadState?.status === "preparing" ? "Preparando…" : "Baixar JSON";
     exportButton.addEventListener("click", async () => {
-      exportButton.disabled = true;
+      updateDownloadState(match.id, { status: "preparing" });
       try {
-        await send({ type: "export-match", id: match.id });
-        setStatus("JSON baixado em Downloads/Talishar Local History.");
-        await load();
+        const response = await send({ type: "export-match", id: match.id });
+        updateDownloadState(match.id, { status: "preparing", jobId: response.result?.jobId });
       } catch (error) {
-        setStatus(error.message, true);
-      } finally {
-        exportButton.disabled = false;
+        updateDownloadState(match.id, { status: "error", message: error.message });
       }
     });
     const deleteButton = document.createElement("button");
@@ -117,23 +164,82 @@ function render(matches) {
       }
     });
     actions.append(exportButton, deleteButton);
-    item.append(title, metadata, syncState, actions);
+    item.append(title, metadata, syncState);
+    if (downloadMessage.textContent) item.append(downloadMessage);
+    item.append(actions);
     matchesElement.append(item);
   }
+
+  paginationElement.hidden = total === 0;
+  pageIndicator.textContent = `Página ${currentPage} de ${pageCount}`;
+  previousPageButton.disabled = currentPage <= 1;
+  nextPageButton.disabled = currentPage >= pageCount;
 }
 
-async function load() {
+function updateDownloadState(matchId, state) {
+  downloadStates.set(matchId, state);
+  const item = [...matchesElement.querySelectorAll(".match")]
+    .find((candidate) => candidate.dataset.matchId === matchId);
+  if (!item) return;
+  const button = item.querySelector('[data-action="export"]');
+  let message = item.querySelector(".download-message");
+  if (!message) {
+    message = document.createElement("span");
+    message.className = "download-message";
+    item.insertBefore(message, item.lastElementChild);
+  }
+  message.classList.toggle("error", state.status === "error");
+  message.textContent = state.status === "preparing"
+    ? "Preparando download…"
+    : state.status === "error"
+      ? `Falha no download: ${state.message}`
+      : "";
+  button.disabled = state.status === "preparing";
+  button.textContent = state.status === "preparing" ? "Preparando…" : "Baixar JSON";
+}
+
+async function load(preserveStatus = false) {
   try {
-    const response = await send({ type: "list-matches" });
-    render(response.matches);
-    setStatus(
-      response.captureError?.message || "",
-      Boolean(response.captureError),
-    );
+    const response = await send({ type: "list-matches", page: currentPage });
+    currentPage = response.page;
+    pageCount = response.pageCount;
+    render(response.matches, response.total);
+    if (response.captureError) setStatus(response.captureError.message, true);
+    else if (!preserveStatus) setStatus("");
   } catch (error) {
     setStatus(error.message, true);
   }
 }
+
+previousPageButton.addEventListener("click", async () => {
+  if (currentPage <= 1) return;
+  currentPage -= 1;
+  await load(true);
+});
+
+nextPageButton.addEventListener("click", async () => {
+  if (currentPage >= pageCount) return;
+  currentPage += 1;
+  await load(true);
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.target !== "popup" || message.type !== "export-match-status") return;
+  if (message.status === "preparing") {
+    updateDownloadState(message.matchId, { status: "preparing", jobId: message.jobId });
+    return;
+  }
+  if (message.status === "error") {
+    updateDownloadState(message.matchId, { status: "error", message: message.error || "Erro desconhecido." });
+    setStatus(`Falha ao baixar o JSON: ${message.error || "Erro desconhecido."}`, true);
+    return;
+  }
+  if (message.status === "started") {
+    downloadStates.delete(message.matchId);
+    setStatus("Download iniciado em Downloads/Talishar Local History.");
+    void load(true);
+  }
+});
 
 importButton.addEventListener("click", () => importFiles.click());
 importFiles.addEventListener("change", async () => {

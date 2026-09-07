@@ -20,6 +20,11 @@
       <section>
         <h2><span>01</span> Partidas locais</h2>
         <div id="matches" class="matches"></div>
+        <nav id="pagination" class="pagination" aria-label="Paginação do histórico" hidden>
+          <button id="previous-page" class="secondary" type="button">Anterior</button>
+          <span id="page-indicator" aria-live="polite">Página 1 de 1</span>
+          <button id="next-page" class="secondary" type="button">Próxima</button>
+        </nav>
       </section>
       <section>
         <h2><span>02</span> Importar históricos</h2>
@@ -31,7 +36,7 @@
         </div>
       </section>
       <footer class="popup-footer" aria-label="Informações da extensão">
-        <small>v1.2.0</small>
+        <small>v1.5.0</small>
       </footer>
     </main>
     <script type="module" src="popup.js"></script>

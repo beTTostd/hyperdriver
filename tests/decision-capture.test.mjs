@@ -214,6 +214,32 @@ test("does not record failed or rejected fetch choices", async () => {
   }
 });
 
+test("records concession intent before Talishar redirects away from the game", async () => {
+  const { context, messages } = loadFetchBridge({ ok: false });
+  await context.fetch("https://talishar.net/game/ProcessInput.php?mode=100002&authKey=never-store");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].message, {
+    channel: "__talishar_local_history__",
+    type: "completion-event",
+    reason: "concession",
+    occurredAt: messages[0].message.occurredAt,
+  });
+  assert.equal(Number.isFinite(Date.parse(messages[0].message.occurredAt)), true);
+  assert.equal(JSON.stringify(messages[0]).includes("never-store"), false);
+});
+
+test("records victory claimed over an inactive opponent as completion", async () => {
+  const { context, messages } = loadFetchBridge();
+  await context.fetch("https://talishar.net/game/ProcessInput.php?mode=100007");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].message.type, "completion-event");
+  assert.equal(messages[0].message.reason, "claimed_victory");
+});
+
 test("captures accepted XMLHttpRequest actions without forwarding credentials or raw bodies", async () => {
   const { context, messages } = loadXhrBridge();
   const request = new context.XMLHttpRequest();
