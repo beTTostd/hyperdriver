@@ -24,10 +24,12 @@ export default function ReplayPlayerActions({
   replayId,
   frameIndex,
   onOpen,
+  disabled = false,
 }: {
   replayId: string;
   frameIndex: number;
   onOpen: () => void;
+  disabled?: boolean;
 }) {
   const [activeModal, setActiveModal] = useState<PlayerActionModal | null>(null);
   const [pending, setPending] = useState(false);
@@ -178,10 +180,10 @@ export default function ReplayPlayerActions({
   return (
     <>
       <div className={styles.playerActions} aria-label="Ações do replay">
-        <button ref={noteButtonRef} type="button" onClick={openNoteModal} aria-haspopup="dialog" aria-expanded={activeModal === "note"} aria-controls="replay-note-modal" title="Tomar nota">
+        <button ref={noteButtonRef} type="button" onClick={openNoteModal} aria-haspopup="dialog" aria-expanded={activeModal === "note"} aria-controls="replay-note-modal" title="Tomar nota" disabled={disabled}>
           <Icon name="clipboard" size={16} /><span>Tomar nota</span>
         </button>
-        <button ref={shareButtonRef} type="button" onClick={openShareModal} aria-haspopup="dialog" aria-expanded={activeModal === "share"} aria-controls="replay-share-modal" title="Compartilhar">
+        <button ref={shareButtonRef} type="button" onClick={openShareModal} aria-haspopup="dialog" aria-expanded={activeModal === "share"} aria-controls="replay-share-modal" title="Compartilhar" disabled={disabled}>
           <Icon name="externalLink" size={16} /><span>Compartilhar</span>
         </button>
       </div>

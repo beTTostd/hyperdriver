@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -16,6 +17,14 @@ import Icon from "../components/ui-icons";
 import { BrandSymbol } from "../components/brand";
 import CardImage from "../components/card-image";
 import { calculateLiveReplayValue } from "../../lib/replay-live-value.js";
+import {
+  needsLongReplayConfirmation,
+  preferredReplayVideoMimeType,
+  replayCaptureErrorMessage,
+  replayVideoFilename,
+  REPLAY_FINAL_FRAME_HOLD_MS,
+  REPLAY_FRAME_INTERVAL_MS,
+} from "../../lib/replay-video-recording.js";
 import { replayResult } from "../../talishar-local-history/replay-state.js";
 import {
   cardMarkers,
@@ -84,7 +93,8 @@ type Payload = {
 };
 
 type Frame = { sequence: number; receivedAt: string; payload: Payload };
-type Replay = { match: { startedAt?: string; frames: Frame[]; summary?: { winner?: string | number }; } };
+type Replay = { match: { id?: string; startedAt?: string; frames: Frame[]; summary?: { winner?: string | number }; } };
+type RecordingState = "idle" | "requesting" | "recording" | "finalizing" | "error";
 type ReplayDecisionMarker = {
   stateFingerprint: string;
   frameIndex: number;
@@ -148,6 +158,12 @@ const maximumSidebarWidth = 480;
 const sidebarResizeStep = 20;
 
 const isReplayId = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) || /^\d+$/.test(value);
+
+function waitForRenderedFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
+}
 
 const list = (value?: Card[]) => (Array.isArray(value) ? value : []);
 
@@ -540,16 +556,64 @@ export default function TalisharTable({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [recordingState, setRecordingState] = useState<RecordingState>("idle");
+  const [recordingStatus, setRecordingStatus] = useState("");
+  const recordingStateRef = useRef<RecordingState>("idle");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const captureStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const preventRecordingDownloadRef = useRef(false);
+  const mountedRef = useRef(true);
+  const downloadUrlsRef = useRef(new Set<string>());
+  const recordingLocked = recordingState === "requesting" || recordingState === "recording" || recordingState === "finalizing";
+
+  const transitionRecordingState = useCallback((state: RecordingState) => {
+    recordingStateRef.current = state;
+    if (mountedRef.current) setRecordingState(state);
+  }, []);
+
+  const releaseCapture = useCallback(() => {
+    const stream = captureStreamRef.current;
+    captureStreamRef.current = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    recorderRef.current = null;
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (recordingStateRef.current !== "recording") return;
+    transitionRecordingState("finalizing");
+    if (mountedRef.current) setRecordingStatus("Finalizando o vídeo…");
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") {
+      releaseCapture();
+      transitionRecordingState("error");
+      if (mountedRef.current) setRecordingStatus("A gravação foi interrompida antes de gerar o vídeo.");
+      return;
+    }
+    try {
+      recorder.requestData();
+    } catch {
+      // Some implementations flush automatically when stop() is called.
+    }
+    try {
+      recorder.stop();
+    } catch (reason) {
+      preventRecordingDownloadRef.current = true;
+      releaseCapture();
+      transitionRecordingState("error");
+      if (mountedRef.current) setRecordingStatus(reason instanceof Error ? `Não foi possível finalizar a gravação: ${reason.message}` : "Não foi possível finalizar a gravação.");
+    }
+  }, [releaseCapture, transitionRecordingState]);
 
   const updateSidebarWidth = useCallback((width: number) => {
     setSidebarWidth(Math.min(maximumSidebarWidth, Math.max(minimumSidebarWidth, width)));
   }, []);
 
   const startSidebarResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || recordingLocked) return;
     event.preventDefault();
     setResizingSidebar(true);
-  }, []);
+  }, [recordingLocked]);
 
   const resizeSidebarWithKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -569,9 +633,10 @@ export default function TalisharTable({
   }, [updateSidebarWidth]);
 
   const showPreview = useCallback((card: Card, element: HTMLElement, persistent: boolean) => {
+    if (recordingLocked) return;
     const bounds = element.getBoundingClientRect();
     setPreview({ card, frameIndex: index, persistent, side: bounds.left > window.innerWidth / 2 ? "left" : "right" });
-  }, [index]);
+  }, [index, recordingLocked]);
   const hideTransientPreview = useCallback(() => {
     setPreview((value) => value?.persistent ? value : null);
   }, []);
@@ -636,6 +701,118 @@ export default function TalisharTable({
     [decisionMarkers, index],
   );
 
+  const startRecording = useCallback(async () => {
+    if (recordingStateRef.current === "recording") {
+      stopRecording();
+      return;
+    }
+    if (recordingLocked) return;
+    setRecordingStatus("");
+    if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === "undefined") {
+      transitionRecordingState("error");
+      setRecordingStatus("Este navegador não oferece gravação de aba. Use uma versão recente do Chrome ou Edge.");
+      return;
+    }
+    if (needsLongReplayConfirmation(frames.length) && !window.confirm(
+      "Esta partida deve gerar mais de 30 minutos de vídeo e pode consumir bastante memória. Deseja continuar?",
+    )) return;
+
+    transitionRecordingState("requesting");
+    setRecordingStatus("Escolha esta aba do Hyperdriver no seletor do navegador.");
+    let stream: MediaStream | null = null;
+    try {
+      const captureOptions = {
+        video: { displaySurface: "browser" },
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "exclude",
+      } as DisplayMediaStreamOptions;
+      stream = await navigator.mediaDevices.getDisplayMedia(captureOptions);
+      const videoTracks = stream.getVideoTracks();
+      if (!videoTracks.length) throw new Error("A captura selecionada não forneceu uma faixa de vídeo.");
+
+      captureStreamRef.current = stream;
+      setPlaying(false);
+      setPreview(null);
+      setValueOpen(false);
+      setResizingSidebar(false);
+      setIndex(0);
+      await waitForRenderedFrame();
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const mimeType = preferredReplayVideoMimeType(MediaRecorder);
+      const videoOnlyStream = new MediaStream(videoTracks);
+      const recorder = new MediaRecorder(videoOnlyStream, mimeType ? { mimeType } : undefined);
+      const filename = replayVideoFilename(replay?.match.id ?? replayId);
+      recorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      preventRecordingDownloadRef.current = false;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onerror = (event) => {
+        preventRecordingDownloadRef.current = true;
+        const detail = (event as Event & { error?: DOMException }).error;
+        transitionRecordingState("error");
+        if (mountedRef.current) setRecordingStatus(detail?.message ? `Erro ao gravar: ${detail.message}` : "O gravador encontrou um erro e a captura foi encerrada.");
+        if (recorder.state !== "inactive") {
+          try {
+            recorder.stop();
+          } catch {
+            releaseCapture();
+          }
+        } else releaseCapture();
+      };
+      recorder.onstop = () => {
+        const chunks = recordingChunksRef.current;
+        recordingChunksRef.current = [];
+        releaseCapture();
+        if (preventRecordingDownloadRef.current || !mountedRef.current) return;
+        if (!chunks.length) {
+          transitionRecordingState("error");
+          setRecordingStatus("A gravação terminou sem dados de vídeo para baixar.");
+          return;
+        }
+        try {
+          const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" });
+          const url = URL.createObjectURL(blob);
+          downloadUrlsRef.current.add(url);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          anchor.hidden = true;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => {
+            URL.revokeObjectURL(url);
+            downloadUrlsRef.current.delete(url);
+          }, 1000);
+          transitionRecordingState("idle");
+          setRecordingStatus(`Vídeo salvo como ${filename}`);
+        } catch (reason) {
+          transitionRecordingState("error");
+          setRecordingStatus(reason instanceof Error ? `Não foi possível baixar o vídeo: ${reason.message}` : "Não foi possível baixar o vídeo gravado.");
+        }
+      };
+      videoTracks.forEach((track) => track.addEventListener("ended", stopRecording, { once: true }));
+      recorder.start(1000);
+      transitionRecordingState("recording");
+      setRecordingStatus("Gravando a partida inteira…");
+    } catch (reason) {
+      stream?.getTracks().forEach((track) => track.stop());
+      captureStreamRef.current = null;
+      recorderRef.current = null;
+      transitionRecordingState("error");
+      setRecordingStatus(replayCaptureErrorMessage(reason));
+    }
+  }, [frames.length, recordingLocked, releaseCapture, replay, replayId, stopRecording, transitionRecordingState]);
+
   useEffect(() => {
     if (!playing || frames.length < 2) return;
     const timer = window.setInterval(() => {
@@ -649,6 +826,36 @@ export default function TalisharTable({
     }, 480);
     return () => window.clearInterval(timer);
   }, [playing, frames.length]);
+
+  useEffect(() => {
+    if (recordingState !== "recording") return;
+    const isLastFrame = index >= frames.length - 1;
+    const timer = window.setTimeout(() => {
+      if (isLastFrame) stopRecording();
+      else setIndex((value) => Math.min(frames.length - 1, value + 1));
+    }, isLastFrame ? REPLAY_FINAL_FRAME_HOLD_MS : REPLAY_FRAME_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [frames.length, index, recordingState, stopRecording]);
+
+  useEffect(() => {
+    const downloadUrls = downloadUrlsRef.current;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      preventRecordingDownloadRef.current = true;
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        recorder.onerror = null;
+        recorder.stop();
+      }
+      releaseCapture();
+      downloadUrls.forEach((url) => URL.revokeObjectURL(url));
+      downloadUrls.clear();
+    };
+  }, [releaseCapture]);
 
   useEffect(() => {
     if (!resizingSidebar) return;
@@ -669,6 +876,7 @@ export default function TalisharTable({
       const target = event.target;
       if (
         !frames.length
+        || recordingLocked
         || target instanceof HTMLInputElement
         || target instanceof HTMLTextAreaElement
         || target instanceof HTMLSelectElement
@@ -690,7 +898,7 @@ export default function TalisharTable({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [frames.length, closePreview]);
+  }, [frames.length, closePreview, recordingLocked]);
 
   if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/replays">Voltar para seus replays</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div role="status" aria-live="polite"><BrandSymbol className={styles.loadingMark} /><p>Montando a mesa…</p></div></main>;
@@ -710,7 +918,7 @@ export default function TalisharTable({
         className={`${styles.replay} ${sidebarCollapsed ? styles.sidebarIsCollapsed : ""} ${resizingSidebar ? styles.resizingSidebar : ""}`}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        <div className={styles.tableWorkspace}>
+        <div className={styles.tableWorkspace} inert={recordingLocked ? true : undefined}>
           <section className={styles.table}>
             <div className={styles.opponentMat} />
             <div className={styles.playerMat} />
@@ -792,18 +1000,18 @@ export default function TalisharTable({
           </button>
         </div>
 
-        <section className={`${styles.timeline} ${workspaceEnabled && replayId ? styles.timelineWithActions : ""}`} aria-label="Controles do replay">
+        <section className={`${styles.timeline} ${styles.timelineWithActions}`} aria-label="Controles do replay">
           <div className={styles.transport}>
-            <Link className={styles.backButton} href={backHref} aria-label="Voltar" title="Voltar"><TransportIcon name="back" /></Link>
-            <button type="button" disabled={index === 0} onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Frame anterior" title="Frame anterior"><TransportIcon name="previous" /></button>
-            <button type="button" className={styles.playButton} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
-            <button type="button" disabled={index === frames.length - 1} onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo frame" title="Próximo frame"><TransportIcon name="next" /></button>
+            <Link className={styles.backButton} href={backHref} aria-label="Voltar" title="Voltar" aria-disabled={recordingLocked} tabIndex={recordingLocked ? -1 : undefined} onClick={(event) => { if (recordingLocked) event.preventDefault(); }}><TransportIcon name="back" /></Link>
+            <button type="button" disabled={recordingLocked || index === 0} onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Frame anterior" title="Frame anterior"><TransportIcon name="previous" /></button>
+            <button type="button" className={styles.playButton} disabled={recordingLocked} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
+            <button type="button" disabled={recordingLocked || index === frames.length - 1} onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo frame" title="Próximo frame"><TransportIcon name="next" /></button>
           </div>
           <div className={styles.scrubber}>
             <div className={styles.turns}>{markers.map((marker, markerIndex) => {
               const next = markers[markerIndex + 1]?.index ?? frames.length;
               const selected = index >= marker.index && index < next;
-              return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
+              return <button className={selected ? styles.selectedTurn : ""} type="button" key={marker.index} disabled={recordingLocked} onClick={() => { setPlaying(false); setIndex(marker.index); }}>T{marker.turn}</button>;
             })}</div>
             {showDecisionAnalysis && decisionMarkers.length > 0 && <div className={styles.decisionMarkers} aria-label="Decisões analisadas">{decisionMarkers.map((marker) => (
               <button
@@ -813,6 +1021,7 @@ export default function TalisharTable({
                 style={{ "--decision-position": `${frames.length > 1 ? marker.frameIndex / (frames.length - 1) * 100 : 0}%` } as CSSProperties}
                 title={`Clique para abrir · ${marker.decisionLabel}: ${marker.regretPp.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.`}
                 type="button"
+                disabled={recordingLocked}
                 onClick={() => {
                   setPlaying(false);
                   setIndex(marker.frameIndex);
@@ -821,10 +1030,21 @@ export default function TalisharTable({
                 }}
               />
             ))}</div>}
-            <input type="range" min="0" max={frames.length - 1} value={index} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
+            <input type="range" min="0" max={frames.length - 1} value={index} disabled={recordingLocked} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
           </div>
           <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
-          {workspaceEnabled && replayId && <ReplayPlayerActions replayId={replayId} frameIndex={index} onOpen={() => setPlaying(false)} />}
+          <div className={styles.replayActions} aria-label="Gravação e ações do replay">
+            <button
+              className={recordingState === "recording" ? styles.stopRecordingButton : styles.recordingButton}
+              type="button"
+              onClick={() => void startRecording()}
+              disabled={recordingState === "requesting" || recordingState === "finalizing"}
+              aria-pressed={recordingState === "recording"}
+              title={recordingState === "recording" ? "Parar gravação" : "Gravar vídeo"}
+            ><span className={styles.recordingDot} aria-hidden="true" /><span>{recordingState === "recording" ? "Parar gravação" : recordingState === "requesting" ? "Preparando…" : recordingState === "finalizing" ? "Finalizando…" : "Gravar vídeo"}</span></button>
+            {workspaceEnabled && replayId && <ReplayPlayerActions replayId={replayId} frameIndex={index} onOpen={() => setPlaying(false)} disabled={recordingLocked} />}
+          </div>
+          {recordingStatus && <span className={`${styles.recordingStatus} ${recordingState === "error" ? styles.recordingError : ""}`} role={recordingState === "error" ? "alert" : "status"}>{recordingStatus}</span>}
         </section>
         <CardPreview preview={preview?.frameIndex === index ? preview : null} onClose={closePreview} />
         {valueOpen && (

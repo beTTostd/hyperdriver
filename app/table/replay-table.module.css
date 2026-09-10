@@ -272,7 +272,7 @@
 .transport { position: relative; display: flex; align-items: center; gap: 5px; }
 .transport button, .backButton { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--paper); background: rgba(242,241,236,.025); cursor: pointer; }
 .transport button:hover, .backButton:hover { color: var(--paper); border-color: rgba(255,77,61,.55); background: rgba(255,77,61,.08); }
-.transport button:disabled { color: var(--muted); border-color: var(--line); background: rgba(242,241,236,.012); cursor: not-allowed; opacity: .45; }
+.transport button:disabled, .backButton[aria-disabled="true"] { color: var(--muted); border-color: var(--line); background: rgba(242,241,236,.012); cursor: not-allowed; opacity: .45; }
 .transportIcon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .transportIconFill { fill: currentColor; stroke: none; }
 .transport .playButton { width: 38px; height: 38px; border-color: var(--signal-red); border-radius: 50%; color: var(--carbon); background: var(--signal-red); font-size: 11px; }
@@ -281,12 +281,21 @@
 .turns { display: flex; gap: 3px; overflow: hidden; }
 .turns button { min-width: 27px; padding: 2px 5px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: 7px; font-weight: 850; cursor: pointer; }
 .turns button:hover, .turns .selectedTurn { color: var(--paper); background: rgba(255,77,61,.16); }
+.turns button:disabled { cursor: not-allowed; opacity: .55; }
+.scrubber input:disabled { cursor: not-allowed; opacity: .45; }
 .frameCount { display: flex; align-items: baseline; justify-content: flex-end; gap: 3px; }
 .frameCount strong { font-size: 18px; }
 .frameCount span { color: var(--muted); font-size: 8px; }
-.playerActions { display: flex; align-items: center; justify-self: end; gap: 6px; }
-.playerActions button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--paper); background: rgba(242,241,236,.025); font-family: var(--font-mono); font-size: 8px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
-.playerActions button:hover, .playerActions button:focus-visible { border-color: var(--telemetry-blue); color: var(--telemetry-blue); background: rgba(107,184,255,.08); outline: none; }
+.replayActions, .playerActions { display: flex; align-items: center; justify-self: end; gap: 6px; }
+.replayActions > button, .playerActions button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--paper); background: rgba(242,241,236,.025); font-family: var(--font-mono); font-size: 8px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+.replayActions > button:hover, .replayActions > button:focus-visible, .playerActions button:hover, .playerActions button:focus-visible { border-color: var(--telemetry-blue); color: var(--telemetry-blue); background: rgba(107,184,255,.08); outline: none; }
+.replayActions > button:disabled, .playerActions button:disabled { cursor: not-allowed; opacity: .45; }
+.replayActions .recordingButton .recordingDot { color: var(--signal-red); }
+.replayActions .stopRecordingButton { border-color: var(--signal-red); color: var(--signal-red); background: rgba(255,77,61,.1); }
+.recordingDot { width: 8px; height: 8px; flex: 0 0 auto; border: 1px solid currentColor; border-radius: 50%; background: currentColor; }
+.stopRecordingButton .recordingDot { border-radius: 1px; }
+.recordingStatus { position: absolute; bottom: 1px; left: 166px; overflow: hidden; max-width: min(440px, 45vw); color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.recordingError { color: #ff887d; }
 .playerActionStatus { position: absolute; right: 16px; bottom: 1px; overflow: hidden; max-width: 230px; color: var(--telemetry-blue); font-family: var(--font-mono); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 
 .playerModalLayer { position: fixed; z-index: 1400; inset: 0; display: grid; place-items: center; padding: max(18px,var(--safe-top)) max(18px,var(--safe-right)) max(18px,var(--safe-bottom)) max(18px,var(--safe-left)); }
@@ -416,7 +425,7 @@
   .timelineWithActions { grid-template-columns: 190px minmax(0,1fr) 60px auto; }
   .transport button, .backButton { width: var(--touch-target); height: var(--touch-target); }
   .transport .playButton { width: 48px; height: 48px; }
-  .playerActions button { min-height: var(--touch-target); }
+  .replayActions > button, .playerActions button { min-height: var(--touch-target); }
   .turns button { min-width: var(--touch-target); min-height: var(--touch-target); }
 }
 
@@ -426,8 +435,8 @@
   .timelineWithActions { grid-template-columns: 190px minmax(0,1fr) 60px auto; }
   .transport button, .backButton { width: var(--touch-target); height: var(--touch-target); }
   .transport .playButton { width: 48px; height: 48px; }
-  .playerActions button { width: var(--touch-target); min-height: var(--touch-target); padding: 0; }
-  .playerActions button span { display: none; }
+  .replayActions > button, .playerActions button { width: var(--touch-target); min-height: var(--touch-target); padding: 0; }
+  .replayActions > button > span:not(.recordingDot), .playerActions button span { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -567,8 +576,9 @@
   .timelineWithActions .transport { grid-column: 1; justify-self: start; }
   .transport button, .backButton { width: var(--touch-target); height: var(--touch-target); border-radius: 4px; }
   .transport .playButton { width: 48px; height: 48px; }
-  .playerActions { grid-column: 2; grid-row: 1; gap: 3px; }
-  .playerActionStatus { display: none; }
+  .replayActions { grid-column: 2; grid-row: 1; gap: 3px; }
+  .replayActions .playerActions { gap: 3px; }
+  .playerActionStatus, .recordingStatus { display: none; }
   .scrubber { grid-column: 1; grid-row: 2; gap: 4px; }
   .scrubber input { min-height: 20px; margin: 0; }
   .turns { gap: 2px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
@@ -583,10 +593,14 @@
 
 @media (max-width: 440px) {
   .playerHalf { padding-inline: 6px; }
-  .transport { gap: 3px; }
+  .timeline { grid-template-rows: auto auto auto; min-height: calc(188px + var(--safe-bottom)); }
+  .timelineWithActions .transport { grid-column: 1 / -1; grid-row: 1; justify-self: center; gap: 3px; }
+  .replayActions { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+  .scrubber { grid-column: 1; grid-row: 3; }
+  .frameCount { grid-column: 2; grid-row: 3; }
   .transport button, .backButton { width: var(--touch-target); height: var(--touch-target); }
   .transport .playButton { width: 46px; height: 46px; }
-  .timeline { min-height: calc(138px + var(--safe-bottom)); padding-inline: 6px; }
+  .timeline { padding-inline: 6px; }
   .playerModalPermissions { grid-template-columns: 1fr; }
   .playerModalFooter { display: grid; grid-template-columns: 1fr 1fr; }
   .frameCount strong { font-size: 15px; }

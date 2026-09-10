@@ -853,12 +853,12 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.match(html, /v1\.0\.0/);
   assert.match(html, /v0\.4\.4/);
   assert.match(html, /Data de criação|Arquivo criado em/);
-  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.5\.0\.zip"/);
-  assert.match(html, /download="hyperdriver-extension-v1\.5\.0\.zip"/);
+  assert.match(html, /href="\/downloads\/hyperdriver-extension-v1\.5\.1\.zip"/);
+  assert.match(html, /download="hyperdriver-extension-v1\.5\.1\.zip"/);
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  for (const version of ["1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
+  for (const version of ["1.5.1", "1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
     const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
     assert.equal(download.status, 200);
     assert.ok((await download.arrayBuffer()).byteLength > 0);

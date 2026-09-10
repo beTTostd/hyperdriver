@@ -8,23 +8,9 @@
   const MAX_FRAMES_PER_MINUTE = 240;
   const sessionHelpers = globalThis.__talisharCaptureSession;
   if (!sessionHelpers) return;
-  const isGamePage = window.location.pathname === "/game" || window.location.pathname.startsWith("/game/");
-  if (!isGamePage) return;
   const LEGACY_SESSION_STORAGE_KEY = "talishar-local-history-session";
-  const pageUrl = window.location.pathname;
-  const sessionStorageKey = `${LEGACY_SESSION_STORAGE_KEY}:${pageUrl}`;
-  let storedSession = null;
   let captureErrorActive = false;
-  try {
-    storedSession = JSON.parse(
-      sessionStorage.getItem(sessionStorageKey) ||
-      sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY) ||
-      "null",
-    );
-  } catch {
-    // A fresh session is sufficient when sessionStorage is unavailable.
-  }
-  let pageSessionId = sessionHelpers.pageSessionId(storedSession, pageUrl);
+  const captureSessions = new Map();
 
   async function reportCaptureError(error) {
     captureErrorActive = true;
@@ -34,24 +20,53 @@
     }).catch(() => undefined);
   }
 
-  const sessionReady = chrome.runtime.sendMessage({
-    type: "capture-session-start",
-    pageSessionId,
-    pageUrl,
-    startedAt: new Date().toISOString()
-  }).then((response) => {
-    if (!response?.ok) throw new Error(response?.error || "Não foi possível iniciar a captura.");
-    if (response?.pageSessionId) pageSessionId = response.pageSessionId;
+  function storedSessionFor(pageUrl) {
+    const sessionStorageKey = `${LEGACY_SESSION_STORAGE_KEY}:${pageUrl}`;
     try {
-      sessionStorage.setItem(sessionStorageKey, JSON.stringify({ id: pageSessionId, pageUrl }));
+      return {
+        sessionStorageKey,
+        storedSession: JSON.parse(
+          sessionStorage.getItem(sessionStorageKey) ||
+          sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY) ||
+          "null",
+        ),
+      };
     } catch {
-      // Capturing can continue without persisting the session id.
+      return { sessionStorageKey, storedSession: null };
     }
-    return true;
-  }).catch(async (error) => {
-    await reportCaptureError(error);
-    return false;
-  });
+  }
+
+  function captureSessionFor(pageUrl) {
+    const current = captureSessions.get(pageUrl);
+    if (current) return current;
+
+    const { sessionStorageKey, storedSession } = storedSessionFor(pageUrl);
+    const session = {
+      pageSessionId: sessionHelpers.pageSessionId(storedSession, pageUrl),
+      ready: null,
+    };
+    captureSessions.set(pageUrl, session);
+    session.ready = chrome.runtime.sendMessage({
+      type: "capture-session-start",
+      pageSessionId: session.pageSessionId,
+      pageUrl,
+      startedAt: new Date().toISOString()
+    }).then((response) => {
+      if (!response?.ok) throw new Error(response?.error || "Não foi possível iniciar a captura.");
+      if (response?.pageSessionId) session.pageSessionId = response.pageSessionId;
+      try {
+        sessionStorage.setItem(sessionStorageKey, JSON.stringify({ id: session.pageSessionId, pageUrl }));
+      } catch {
+        // Capturing can continue without persisting the session id.
+      }
+      return true;
+    }).catch(async (error) => {
+      captureSessions.delete(pageUrl);
+      await reportCaptureError(error);
+      return false;
+    });
+    return session;
+  }
 
   let frameQueue = Promise.resolve();
   const recentFrames = [];
@@ -105,39 +120,45 @@
     const captureCompletion = data.type === "completion-event" &&
       ["concession", "claimed_victory"].includes(data.reason);
     if (!captureFrame && !captureDecision && !captureCompletion) return;
+    const pageUrl = sessionHelpers.gamePageUrl(window.location.pathname);
+    if (!pageUrl) return;
+    const captureSession = captureSessionFor(pageUrl);
 
     frameQueue = frameQueue
       .catch(() => undefined)
-      .then(() => sessionReady)
+      .then(() => captureSession.ready)
       .then(async (ready) => {
         if (!ready) throw new Error("A sessão de captura não foi iniciada.");
         const response = await chrome.runtime.sendMessage(
           captureFrame ? {
             type: "capture-frame",
-            pageSessionId,
+            pageSessionId: captureSession.pageSessionId,
             pageUrl,
             endpoint: "/GetUpdateSSE.php",
             payload: data.payload,
             receivedAt: data.receivedAt || new Date().toISOString()
           } : captureDecision ? {
             type: "capture-decision",
-            pageSessionId,
+            pageSessionId: captureSession.pageSessionId,
             pageUrl,
             choice: data.choice,
             occurredAt: data.occurredAt || new Date().toISOString()
           } : {
             type: "capture-completion",
-            pageSessionId,
+            pageSessionId: captureSession.pageSessionId,
             pageUrl,
             reason: data.reason,
             occurredAt: data.occurredAt || new Date().toISOString()
           },
         );
         if (!response?.ok) throw new Error(response?.error || "Não foi possível salvar um snapshot.");
-        if (response.pageSessionId && response.pageSessionId !== pageSessionId) {
-          pageSessionId = response.pageSessionId;
+        if (response.pageSessionId && response.pageSessionId !== captureSession.pageSessionId) {
+          captureSession.pageSessionId = response.pageSessionId;
           try {
-            sessionStorage.setItem(sessionStorageKey, JSON.stringify({ id: pageSessionId, pageUrl }));
+            sessionStorage.setItem(
+              `${LEGACY_SESSION_STORAGE_KEY}:${pageUrl}`,
+              JSON.stringify({ id: captureSession.pageSessionId, pageUrl }),
+            );
           } catch {
             // Capturing can continue without persisting the rotated session id.
           }

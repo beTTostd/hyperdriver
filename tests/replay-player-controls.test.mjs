@@ -30,8 +30,22 @@ test("keeps the replay player transport focused on four ordered controls", () =>
 
   assert.deepEqual(labels, ["Voltar", "Frame anterior", "Pausar", "Reproduzir", "Próximo frame"]);
   assert.doesNotMatch(transport, /Primeiro snapshot|\u00daltimo snapshot|Criar bookmark|Compartilhar com treinador/);
-  assert.match(transport, /disabled=\{index === 0\}/);
-  assert.match(transport, /disabled=\{index === frames\.length - 1\}/);
+  assert.match(transport, /disabled=\{recordingLocked \|\| index === 0\}/);
+  assert.match(transport, /disabled=\{recordingLocked \|\| index === frames\.length - 1\}/);
+});
+
+test("offers video recording on every table and locks conflicting controls", () => {
+  assert.match(tableSource, /"idle" \| "requesting" \| "recording" \| "finalizing" \| "error"/);
+  assert.match(tableSource, /video: \{ displaySurface: "browser" \}[\s\S]*audio: false[\s\S]*preferCurrentTab: true/);
+  assert.match(tableSource, /navigator\.mediaDevices\.getDisplayMedia\(captureOptions\)/);
+  assert.match(tableSource, /recorder\.start\(1000\)/);
+  assert.match(tableSource, /"Parar gravação"[\s\S]*"Gravar vídeo"/);
+  assert.match(tableSource, /value=\{index\} disabled=\{recordingLocked\} .*aria-label="Posição do replay"/);
+  assert.match(tableSource, /<ReplayPlayerActions[^>]*onOpen=\{\(\) => setPlaying\(false\)\} disabled=\{recordingLocked\}/);
+  assert.match(tableSource, /REPLAY_FINAL_FRAME_HOLD_MS[\s\S]*stopRecording\(\)/);
+  assert.match(tableSource, /track\.addEventListener\("ended", stopRecording/);
+  assert.match(tableSource, /URL\.revokeObjectURL\(url\)/);
+  assert.match(tableSource, /workspaceEnabled && replayId && <ReplayPlayerActions/);
 });
 
 test("places note and sharing actions to the right of the player and opens their settings in modals", () => {

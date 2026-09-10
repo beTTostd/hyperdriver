@@ -15,6 +15,7 @@ Extensão Chrome do Hyperdriver para registrar partidas do Talishar, manter uma 
 - Permite importar um ou vários JSONs já salvos pelo popup da extensão.
 - Permite solicitar a sincronização de todos os replays pendentes de uma vez.
 - Serializa snapshots da mesma partida para evitar perda de quadros em rajadas de eventos.
+- Inicia a captura ao entrar em uma partida por navegação interna do Talishar, sem exigir recarregar a página.
 - Descarta atualizações recebidas depois que a partida já foi concluída.
 - Reutiliza a mesma gravação ao atualizar `/game/play/{id}` e recupera pelo IndexedDB uma gravação interrompida da mesma página.
 - Identifica capturas iniciadas depois do T0 ou retomadas após interrupção como parciais; elas podem ser baixadas, mas não são sincronizadas nem analisadas.
