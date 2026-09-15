@@ -153,14 +153,24 @@ export function matchesToPrune(matches, protectedId = null, incomingBytes = 0) {
   const candidates = matches
     .filter((match) => (
       match.id !== protectedId &&
-      match.status === "finished" &&
       (
-        match.exportedAt ||
-        match.sync?.uploadedAt ||
-        Object.values(match.sync?.targets || {}).some((target) => target?.uploadedAt)
+        (match.status === "recording" && Array.isArray(match.frames) && match.frames.length === 0) ||
+        (
+          match.status === "finished" &&
+          (
+            match.exportedAt ||
+            match.sync?.uploadedAt ||
+            Object.values(match.sync?.targets || {}).some((target) => target?.uploadedAt)
+          )
+        )
       )
     ))
-    .sort((a, b) => String(a.updatedAt || a.startedAt || "").localeCompare(String(b.updatedAt || b.startedAt || "")));
+    .sort((a, b) => {
+      const aIsEmptyCapture = a.status === "recording" && Array.isArray(a.frames) && a.frames.length === 0;
+      const bIsEmptyCapture = b.status === "recording" && Array.isArray(b.frames) && b.frames.length === 0;
+      if (aIsEmptyCapture !== bIsEmptyCapture) return aIsEmptyCapture ? -1 : 1;
+      return String(a.updatedAt || a.startedAt || "").localeCompare(String(b.updatedAt || b.startedAt || ""));
+    });
   const ids = [];
 
   for (const match of candidates) {

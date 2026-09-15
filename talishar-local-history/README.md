@@ -44,7 +44,7 @@ Os arquivos exportados ficam em `Downloads/Talishar Local History/`.
 - A extensão acessa somente Talishar e os dois domínios oficiais do Hyperdriver declarados no manifesto.
 - Partidas incompletas, iniciadas depois do T0 ou interrompidas não são enviadas; cada ambiente mantém seu próprio estado de upload e de erro, portanto uma falha no beta não bloqueia a produção (nem o inverso).
 - Importações são limitadas a 50 MB e validadas antes de entrar no histórico local.
-- A extensão mantém no máximo 10 partidas e 200 MB de replays compactados. Ao atingir um limite, remove apenas partidas concluídas que já foram exportadas ou sincronizadas; nunca remove silenciosamente um replay sem cópia.
+- A extensão mantém no máximo 10 partidas e 200 MB de replays compactados. Ao atingir um limite, remove tentativas abandonadas sem nenhum snapshot e partidas concluídas que já foram exportadas ou sincronizadas; nunca remove silenciosamente um replay capturado sem cópia.
 - Instalações antigas com mais de 10 partidas sem cópia segura continuam exibindo todo o histórico paginado, mas não iniciam novas capturas nem importações até que o excedente seja baixado, sincronizado ou apagado.
 - Atualizações da página passam por validação de origem, endpoint, tamanho e frequência antes de serem encaminhadas ao armazenamento.
 - O upload usa a sessão já aberta no site e passa a pertencer à conta autenticada na primeira sincronização bem-sucedida.

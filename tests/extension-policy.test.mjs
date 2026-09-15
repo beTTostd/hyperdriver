@@ -179,6 +179,42 @@ test("retention removes only old finished matches that have a safe copy", () => 
   assert.deepEqual(matchesToPrune(withoutCopies), []);
 });
 
+test("retention discards abandoned empty captures before blocking a new match", () => {
+  const empty = Array.from({ length: MAX_STORED_MATCHES }, (_, index) => ({
+    id: `empty-${index}`,
+    status: "recording",
+    startedAt: new Date(2026, 0, index + 1).toISOString(),
+    frames: [],
+  }));
+  const reserved = { id: "__reserved-0", status: "recording" };
+
+  assert.deepEqual(matchesToPrune([...empty, reserved]), ["empty-0"]);
+
+  const exported = {
+    id: "exported",
+    status: "finished",
+    startedAt: "2025-01-01T00:00:00.000Z",
+    exportedAt: "2025-01-02T00:00:00.000Z",
+    frames: [{ payload: { turnNo: 0 } }],
+  };
+  assert.deepEqual(
+    matchesToPrune([...empty.slice(0, -1), exported, reserved]),
+    ["empty-0"],
+    "an empty capture should be pruned before a real exported replay",
+  );
+
+  const partial = {
+    ...empty[0],
+    id: "partial",
+    frames: [{ payload: { turnNo: 4 } }],
+  };
+  assert.deepEqual(
+    matchesToPrune([partial, ...empty.slice(1), reserved]),
+    ["empty-1"],
+    "a partial replay with captured frames must remain protected",
+  );
+});
+
 test("retention protects a match synchronized with either environment", () => {
   const matches = Array.from({ length: MAX_STORED_MATCHES + 1 }, (_, index) => ({
     id: `match-${index}`,

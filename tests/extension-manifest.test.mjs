@@ -10,8 +10,8 @@ const popupStyles = readFileSync(`${projectRoot}/talishar-local-history/popup.cs
 const serviceWorker = readFileSync(`${projectRoot}/talishar-local-history/service-worker.js`, "utf8");
 const offscreenScript = readFileSync(`${projectRoot}/talishar-local-history/offscreen.js`, "utf8");
 
-test("publica a extensão 1.5.1 com permissões agrupadas e documento offscreen", () => {
-  assert.equal(manifest.version, "1.5.1");
+test("publica a extensão 1.5.2 com permissões agrupadas e documento offscreen", () => {
+  assert.equal(manifest.version, "1.5.2");
   assert.deepEqual(manifest.permissions, ["downloads", "offscreen", "storage"]);
   assert.doesNotMatch(offscreenScript, /chrome\.downloads/);
   assert.match(serviceWorker, /chrome\.downloads\.download/);
@@ -40,7 +40,7 @@ test("publica a extensão 1.5.1 com permissões agrupadas e documento offscreen"
 });
 
 test("exibe a versão no rodapé semântico do popup", () => {
-  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.5\.1<\/small>[\s\S]*<\/footer>/);
+  assert.match(popup, /<footer[^>]*class="popup-footer"[^>]*>[\s\S]*<small>v1\.5\.2<\/small>[\s\S]*<\/footer>/);
   assert.match(popupStyles, /\.popup-footer\s*\{/);
 });
 
