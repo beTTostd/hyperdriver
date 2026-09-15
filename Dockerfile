@@ -35,11 +35,13 @@ COPY --from=build --chown=node:node /app/scripts/migration-runner.mjs ./scripts/
 COPY --from=build --chown=node:node /app/scripts/backfill-replays.mjs ./scripts/backfill-replays.mjs
 COPY --from=build --chown=node:node /app/scripts/cleanup-quarantine.mjs ./scripts/cleanup-quarantine.mjs
 COPY --from=build --chown=node:node /app/scripts/seed.mjs ./scripts/seed.mjs
+COPY --from=build --chown=node:node /app/scripts/backup.mjs ./scripts/backup.mjs
+COPY --from=build --chown=node:node /app/scripts/backup-loop.sh ./scripts/backup-loop.sh
 COPY --from=build --chown=node:node /app/lib/replay-telemetry-core.js ./lib/replay-telemetry-core.js
 COPY --from=build --chown=node:node /app/talishar-local-history/replay-state.js ./talishar-local-history/replay-state.js
 COPY docker/entrypoint.sh /usr/local/bin/hyperdriver-entrypoint
 
-RUN chmod +x /usr/local/bin/hyperdriver-entrypoint \
+RUN chmod +x /usr/local/bin/hyperdriver-entrypoint /app/scripts/backup-loop.sh \
     && mkdir -p /app/data /app/uploads \
     && chown -R node:node /app
 

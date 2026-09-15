@@ -57,6 +57,23 @@
 
 .error { margin: 18px 0 0; padding: 12px 14px; border-left: 2px solid var(--signal-red); color: #ffb3aa; background: rgba(255, 77, 61, .08); font-size: 12px; }
 
+.operationsGrid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 28px; }
+.operationCard { padding: 18px; border: 1px solid var(--line); background: var(--panel); }
+.operationCard .sectionHeader { margin-bottom: 14px; }
+.operationCard .sectionHeader h2 { font-size: 24px; }
+.queueTotals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 16px; }
+.queueTotals div { padding: 10px; border: 1px solid var(--line); }
+.queueTotals dt { color: var(--muted); font: 8px var(--font-mono); text-transform: uppercase; }
+.queueTotals dd { margin: 6px 0 0; font: 700 20px var(--font-mono); }
+.reprocessForm { display: flex; align-items: end; gap: 8px; }
+.reprocessForm label { display: grid; flex: 1; gap: 5px; color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; }
+.reprocessForm input { min-height: 40px; padding: 0 10px; border: 1px solid var(--line-strong); color: var(--paper); background: var(--ink); }
+.reprocessForm button { min-height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); color: var(--paper); background: transparent; cursor: pointer; }
+.reprocessForm button:disabled { cursor: wait; opacity: .55; }
+.configEnabled, .configDisabled { margin: 0 0 12px; font: 700 28px var(--font-display); text-transform: uppercase; }
+.configEnabled { color: #8ed7a5; }
+.configDisabled { color: #ffb3aa; }
+
 .summaryGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 28px; }
 .summaryCard { min-height: 124px; padding: 16px; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(242, 241, 236, .04), transparent), var(--panel); }
 .summaryCard span, .summaryCard small { display: block; color: var(--muted); font-size: 10px; line-height: 1.35; }
@@ -109,12 +126,14 @@
 .pagination button { min-height: 36px; padding-inline: 10px; font-size: 9px; }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
 
-@media (max-width: 1000px) { .summaryGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .summaryGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .operationsGrid { grid-template-columns: 1fr; } }
 @media (max-width: 680px) {
   .pageHeader, .sectionHeader { align-items: flex-start; flex-direction: column; }
   .headerActions { width: 100%; align-items: stretch; flex-direction: column; }
   .updatedAt { text-align: left; }
   .refreshButton { width: 100%; }
   .summaryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .queueTotals { grid-template-columns: repeat(2, 1fr); }
+  .reprocessForm { align-items: stretch; flex-direction: column; }
 }
 @media (max-width: 420px) { .summaryGrid { grid-template-columns: 1fr; } }

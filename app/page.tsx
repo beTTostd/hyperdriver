@@ -29,12 +29,12 @@ export default async function LandingPage() {
             <Link className={styles.primaryCta} href={appLink}>Acompanhar meus jogos <Icon name="arrowRight" size={16} /></Link>
           </div>
         </div>
-        <div className={styles.signalPanel} aria-label="Visão geral das estatísticas">
-          <div className={styles.panelTop}><span>VISÃO GERAL / 001</span><i /></div>
+        <div className={styles.signalPanel} aria-label="Prévia ilustrativa da plataforma">
+          <div className={styles.panelTop}><span>PRÉVIA ILUSTRATIVA / 001</span><i /></div>
           <div className={styles.scanLine} aria-hidden="true" />
-          <div className={styles.signalMetric}><small>Desempenho</small><strong>+24%</strong><span>últimas sessões</span></div>
+          <div className={styles.signalMetric}><small>Seus dados</small><strong>Prévia</strong><span>valores reais aparecem após a sincronização</span></div>
           <div className={styles.chart} aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><b /></div>
-          <div className={styles.panelBottom}><span>Dados em contexto</span><strong>03 áreas de evolução</strong></div>
+          <div className={styles.panelBottom}><span>Dados em contexto</span><strong>Replay · estatísticas · metas</strong></div>
         </div>
       </section>
       <section className={styles.features} id="recursos" aria-labelledby="features-title">

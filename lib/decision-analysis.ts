@@ -180,9 +180,23 @@ function modelVersionId(versions: AnalysisVersions): string {
 }
 
 function collectiveAnalysisEnabled() {
-  if (process.env.COLLECTIVE_ANALYSIS_ENABLED === "false") return false;
-  if (process.env.NODE_ENV !== "production") return true;
-  return (process.env.ANALYSIS_PSEUDONYM_SALT?.length ?? 0) >= 32;
+  return collectiveAnalysisConfiguration().enabled;
+}
+
+export function collectiveAnalysisConfiguration() {
+  const requested = process.env.COLLECTIVE_ANALYSIS_ENABLED === "true";
+  const saltReady = (process.env.ANALYSIS_PSEUDONYM_SALT?.length ?? 0) >= 32;
+  const enabled = requested && (process.env.NODE_ENV !== "production" || saltReady);
+  return {
+    enabled,
+    requested,
+    saltReady,
+    reason: enabled
+      ? "enabled"
+      : requested && process.env.NODE_ENV === "production" && !saltReady
+        ? "missing_pseudonym_salt"
+        : "disabled_by_default",
+  } as const;
 }
 
 function userCohort(userId: number): string {
@@ -234,7 +248,18 @@ export async function processReplayAnalysis(
   const database = getDb();
   const metadata = database.select().from(replays).where(eq(replays.id, replayId)).get();
   if (!metadata) throw new Error("Replay not found.");
-  if (metadata.participation === "watched") return "insufficient_data";
+  if (metadata.participation === "watched") {
+    const now = Date.now();
+    database
+      .insert(replayAnalyses)
+      .values({ replayId, status: "insufficient_data", queuedAt: now, analyzedAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: replayAnalyses.replayId,
+        set: { status: "insufficient_data", errorCode: null, analyzedAt: now, updatedAt: now },
+      })
+      .run();
+    return "insufficient_data";
+  }
 
   try {
     const document = suppliedDocument ?? JSON.parse(

@@ -81,7 +81,7 @@ before(async () => {
       ...process.env,
       DATABASE_FILE: join(databaseDirectory, "test.sqlite"),
       UPLOADS_DIR: join(databaseDirectory, "uploads"),
-      ADMIN_INITIAL_PASSWORD: "Test1!xy",
+      ADMIN_INITIAL_PASSWORD: "Test1!xyLong",
     },
     encoding: "utf8",
   });
@@ -122,7 +122,7 @@ before(async () => {
   const login = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xyLong" }),
   });
   assert.equal(login.status, 200);
   cookie = getCookie(login);
@@ -204,14 +204,14 @@ test("rejects cross-origin mutations and always issues a secure production cooki
   const rejected = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", origin: "https://evil.example" },
-    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xyLong" }),
   });
   assert.equal(rejected.status, 403);
 
   const accepted = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "application/json", origin: baseUrl },
-    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xyLong" }),
   });
   assert.equal(accepted.status, 200);
   assert.match(accepted.headers.get("set-cookie") ?? "", /; Secure(?:;|$)/i);
@@ -230,7 +230,7 @@ test("bounds small JSON APIs and rejects unsafe numeric identifiers", async () =
   const unsupported = await fetch(new URL("/api/auth/login", baseUrl), {
     method: "POST",
     headers: { "content-type": "text/plain" },
-    body: JSON.stringify({ username: "admin", password: "Test1!xy" }),
+    body: JSON.stringify({ username: "admin", password: "Test1!xyLong" }),
   });
   assert.equal(unsupported.status, 415);
   assert.equal((await unsupported.json()).code, "UNSUPPORTED_MEDIA_TYPE");
@@ -402,6 +402,26 @@ test("shows decision analysis and feedback to the replay owner and administrator
   } finally {
     database.close();
   }
+
+  const reprocess = await fetch(new URL("/api/admin/analysis-jobs", baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ replayId }),
+  });
+  assert.equal(reprocess.status, 200);
+  const queueDatabase = new Database(join(databaseDirectory, "test.sqlite"));
+  try {
+    const replay = queueDatabase.prepare("SELECT id FROM replays WHERE source_match_id = ?").get(replayId);
+    queueDatabase.prepare(`
+      UPDATE analysis_jobs
+      SET status = 'running', lease_token = 'abandoned-test-worker', lease_expires_at = 1,
+          completed_at = NULL, updated_at = 1
+      WHERE replay_id = ?
+    `).run(replay.id);
+  } finally {
+    queueDatabase.close();
+  }
+  assert.equal(await waitForAnalysisJobState(replayId, "ready"), "ready");
 });
 
 test("classifies replay participation, protects manual corrections and excludes watched analysis", async () => {
@@ -858,7 +878,7 @@ test("lista versões válidas da extensão para administradores", async () => {
   assert.match(html, /Usuários/);
   assert.doesNotMatch(html, /hyperdriver-extension\.zip/);
 
-  for (const version of ["1.5.2", "1.5.1", "1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
+  for (const version of ["1.6.0", "1.5.2", "1.5.1", "1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0", "1.0.0", "0.4.4"]) {
     const download = await fetch(new URL(`/downloads/hyperdriver-extension-v${version}.zip`, baseUrl));
     assert.equal(download.status, 200);
     assert.ok((await download.arrayBuffer()).byteLength > 0);
@@ -1734,6 +1754,10 @@ test("rejects structural replay abuse and paginates from SQLite without reading 
         );
       }
     })();
+    const filteredReplay = database.prepare("SELECT id FROM replays WHERE user_id = ? ORDER BY id LIMIT 1").get(userId);
+    database.prepare("INSERT INTO replay_workspace (replay_id, user_id, note, is_favorite, reviewed_at) VALUES (?, ?, 'fora da primeira página', 1, ?)").run(filteredReplay.id, userId, Date.now());
+    const tag = database.prepare("INSERT INTO user_tags (user_id, name, normalized_name) VALUES (?, 'Defesa', 'defesa') RETURNING id").get(userId);
+    database.prepare("INSERT INTO replay_tags (replay_id, tag_id) VALUES (?, ?)").run(filteredReplay.id, tag.id);
   } finally {
     database.close();
   }
@@ -1746,6 +1770,17 @@ test("rejects structural replay abuse and paginates from SQLite without reading 
   const secondPage = await fetch(new URL(`/replays?cursor=${cursor}`, baseUrl), { headers: { cookie: quotaCookie } });
   assert.equal(secondPage.status, 200);
   assert.equal(replayIdsInHtml(await secondPage.text()).size, 25);
+
+  const favoritePage = await fetch(new URL("/replays?workspace=favorites", baseUrl), { headers: { cookie: quotaCookie } });
+  const favoriteHtml = await favoritePage.text();
+  assert.equal(replayIdsInHtml(favoriteHtml).size, 1);
+  assert.match(favoriteHtml, /Tem notas/);
+  assert.doesNotMatch(favoriteHtml, /Carregar mais replays/);
+
+  const taggedPage = await fetch(new URL("/replays?tag=DEFESA", baseUrl), { headers: { cookie: quotaCookie } });
+  const taggedHtml = await taggedPage.text();
+  assert.equal(replayIdsInHtml(taggedHtml).size, 1);
+  assert.match(taggedHtml, /Defesa/);
 
   const quotaResponse = await fetch(new URL("/api/replays", baseUrl), {
     method: "POST",
@@ -2093,6 +2128,26 @@ async function waitForDecisionAnalysis(replayId, requestCookie) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`Decision analysis did not finish.\n${serverOutput}`);
+}
+
+async function waitForAnalysisJobState(replayId, expected) {
+  const deadline = Date.now() + 12_000;
+  while (Date.now() < deadline) {
+    const database = new Database(join(databaseDirectory, "test.sqlite"), { readonly: true });
+    try {
+      const job = database.prepare(`
+        SELECT j.status
+        FROM analysis_jobs j
+        INNER JOIN replays r ON r.id = j.replay_id
+        WHERE r.source_match_id = ?
+      `).get(replayId);
+      if (job?.status === expected) return job.status;
+    } finally {
+      database.close();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Analysis job did not reach ${expected}.\n${serverOutput}`);
 }
 
 function getCookie(response) {

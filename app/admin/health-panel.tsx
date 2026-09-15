@@ -8,6 +8,8 @@ import type {
   UploadEventPage,
   UploadHealthSummary,
 } from "../../lib/upload-telemetry";
+import type { AnalysisQueueSummary } from "../../lib/analysis-queue";
+import type { BackupStatus } from "../../lib/maintenance";
 import styles from "./health-panel.module.css";
 
 const categories: UploadEventCategory[] = ["success", "error", "duplicate", "non_t0", "truncated", "corrupt"];
@@ -22,7 +24,24 @@ const labels: Record<UploadEventCategory, string> = {
 
 type Selection = { date: string; label: string; category: UploadEventCategory } | null;
 
-export default function HealthPanel({ initialSummary }: { initialSummary: UploadHealthSummary }) {
+type CollectiveAnalysisStatus = {
+  enabled: boolean;
+  requested: boolean;
+  saltReady: boolean;
+  reason: "enabled" | "missing_pseudonym_salt" | "disabled_by_default";
+};
+
+export default function HealthPanel({
+  initialSummary,
+  initialQueue,
+  collectiveAnalysis,
+  backupStatus,
+}: {
+  initialSummary: UploadHealthSummary;
+  initialQueue: AnalysisQueueSummary;
+  collectiveAnalysis: CollectiveAnalysisStatus;
+  backupStatus: BackupStatus;
+}) {
   const [summary, setSummary] = useState(initialSummary);
   const [selection, setSelection] = useState<Selection>(null);
   const [details, setDetails] = useState<UploadEventPage | null>(null);
@@ -30,6 +49,10 @@ export default function HealthPanel({ initialSummary }: { initialSummary: Upload
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [error, setError] = useState("");
   const [detailsError, setDetailsError] = useState("");
+  const [queue, setQueue] = useState(initialQueue);
+  const [replayId, setReplayId] = useState("");
+  const [queueStatus, setQueueStatus] = useState("");
+  const [queuePending, setQueuePending] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -68,6 +91,28 @@ export default function HealthPanel({ initialSummary }: { initialSummary: Upload
     }
   }, []);
 
+  const reprocess = useCallback(async () => {
+    if (!replayId.trim() || queuePending) return;
+    setQueuePending(true);
+    setQueueStatus("Reenfileirando…");
+    try {
+      const response = await fetch("/api/admin/analysis-jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ replayId: replayId.trim() }),
+      });
+      const data = await response.json() as { error?: string; queue?: AnalysisQueueSummary };
+      if (!response.ok || !data.queue) throw new Error(data.error || "Não foi possível reenfileirar a análise.");
+      setQueue(data.queue);
+      setReplayId("");
+      setQueueStatus("Análise reenfileirada.");
+    } catch (caught) {
+      setQueueStatus(caught instanceof Error ? caught.message : "Não foi possível reenfileirar a análise.");
+    } finally {
+      setQueuePending(false);
+    }
+  }, [queuePending, replayId]);
+
   const lastUpdated = new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -95,6 +140,50 @@ export default function HealthPanel({ initialSummary }: { initialSummary: Upload
       </header>
 
       {error && <p className={styles.error} role="alert">{error}</p>}
+
+      <section className={styles.operationsGrid} aria-label="Operação do sistema">
+        <article className={styles.operationCard}>
+          <div className={styles.sectionHeader}>
+            <div><p className={styles.eyebrow}><span>FILA</span> Análises duráveis</p><h2>Processamento</h2></div>
+          </div>
+          <dl className={styles.queueTotals}>
+            <div><dt>Pendentes</dt><dd>{queue.pending}</dd></div>
+            <div><dt>Executando</dt><dd>{queue.running}</dd></div>
+            <div><dt>Prontas</dt><dd>{queue.ready}</dd></div>
+            <div><dt>Falhas</dt><dd>{queue.failed}</dd></div>
+            <div><dt>Lease expirado</dt><dd>{queue.abandoned}</dd></div>
+          </dl>
+          <div className={styles.reprocessForm}>
+            <label><span>ID do replay</span><input value={replayId} onChange={(event) => setReplayId(event.target.value)} placeholder="UUID ou ID interno" /></label>
+            <button type="button" onClick={reprocess} disabled={queuePending || !replayId.trim()}>{queuePending ? "Reenfileirando…" : "Reprocessar"}</button>
+          </div>
+          {queueStatus && <p className={styles.sectionNote} role="status">{queueStatus}</p>}
+        </article>
+        <article className={styles.operationCard}>
+          <div className={styles.sectionHeader}>
+            <div><p className={styles.eyebrow}><span>DADOS</span> Configuração efetiva</p><h2>Coleta coletiva</h2></div>
+          </div>
+          <p className={collectiveAnalysis.enabled ? styles.configEnabled : styles.configDisabled}>
+            {collectiveAnalysis.enabled ? "Ativada" : "Desativada"}
+          </p>
+          <p className={styles.sectionNote}>
+            {collectiveAnalysis.reason === "missing_pseudonym_salt"
+              ? "Solicitada, mas bloqueada: configure um salt de pseudonimização com pelo menos 32 caracteres."
+              : collectiveAnalysis.enabled
+                ? "Exemplos derivados e pseudonimizados podem ser incluídos no dataset coletivo."
+                : "Novos ambientes não coletam exemplos coletivos até ativação explícita."}
+          </p>
+        </article>
+        <article className={styles.operationCard}>
+          <div className={styles.sectionHeader}>
+            <div><p className={styles.eyebrow}><span>BACKUP</span> SQLite + uploads</p><h2>Última cópia</h2></div>
+          </div>
+          <p className={backupStatus.completedAt ? styles.configEnabled : styles.configDisabled}>
+            {backupStatus.completedAt ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(backupStatus.completedAt)) : "Ainda não executado"}
+          </p>
+          <p className={styles.sectionNote}>{backupStatus.verifiedAt ? `Integridade verificada; ${backupStatus.replayCount ?? 0} replays incluídos.` : "A rotina automática registrará aqui o próximo backup verificado."}</p>
+        </article>
+      </section>
 
       <section className={styles.summaryGrid} aria-label="Resumo das tentativas de upload">
         {summary.categories.map((category) => (

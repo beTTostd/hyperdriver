@@ -105,7 +105,7 @@ npm run db:seed
 ```
 
 O seed cria o usuário `admin` apenas se ele ainda não existir. A senha deve ter
-entre 12 e 256 caracteres, incluindo maiúscula, minúscula, número e símbolo.
+entre 8 e 256 caracteres, incluindo maiúscula, minúscula, número e símbolo.
 Administradores criam os demais usuários em `/admin`; o link de primeira senha
 é de uso único e expira em duas horas. Sessões permanecem válidas por 30 dias.
 
@@ -132,6 +132,6 @@ busca nesse CDN apenas as imagens públicas das cartas.
 
 Novos uploads recebem uma análise assíncrona sem bloquear a gravação ou a abertura do replay. O avaliador otimiza uma estimativa de probabilidade de vitória; dano, vida, cartas, pitch, arsenal, action points e equipamento são apenas a decomposição explicativa. O valor de telemetria exibido na mesa não é usado como objetivo.
 
-As observações de decisão, análises e versões do avaliador ficam em tabelas separadas do replay, portanto podem ser recalculadas. O treinador, os marcadores e as APIs de análise ficam disponíveis somente para administradores. Exemplos coletivos são pseudonimizados e não incluem username, URL, identificador da partida ou link do deck; desative sua criação com `COLLECTIVE_ANALYSIS_ENABLED=false`.
+As observações de decisão, análises e versões do avaliador ficam em tabelas separadas do replay, portanto podem ser recalculadas. O treinador, os marcadores e as APIs de análise ficam disponíveis para o proprietário do replay e para administradores. Exemplos coletivos são pseudonimizados e não incluem username, URL, identificador da partida ou link do deck; a coleta nasce desativada e só é habilitada explicitamente com `COLLECTIVE_ANALYSIS_ENABLED=true` e, em produção, `ANALYSIS_PSEUDONYM_SALT` com pelo menos 32 caracteres. O estado efetivo aparece em “Saúde do sistema” no painel administrativo.
 
 Replays históricos não são retroalimentados automaticamente. O backfill para aprendizado coletivo depende de avaliação documentada da base legal e de aviso compatível. Consulte a política pública antes de ativar o recurso em produção.

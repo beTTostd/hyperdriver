@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { apiRequest, jsonRequest } from "../../lib/client-api";
 import styles from "./workspace-panel.module.css";
 
 type Bookmark = { id: number; frameIndex: number; title: string; note: string | null };
@@ -14,12 +15,16 @@ type Goal = { id: number; title: string; progressMatches: number; targetMatches:
 export function CreatePatternGoalButton({ replayId, patternTag, label }: { replayId: string; patternTag: string; label: string }) {
   const [state, setState] = useState("");
   async function create() {
+    if (state === "Criando…") return;
     setState("Criando…");
-    const response = await fetch("/api/goals", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: "analysis_pattern", sourceReplayId: replayId, patternTag, title: `Reduzir ${label}` }) });
-    const body = await response.json();
-    setState(response.ok ? "Meta criada" : body.error || "Não foi possível criar");
+    try {
+      await apiRequest("/api/goals", jsonRequest("POST", { origin: "analysis_pattern", sourceReplayId: replayId, patternTag, title: `Reduzir ${label}` }));
+      setState("Meta criada");
+    } catch (error) {
+      setState(error instanceof Error ? error.message : "Não foi possível criar");
+    }
   }
-  return <span><button className={styles.secondary} type="button" onClick={create}>Criar meta a partir deste padrão</button> <small>{state}</small></span>;
+  return <span><button className={styles.secondary} disabled={state === "Criando…"} type="button" onClick={create}>Criar meta a partir deste padrão</button> <small>{state}</small></span>;
 }
 
 export default function WorkspacePanel({ replayId }: { replayId: string }) {
@@ -35,36 +40,50 @@ export default function WorkspacePanel({ replayId }: { replayId: string }) {
   const [permissions, setPermissions] = useState({ includeAnalysis: false, includeNote: false, includeBookmarks: false, includeGoals: false });
   const [shareUrl, setShareUrl] = useState("");
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [workspaceResponse, sharesResponse, goalsResponse] = await Promise.all([fetch(`/api/replays/${replayId}/workspace`), fetch(`/api/replays/${replayId}/shares`), fetch("/api/goals")]);
-    if (workspaceResponse.ok) {
-      const value = await workspaceResponse.json() as Workspace;
+    try {
+      const [value, shareData, goalData] = await Promise.all([
+        apiRequest<Workspace>(`/api/replays/${replayId}/workspace`),
+        apiRequest<{ shares: Share[] }>(`/api/replays/${replayId}/shares`),
+        apiRequest<{ goals: Goal[] }>("/api/goals"),
+      ]);
       setWorkspace(value); setNote(value.note); setTagText(value.tags.map((tag) => tag.name).join(", "));
+      setShares(shareData.shares);
+      setGoals(goalData.goals.filter((goal) => goal.status === "active"));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Não foi possível carregar o caderno.");
     }
-    if (sharesResponse.ok) setShares((await sharesResponse.json()).shares);
-    if (goalsResponse.ok) setGoals((await goalsResponse.json()).goals.filter((goal: Goal) => goal.status === "active"));
   }, [replayId]);
   useEffect(() => { const timer = window.setTimeout(() => { void reload(); }, 0); return () => window.clearTimeout(timer); }, [reload]);
 
   async function save(patch: Record<string, unknown>) {
+    if (pendingAction) return;
+    setPendingAction("save");
     setStatus("Salvando…");
-    const response = await fetch(`/api/replays/${replayId}/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
-    const body = await response.json();
-    if (response.ok) { setWorkspace(body); setStatus("Caderno salvo."); } else setStatus(body.error || "Não foi possível salvar.");
+    try {
+      const body = await apiRequest<Workspace>(`/api/replays/${replayId}/workspace`, jsonRequest("PATCH", patch));
+      setWorkspace(body); setStatus("Caderno salvo.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível salvar."); }
+    finally { setPendingAction(null); }
   }
   async function addBookmark() {
-    const response = await fetch(`/api/replays/${replayId}/bookmarks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ frameIndex: bookmarkFrame, title: bookmarkTitle }) });
-    const body = await response.json(); setStatus(response.ok ? "Bookmark criado." : body.error); if (response.ok) { setBookmarkTitle(""); await reload(); }
+    if (pendingAction) return; setPendingAction("bookmark");
+    try { await apiRequest(`/api/replays/${replayId}/bookmarks`, jsonRequest("POST", { frameIndex: bookmarkFrame, title: bookmarkTitle })); setStatus("Momento criado."); setBookmarkTitle(""); await reload(); }
+    catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível criar o momento."); }
+    finally { setPendingAction(null); }
   }
-  async function removeBookmark(id: number) { await fetch(`/api/replays/${replayId}/bookmarks/${id}`, { method: "DELETE" }); await reload(); }
+  async function removeBookmark(id: number) { if (pendingAction) return; setPendingAction(`bookmark-${id}`); try { await apiRequest(`/api/replays/${replayId}/bookmarks/${id}`, jsonRequest("DELETE")); setStatus("Momento removido."); await reload(); } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível remover."); } finally { setPendingAction(null); } }
   async function createShare() {
-    const response = await fetch(`/api/replays/${replayId}/shares`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coachName, durationDays, ...permissions }) });
-    const body = await response.json(); if (response.ok) { setShareUrl(`${location.origin}${body.url}`); setCoachName(""); await reload(); } else setStatus(body.error);
+    if (pendingAction) return; setPendingAction("share");
+    try { const body = await apiRequest<{ url: string }>(`/api/replays/${replayId}/shares`, jsonRequest("POST", { coachName, durationDays, ...permissions })); setShareUrl(`${location.origin}${body.url}`); setCoachName(""); setStatus("Link seguro criado."); await reload(); }
+    catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível compartilhar."); }
+    finally { setPendingAction(null); }
   }
-  async function revokeShare(id: string) { await fetch(`/api/replays/${replayId}/shares/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ revoked: true }) }); await reload(); }
-  async function reply(threadId: number, body: string) { if (!body.trim()) return; await fetch(`/api/replays/${replayId}/coaching/threads/${threadId}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }) }); await reload(); }
-  async function resolve(threadId: number, resolved: boolean) { await fetch(`/api/replays/${replayId}/coaching/threads/${threadId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolved }) }); await reload(); }
+  async function revokeShare(id: string) { if (pendingAction) return; setPendingAction(`share-${id}`); try { await apiRequest(`/api/replays/${replayId}/shares/${id}`, jsonRequest("PATCH", { revoked: true })); setStatus("Compartilhamento revogado."); await reload(); } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível revogar."); } finally { setPendingAction(null); } }
+  async function reply(threadId: number, body: string) { if (!body.trim() || pendingAction) return; setPendingAction(`reply-${threadId}`); try { await apiRequest(`/api/replays/${replayId}/coaching/threads/${threadId}/messages`, jsonRequest("POST", { body })); setStatus("Resposta enviada."); await reload(); } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível responder."); } finally { setPendingAction(null); } }
+  async function resolve(threadId: number, resolved: boolean) { if (pendingAction) return; setPendingAction(`thread-${threadId}`); try { await apiRequest(`/api/replays/${replayId}/coaching/threads/${threadId}`, jsonRequest("PATCH", { resolved })); setStatus(resolved ? "Conversa resolvida." : "Conversa reaberta."); await reload(); } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível atualizar."); } finally { setPendingAction(null); } }
 
   return <section className={styles.panel} aria-labelledby="workspace-title">
     <header className={styles.header}><div><p>Pós-partida / privado</p><h2 id="workspace-title">Meu caderno</h2><p>Notas, momentos e feedback ligados a este replay.</p></div><div className={styles.actions}><button className={styles.secondary} type="button" onClick={() => save({ isFavorite: !workspace?.isFavorite })}>{workspace?.isFavorite ? "★ Favorito" : "☆ Favoritar"}</button><button className={styles.secondary} type="button" onClick={() => save({ reviewed: !workspace?.reviewedAt })}>{workspace?.reviewedAt ? "Revisado ✓" : "Marcar revisado"}</button></div></header>

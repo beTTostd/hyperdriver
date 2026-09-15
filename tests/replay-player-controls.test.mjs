@@ -53,9 +53,9 @@ test("places note and sharing actions to the right of the player and opens their
   assert.match(playerActionsSource, /title="Tomar nota"/);
   assert.match(playerActionsSource, /title="Compartilhar"/);
   assert.match(playerActionsSource, /role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=\{modalTitleId\}/);
-  assert.match(playerActionsSource, /fetch\(`\/api\/replays\/\$\{replayId\}\/bookmarks`/);
-  assert.match(playerActionsSource, /body: JSON\.stringify\(\{ frameIndex: noteFrameIndex, title: noteTitle, note \}\)/);
-  assert.match(playerActionsSource, /fetch\(`\/api\/replays\/\$\{replayId\}\/shares`/);
+  assert.match(playerActionsSource, /apiRequest\(`\/api\/replays\/\$\{replayId\}\/bookmarks`/);
+  assert.match(playerActionsSource, /jsonRequest\("POST", \{ frameIndex: noteFrameIndex, title: noteTitle, note \}\)/);
+  assert.match(playerActionsSource, /apiRequest<\{ url\?: string \}>\(`\/api\/replays\/\$\{replayId\}\/shares`/);
   assert.match(playerActionsSource, /const defaultCoachName = "Treinador";/);
   assert.match(playerActionsSource, /setCoachName\(defaultCoachName\)/);
   assert.match(playerActionsSource, /includeAnalysis: "Análise"[\s\S]*includeBookmarks: "Notas por frame"/);

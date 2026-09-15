@@ -38,9 +38,10 @@ test("migrations create a new database once with checksums and hardening tables"
         "0011_coaching_shares",
         "0012_training_goals",
         "0013_replay_participation_admin_json",
+        "0014_analysis_jobs_maintenance",
       ],
     );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 14);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 15);
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='replay_metrics'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_events'").get());
@@ -55,6 +56,8 @@ test("migrations create a new database once with checksums and hardening tables"
       assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), table);
     }
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_json_files'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_jobs'").get());
+    assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='maintenance_state'").get());
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "size_bytes"));
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "participation"));
     assert.ok(database.pragma("table_info(replays)").some((column) => column.name === "participation_source"));
@@ -97,7 +100,7 @@ test("migration adoption preserves an existing legacy user and replay", () => {
       migrated.prepare("SELECT participation, participation_source AS participationSource FROM replays WHERE id=1").get(),
       { participation: "unknown", participationSource: null },
     );
-    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 14);
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 15);
   } finally {
     migrated.close();
   }

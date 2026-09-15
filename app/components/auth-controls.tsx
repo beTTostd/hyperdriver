@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cardArtImageUrl, DEFAULT_CARD_AVATAR } from "../../lib/card-avatars";
 import Icon from "./ui-icons";
+import { apiRequest } from "../../lib/client-api";
 import CardImage from "./card-image";
 import styles from "./auth-controls.module.css";
 
@@ -103,10 +104,15 @@ export default function AuthControls({
   }, [mobileOpen]);
 
   async function signOut() {
+    if (pending) return;
     setPending(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    try {
+      await apiRequest("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
   }
 
   const visibleAvatar = avatarCardId || DEFAULT_CARD_AVATAR;

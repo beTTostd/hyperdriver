@@ -550,6 +550,7 @@ export default function TalisharTable({
   const [decisionMarkers, setDecisionMarkers] = useState<ReplayDecisionMarker[]>([]);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [valueOpen, setValueOpen] = useState(false);
@@ -662,6 +663,11 @@ export default function TalisharTable({
         const requestedFrame = Number(new URLSearchParams(window.location.search).get("frame"));
         if (Number.isInteger(requestedFrame) && requestedFrame >= 0) {
           setIndex(Math.min(requestedFrame, Math.max(0, data.match.frames.length - 1)));
+        } else if (requestedReplayId) {
+          const storedFrame = Number(window.localStorage.getItem(`hyperdriver:replay-position:${requestedReplayId}`));
+          if (Number.isInteger(storedFrame) && storedFrame > 0) {
+            setIndex(Math.min(storedFrame, Math.max(0, data.match.frames.length - 1)));
+          }
         }
       })
       .catch((reason: Error) => {
@@ -687,6 +693,11 @@ export default function TalisharTable({
   }, [decisionAnalysisEnabled, replayId, source]);
 
   useEffect(() => { onFrameChange?.(index); }, [index, onFrameChange]);
+
+  useEffect(() => {
+    if (!replayId || !replay) return;
+    window.localStorage.setItem(`hyperdriver:replay-position:${replayId}`, String(index));
+  }, [index, replay, replayId]);
 
   const frames = useMemo(() => replay?.match.frames ?? [], [replay]);
   const currentFrame = frames[index];
@@ -823,9 +834,9 @@ export default function TalisharTable({
         }
         return value + 1;
       });
-    }, 480);
+    }, 480 / playbackRate);
     return () => window.clearInterval(timer);
-  }, [playing, frames.length]);
+  }, [playing, frames.length, playbackRate]);
 
   useEffect(() => {
     if (recordingState !== "recording") return;
@@ -891,6 +902,17 @@ export default function TalisharTable({
       }
       if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
       if (event.key === "ArrowRight") setIndex((value) => Math.min(frames.length - 1, value + 1));
+      if (event.key === "[" || event.key === "]") {
+        const candidates = decisionMarkers.map((marker) => marker.frameIndex);
+        const target = event.key === "]"
+          ? candidates.find((frameIndex) => frameIndex > index)
+          : [...candidates].reverse().find((frameIndex) => frameIndex < index);
+        if (target !== undefined) {
+          setPlaying(false);
+          setIndex(target);
+          setSidebarCollapsed(false);
+        }
+      }
       if (event.key === " ") {
         event.preventDefault();
         setPlaying((value) => !value);
@@ -898,7 +920,7 @@ export default function TalisharTable({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [frames.length, closePreview, recordingLocked]);
+  }, [frames.length, closePreview, decisionMarkers, index, recordingLocked]);
 
   if (error) return <main className={styles.loading}><div><small>Talishar Replay</small><h1>Não foi possível abrir</h1><p>{error}</p><Link href="/replays">Voltar para seus replays</Link></div></main>;
   if (!current || !currentFrame) return <main className={styles.loading}><div role="status" aria-live="polite"><BrandSymbol className={styles.loadingMark} /><p>Montando a mesa…</p></div></main>;
@@ -1006,6 +1028,7 @@ export default function TalisharTable({
             <button type="button" disabled={recordingLocked || index === 0} onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Frame anterior" title="Frame anterior"><TransportIcon name="previous" /></button>
             <button type="button" className={styles.playButton} disabled={recordingLocked} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
             <button type="button" disabled={recordingLocked || index === frames.length - 1} onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo frame" title="Próximo frame"><TransportIcon name="next" /></button>
+            <label className={styles.speedControl} title="Velocidade de reprodução"><span>Velocidade</span><select value={playbackRate} disabled={recordingLocked} onChange={(event) => setPlaybackRate(Number(event.target.value))}><option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option></select></label>
           </div>
           <div className={styles.scrubber}>
             <div className={styles.turns}>{markers.map((marker, markerIndex) => {
@@ -1031,6 +1054,7 @@ export default function TalisharTable({
               />
             ))}</div>}
             <input type="range" min="0" max={frames.length - 1} value={index} disabled={recordingLocked} onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }} aria-label="Posição do replay" />
+            <span className={styles.shortcutHint}>←/→ frames · espaço reproduz · [/] decisões</span>
           </div>
           <div className={styles.frameCount}><strong>{index + 1}</strong><span>/ {frames.length}</span></div>
           <div className={styles.replayActions} aria-label="Gravação e ações do replay">

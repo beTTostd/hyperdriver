@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, isNull, lt, ne, or, sum } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, ne, or, sql, sum } from "drizzle-orm";
 import { getDb } from "../db";
-import { replayAnalyses, replayMetrics, replays, users } from "../db/schema";
+import {
+  analysisJobs,
+  replayAnalyses,
+  replayMetrics,
+  replayTags,
+  replayWorkspace,
+  replays,
+  users,
+  userTags,
+} from "../db/schema";
 import { compactReplayDocument, replayCompletion, replayResult } from "../talishar-local-history/replay-state.js";
 import { calculateReplayTelemetry, TELEMETRY_ALGORITHM_VERSION } from "./replay-telemetry";
 import { getReplayStorage, type QuarantinedReplay } from "./replay-storage";
@@ -392,6 +401,10 @@ export async function saveReplayUpload(userId: number, raw: string) {
           replayId: inserted.id,
           status: "pending",
         }).run();
+        transaction.insert(analysisJobs).values({
+          replayId: inserted.id,
+          status: "pending",
+        }).run();
       }
       applyEloUploadInTransaction(userId, document.match.id, document);
       return inserted;
@@ -459,11 +472,19 @@ function enrichDuplicateReplay(existing: ReplayMetadata, document: ReplayDocumen
 }
 
 function markReplayAnalysisPendingIfMissing(replayId: number): boolean {
-  return getDb()
-    .insert(replayAnalyses)
-    .values({ replayId, status: "pending" })
-    .onConflictDoNothing()
-    .run().changes > 0;
+  return getDb().transaction((transaction) => {
+    const inserted = transaction
+      .insert(replayAnalyses)
+      .values({ replayId, status: "pending" })
+      .onConflictDoNothing()
+      .run().changes > 0;
+    transaction
+      .insert(analysisJobs)
+      .values({ replayId, status: "pending" })
+      .onConflictDoNothing()
+      .run();
+    return inserted;
+  });
 }
 
 function quotaLimit(name: string, fallback: number): number {
@@ -492,18 +513,69 @@ function assertQuotaUsage(replayCount: number, totalBytes: number, incomingBytes
   }
 }
 
-export async function listUserReplays(userId: number, cursor?: string | null): Promise<ReplayPage<ReplayMetadata>> {
-  const position = decodeCursor(cursor);
-  const condition = position
-    ? and(eq(replays.userId, userId), or(
+export type ReplayWorkspaceFilter = "all" | "favorites" | "reviewed" | "unreviewed";
+
+export type ListUserReplaysOptions = {
+  cursor?: string | null;
+  workspace?: ReplayWorkspaceFilter;
+  tag?: string | null;
+};
+
+function normalizeReplayTag(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+export async function listUserReplays(
+  userId: number,
+  options: ListUserReplaysOptions | string | null = {},
+): Promise<ReplayPage<ReplayMetadata>> {
+  const normalizedOptions = typeof options === "string" || options === null
+    ? { cursor: options }
+    : options;
+  const position = decodeCursor(normalizedOptions.cursor);
+  const conditions = [eq(replays.userId, userId)];
+  if (position) {
+    conditions.push(or(
       lt(replays.startedAt, position.startedAt),
       and(eq(replays.startedAt, position.startedAt), lt(replays.id, position.id)),
-    ))
-    : eq(replays.userId, userId);
+    )!);
+  }
+  if (normalizedOptions.workspace === "favorites") {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${replayWorkspace}
+      WHERE ${replayWorkspace.replayId} = ${replays.id}
+        AND ${replayWorkspace.userId} = ${userId}
+        AND ${replayWorkspace.isFavorite} = 1
+    )`);
+  } else if (normalizedOptions.workspace === "reviewed") {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${replayWorkspace}
+      WHERE ${replayWorkspace.replayId} = ${replays.id}
+        AND ${replayWorkspace.userId} = ${userId}
+        AND ${replayWorkspace.reviewedAt} IS NOT NULL
+    )`);
+  } else if (normalizedOptions.workspace === "unreviewed") {
+    conditions.push(sql`NOT EXISTS (
+      SELECT 1 FROM ${replayWorkspace}
+      WHERE ${replayWorkspace.replayId} = ${replays.id}
+        AND ${replayWorkspace.userId} = ${userId}
+        AND ${replayWorkspace.reviewedAt} IS NOT NULL
+    )`);
+  }
+  const tag = normalizeReplayTag(normalizedOptions.tag ?? "");
+  if (tag) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${replayTags}
+      INNER JOIN ${userTags} ON ${userTags.id} = ${replayTags.tagId}
+      WHERE ${replayTags.replayId} = ${replays.id}
+        AND ${userTags.userId} = ${userId}
+        AND ${userTags.normalizedName} = ${tag}
+    )`);
+  }
   const replayList = getDb()
     .select()
     .from(replays)
-    .where(condition)
+    .where(and(...conditions))
     .orderBy(desc(replays.startedAt), desc(replays.id))
     .limit(REPLAY_PAGE_SIZE + 1)
     .all();

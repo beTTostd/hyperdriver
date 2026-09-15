@@ -18,7 +18,9 @@ node /app/scripts/seed.mjs
 chown -R node:node "$database_dir" "$uploads_dir"
 
 if [ "$(id -u)" -eq 0 ]; then
+  setpriv --reuid=node --regid=node --init-groups /app/scripts/backup-loop.sh &
   exec setpriv --reuid=node --regid=node --init-groups "$@"
 fi
 
+/app/scripts/backup-loop.sh &
 exec "$@"

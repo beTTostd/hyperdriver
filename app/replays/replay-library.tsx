@@ -8,6 +8,7 @@ import { listUserReplays, type AdminReplayMetadata, type ReplayMetadata } from "
 import { workspaceSummaries } from "../../lib/player-workspace";
 import WorkspaceActions from "./workspace-actions";
 import ParticipationControl from "./participation-control";
+import SyncOnboarding from "./sync-onboarding";
 import styles from "../page.module.css";
 
 type WorkspaceSummary = { isFavorite: boolean; reviewedAt: number | null; hasNote: boolean; tags: string[] };
@@ -111,10 +112,9 @@ export function ReplayLibrary({
           </form>
         )}
         {!replayList.length ? (
-          <div className={styles.emptyLibrary}>
-            <strong>Nenhum replay sincronizado</strong>
-            <p>{emptyDescription}</p>
-          </div>
+          embedded
+            ? <div className={styles.emptyLibrary}><strong>Nenhum replay sincronizado</strong><p>{emptyDescription}</p></div>
+            : <SyncOnboarding fallback={emptyDescription} />
         ) : (
           <div className={styles.replayList}>
             {replayList.map((replay, index) => {
@@ -198,20 +198,18 @@ export default async function ReplayLibraryPage({
   const currentUser = await requireUser("/replays");
   const query = searchParams ? await searchParams : {};
   const cursor = Array.isArray(query.cursor) ? query.cursor[0] : query.cursor;
-  const replayPage = await listUserReplays(currentUser.id, cursor);
-  const summaries = workspaceSummaries(currentUser.id, replayPage.items.map((replay) => replay.id));
   const requestedWorkspaceFilter = Array.isArray(query.workspace) ? query.workspace[0] : query.workspace;
   const workspaceFilter = requestedWorkspaceFilter === "favorites" || requestedWorkspaceFilter === "reviewed" || requestedWorkspaceFilter === "unreviewed"
     ? requestedWorkspaceFilter
     : "all";
   const tagFilter = (Array.isArray(query.tag) ? query.tag[0] : query.tag)?.trim() ?? "";
-  const normalizedTagFilter = tagFilter.toLocaleLowerCase("pt-BR");
-  const decorated = replayPage.items.map((replay) => ({ ...replay, workspace: summaries.get(replay.id)! })).filter((replay) => {
-    if (workspaceFilter === "favorites" && !replay.workspace.isFavorite) return false;
-    if (workspaceFilter === "reviewed" && !replay.workspace.reviewedAt) return false;
-    if (workspaceFilter === "unreviewed" && replay.workspace.reviewedAt) return false;
-    return !normalizedTagFilter || replay.workspace.tags.some((tag) => tag.toLocaleLowerCase("pt-BR") === normalizedTagFilter);
+  const replayPage = await listUserReplays(currentUser.id, {
+    cursor,
+    workspace: workspaceFilter,
+    tag: tagFilter,
   });
+  const summaries = workspaceSummaries(currentUser.id, replayPage.items.map((replay) => replay.id));
+  const decorated = replayPage.items.map((replay) => ({ ...replay, workspace: summaries.get(replay.id)! }));
   return (
     <ReplayLibrary
       currentUser={currentUser}

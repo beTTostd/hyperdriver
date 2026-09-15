@@ -18,6 +18,15 @@
   const syncHelpers = globalThis.__hyperdriverSync;
   if (!syncHelpers) return;
 
+  const extensionVersion = chrome.runtime.getManifest().version;
+  document.documentElement.dataset.hyperdriverExtensionVersion = extensionVersion;
+  function announcePresence(detail = {}) {
+    window.dispatchEvent(new CustomEvent("hyperdriver-extension-presence", {
+      detail: { version: extensionVersion, ...detail }
+    }));
+  }
+  announcePresence();
+
   async function send(message) {
     const response = await chrome.runtime.sendMessage(message);
     if (!response?.ok) throw new Error(response?.error || "Falha ao acessar os replays locais.");
@@ -108,6 +117,7 @@
   async function runSynchronization() {
     const pending = await send({ type: "list-sync-pending" });
     const ids = Array.isArray(pending.ids) ? pending.ids : [];
+    announcePresence({ pending: ids.length });
     if (!ids.length) return 0;
 
     const toast = createToast(ids.length);
@@ -140,6 +150,7 @@
       toast.finish(result);
     } catch (error) {
       toast.fail(error);
+      announcePresence({ pending: ids.length, error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
 
@@ -152,6 +163,7 @@
     )) {
       window.location.reload();
     }
+    announcePresence({ pending: Math.max(0, ids.length - result.uploaded) });
     return result.uploaded;
   }
 

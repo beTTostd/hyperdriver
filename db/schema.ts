@@ -159,6 +159,33 @@ export const replayAnalyses = sqliteTable(
   (table) => [index("replay_analyses_status_idx").on(table.status, table.updatedAt)],
 );
 
+export const analysisJobs = sqliteTable(
+  "analysis_jobs",
+  {
+    replayId: integer("replay_id")
+      .primaryKey()
+      .references(() => replays.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "running", "ready", "failed"] }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: integer("available_at").notNull().default(sql`(unixepoch() * 1000)`),
+    leaseToken: text("lease_token"),
+    leaseExpiresAt: integer("lease_expires_at"),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+    completedAt: integer("completed_at"),
+  },
+  (table) => [
+    index("analysis_jobs_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+  ],
+);
+
+export const maintenanceState = sqliteTable("maintenance_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
+});
+
 export const decisionObservations = sqliteTable(
   "decision_observations",
   {

@@ -23,13 +23,15 @@
     "db:backfill": "node scripts/backfill-replays.mjs",
     "db:cleanup": "node scripts/cleanup-quarantine.mjs",
     "db:seed": "node scripts/seed.mjs",
+    "backup": "node scripts/backup.mjs",
+    "backup:verify": "node scripts/backup.mjs --verify-latest",
     "supervisor": "npm run supervisor:build --silent && node codex-supervisor/dist/cli.js",
     "supervisor:build": "tsc -p codex-supervisor/tsconfig.json"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",
     "drizzle-orm": "0.45.2",
-    "next": "16.3.2",
+    "next": "16.3.5",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -41,7 +43,7 @@
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.3.5",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },

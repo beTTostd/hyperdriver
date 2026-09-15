@@ -27,3 +27,4 @@
 .thread p { margin:.3rem 0; }
 .badge { display:inline-block; padding:.2rem .45rem; margin:.15rem; background:#29313a; font-size:.75rem; }
 @media(max-width:760px){.grid{grid-template-columns:1fr}.header{display:block}}
+.visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }

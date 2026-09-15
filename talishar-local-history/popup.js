@@ -9,6 +9,10 @@ const paginationElement = document.querySelector("#pagination");
 const previousPageButton = document.querySelector("#previous-page");
 const nextPageButton = document.querySelector("#next-page");
 const pageIndicator = document.querySelector("#page-indicator");
+const environmentSelect = document.querySelector("#environment");
+const connectionState = document.querySelector("#connection-state");
+const connectionDetail = document.querySelector("#connection-detail");
+const openEnvironmentButton = document.querySelector("#open-environment");
 const downloadStates = new Map();
 let currentPage = 1;
 let pageCount = 1;
@@ -20,6 +24,23 @@ function formatDate(value) {
 function setStatus(message, error = false) {
   statusElement.textContent = message;
   statusElement.className = error ? "error" : "";
+}
+
+async function refreshConnection() {
+  try {
+    const response = await send({ type: "sync-status", origin: environmentSelect.value });
+    const value = response.result;
+    environmentSelect.value = value.origin;
+    connectionState.textContent = value.connected ? "Hyperdriver conectado" : "Hyperdriver não aberto";
+    const lastSync = value.lastSync?.at
+      ? ` Última tentativa: ${formatDate(value.lastSync.at)}${value.lastSync.ok ? " com sucesso" : " com erro"}.`
+      : " Nenhuma sincronização registrada neste ambiente.";
+    connectionDetail.textContent = `${value.pending} ${value.pending === 1 ? "captura pendente" : "capturas pendentes"}.${lastSync}`;
+    syncButton.textContent = value.pending ? `Sincronizar ${value.pending} pendente${value.pending === 1 ? "" : "s"}` : "Tudo sincronizado";
+  } catch (error) {
+    connectionState.textContent = "Estado indisponível";
+    connectionDetail.textContent = error.message;
+  }
 }
 
 function gameModeLabel(value) {
@@ -104,6 +125,13 @@ function render(matches, total) {
       syncState.title = details.join(" ");
     }
     const actions = document.createElement("div");
+    const captureExplanation = document.createElement("span");
+    captureExplanation.className = "capture-explanation";
+    if (match.captureQuality === "partial") {
+      captureExplanation.textContent = "A captura começou depois do T0 ou foi interrompida. Ela não pode ser analisada, mas o JSON pode ser baixado para recuperação manual.";
+    } else if (match.captureQuality !== "complete" && match.status !== "recording") {
+      captureExplanation.textContent = "O início da partida não foi confirmado. Baixe o JSON para preservar o que foi capturado; esta cópia não será sincronizada.";
+    }
     const downloadMessage = document.createElement("span");
     downloadMessage.className = "download-message";
     const downloadState = downloadStates.get(match.id);
@@ -163,10 +191,17 @@ function render(matches, total) {
         deleteButton.disabled = false;
       }
     });
-    actions.append(exportButton, deleteButton);
+    actions.append(exportButton);
+    const secondaryMenu = document.createElement("details");
+    const secondarySummary = document.createElement("summary");
+    secondarySummary.textContent = "Mais ações";
+    const secondaryActions = document.createElement("div");
+    secondaryActions.append(deleteButton);
+    secondaryMenu.append(secondarySummary, secondaryActions);
     item.append(title, metadata, syncState);
+    if (captureExplanation.textContent) item.append(captureExplanation);
     if (downloadMessage.textContent) item.append(downloadMessage);
-    item.append(actions);
+    item.append(actions, secondaryMenu);
     matchesElement.append(item);
   }
 
@@ -206,6 +241,7 @@ async function load(preserveStatus = false) {
     render(response.matches, response.total);
     if (response.captureError) setStatus(response.captureError.message, true);
     else if (!preserveStatus) setStatus("");
+    await refreshConnection();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -267,13 +303,13 @@ importFiles.addEventListener("change", async () => {
   await load();
   let syncRequested = 0;
   try {
-    const response = await send({ type: "request-sync" });
+    const response = await send({ type: "request-sync", origin: environmentSelect.value });
     syncRequested = response.result?.requested || 0;
   } catch (error) {
     errors.push(`Sincronização: ${error.message}`);
   }
   const summary = `${imported} importado${imported === 1 ? "" : "s"}, ${skipped} já existente${skipped === 1 ? "" : "s"}.`;
-  const syncSummary = syncRequested ? " Sincronização solicitada." : " Abra o Hyperdriver autenticado para sincronizar.";
+  const syncSummary = syncRequested ? " Sincronização solicitada." : " O Hyperdriver foi aberto; confirme o login para sincronizar.";
   setStatus(errors.length ? `${summary}${syncSummary} ${errors.join(" ")}` : `${summary}${syncSummary}`, errors.length > 0);
 });
 
@@ -281,12 +317,26 @@ syncButton.addEventListener("click", async () => {
   syncButton.disabled = true;
   setStatus("Solicitando sincronização de todos os replays pendentes…");
   try {
-    const response = await send({ type: "request-sync" });
-    setStatus(response.result?.requested ? "Sincronização de todos os replays pendentes solicitada." : "Abra o Hyperdriver autenticado para iniciar a sincronização.");
+    const response = await send({ type: "request-sync", origin: environmentSelect.value });
+    setStatus(response.result?.requested ? "Sincronização solicitada no ambiente selecionado." : "O ambiente selecionado foi aberto. Entre na sua conta para concluir a sincronização.");
+    await refreshConnection();
   } catch (error) {
     setStatus(error.message, true);
   } finally {
     syncButton.disabled = false;
+  }
+});
+
+environmentSelect.addEventListener("change", refreshConnection);
+openEnvironmentButton.addEventListener("click", async () => {
+  openEnvironmentButton.disabled = true;
+  try {
+    await send({ type: "open-environment", origin: environmentSelect.value });
+    setStatus("Ambiente aberto em uma nova aba.");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    openEnvironmentButton.disabled = false;
   }
 });
 

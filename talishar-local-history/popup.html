@@ -18,7 +18,23 @@
       </div>
       <p id="status" role="status"></p>
       <section>
-        <h2><span>01</span> Partidas locais</h2>
+        <h2><span>01</span> Conexão</h2>
+        <div class="connection-card">
+          <strong id="connection-state">Verificando Hyperdriver…</strong>
+          <span id="connection-detail">Ambiente ainda não verificado.</span>
+          <label for="environment">Ambiente</label>
+          <select id="environment">
+            <option value="https://hyperdriver.com.br">Produção · hyperdriver.com.br</option>
+            <option value="https://beta.hyperdriver.com.br">Beta · beta.hyperdriver.com.br</option>
+          </select>
+          <div class="connection-actions">
+            <button id="open-environment" class="secondary" type="button">Abrir Hyperdriver</button>
+            <button id="sync-button" type="button">Sincronizar pendentes</button>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2><span>02</span> Partidas locais</h2>
         <div id="matches" class="matches"></div>
         <nav id="pagination" class="pagination" aria-label="Paginação do histórico" hidden>
           <button id="previous-page" class="secondary" type="button">Anterior</button>
@@ -27,16 +43,15 @@
         </nav>
       </section>
       <section>
-        <h2><span>02</span> Importar históricos</h2>
+        <h2><span>03</span> Importar históricos</h2>
         <p class="import-help">Selecione os JSONs que você já salvou no computador para carregá-los nesta extensão.</p>
         <input id="import-files" type="file" accept=".json,application/json" multiple>
         <div class="import-actions">
           <button id="import-button" type="button">Selecionar JSONs</button>
-          <button id="sync-button" class="secondary" type="button">Sincronizar tudo</button>
         </div>
       </section>
       <footer class="popup-footer" aria-label="Informações da extensão">
-        <small>v1.5.2</small>
+        <small>v1.6.0</small>
       </footer>
     </main>
     <script type="module" src="popup.js"></script>

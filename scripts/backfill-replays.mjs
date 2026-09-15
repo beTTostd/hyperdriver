@@ -12,6 +12,13 @@ const databaseFile = resolve(process.env.DATABASE_FILE || "data/hyperdriver.sqli
 const uploadsDirectory = resolve(process.env.UPLOADS_DIR || "data/uploads");
 const database = new Database(databaseFile);
 configureDatabase(database);
+const backfillKey = `replay_metadata_v${TELEMETRY_ALGORITHM_VERSION}`;
+const completedBackfill = database.prepare("SELECT value FROM maintenance_state WHERE key = ?").get(backfillKey);
+if (completedBackfill?.value === "complete") {
+  database.close();
+  console.log(JSON.stringify({ level: "info", type: "replay_backfill_already_complete", version: backfillKey }));
+  process.exit(0);
+}
 
 const pending = database.prepare(`
   SELECT r.id, r.storage_key AS storageKey
@@ -74,6 +81,7 @@ const save = database.transaction((id, raw, document, metrics) => {
 });
 
 let completed = 0;
+let failed = 0;
 for (const replay of pending) {
   try {
     if (basename(replay.storageKey) !== replay.storageKey || !/^[a-f0-9-]+\.json$/i.test(replay.storageKey)) {
@@ -86,6 +94,7 @@ for (const replay of pending) {
     save.immediate(replay.id, raw, document, metrics);
     completed += 1;
   } catch (error) {
+    failed += 1;
     console.warn(JSON.stringify({
       level: "warn",
       type: "replay_backfill_skipped",
@@ -95,8 +104,14 @@ for (const replay of pending) {
   }
 }
 
+if (failed === 0) {
+  database.prepare(`
+    INSERT INTO maintenance_state (key, value, updated_at) VALUES (?, 'complete', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(backfillKey, Date.now());
+}
 database.close();
-console.log(JSON.stringify({ level: "info", type: "replay_backfill_complete", scanned: pending.length, completed }));
+console.log(JSON.stringify({ level: "info", type: "replay_backfill_complete", version: backfillKey, scanned: pending.length, completed, failed }));
 
 function totals(cycles) {
   return cycles.reduce((value, cycle) => ({

@@ -38,12 +38,16 @@ import {
   UUID_PATTERN,
   isTalisharOrigin,
 } from "./extension-policy.js";
+import { CURRENT_REPLAY_SCHEMA_VERSION } from "./replay-contract.js";
 
 const DATABASE_NAME = "talishar-local-history";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "matches";
-const SCHEMA_VERSION = "0.6.0";
+const SCHEMA_VERSION = CURRENT_REPLAY_SCHEMA_VERSION;
 const CAPTURE_ERROR_KEY = "captureError";
+const SYNC_PRESENCE_KEY = "syncPresence";
+const SELECTED_ENVIRONMENT_KEY = "selectedEnvironment";
+const DEFAULT_SYNC_ORIGIN = "https://hyperdriver.com.br";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 const enqueueCapture = createKeyedTaskQueue();
 let creatingOffscreenDocument = null;
@@ -273,14 +277,42 @@ async function importMatch(raw) {
   return { imported: true, id: match.id };
 }
 
-async function requestSynchronization() {
+async function hyperdriverTabs(origin) {
   const tabs = await chrome.tabs.query({});
+  return tabs.filter((tab) => tab.id != null && typeof tab.url === "string" && tab.url.startsWith(`${origin}/`));
+}
+
+async function requestSynchronization(requestedOrigin) {
+  const origin = SYNC_ORIGINS.includes(requestedOrigin) ? requestedOrigin : DEFAULT_SYNC_ORIGIN;
+  await chrome.storage.local.set({ [SELECTED_ENVIRONMENT_KEY]: origin });
+  const tabs = await hyperdriverTabs(origin);
+  if (!tabs.length) {
+    await chrome.tabs.create({ url: `${origin}/replays` });
+    return { requested: 0, opened: true, origin };
+  }
   const responses = await Promise.all(
     tabs
-      .filter((tab) => tab.id != null)
       .map((tab) => chrome.tabs.sendMessage(tab.id, { type: "sync-now" }).catch(() => null)),
   );
-  return { requested: responses.filter((response) => response?.ok).length };
+  return { requested: responses.filter((response) => response?.ok).length, opened: false, origin };
+}
+
+async function synchronizationStatus(requestedOrigin) {
+  const stored = await chrome.storage.local.get([SYNC_PRESENCE_KEY, SELECTED_ENVIRONMENT_KEY]);
+  const origin = SYNC_ORIGINS.includes(requestedOrigin)
+    ? requestedOrigin
+    : SYNC_ORIGINS.includes(stored[SELECTED_ENVIRONMENT_KEY])
+      ? stored[SELECTED_ENVIRONMENT_KEY]
+      : DEFAULT_SYNC_ORIGIN;
+  const matches = (await listMatches()).map((match) => normalizeReplayCapture(normalizeCompletion(compactReplayMatch(match))));
+  const pending = matches.filter((match) => match.status === "finished" && replayCaptureQuality(match) === "complete" && !isReplaySyncedToOrigin(match, origin)).length;
+  const tabs = await hyperdriverTabs(origin);
+  return {
+    origin,
+    connected: tabs.length > 0,
+    pending,
+    lastSync: stored[SYNC_PRESENCE_KEY]?.[origin] || null,
+  };
 }
 
 function makeMatch(pageSessionId, startedAt, pageUrl, gameId = null) {
@@ -641,7 +673,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === "request-sync") {
-      sendResponse({ ok: true, result: await requestSynchronization() });
+      sendResponse({ ok: true, result: await requestSynchronization(message.origin) });
+      return;
+    }
+    if (message.type === "sync-status") {
+      sendResponse({ ok: true, result: await synchronizationStatus(message.origin) });
+      return;
+    }
+    if (message.type === "open-environment") {
+      const origin = SYNC_ORIGINS.includes(message.origin) ? message.origin : DEFAULT_SYNC_ORIGIN;
+      await chrome.storage.local.set({ [SELECTED_ENVIRONMENT_KEY]: origin });
+      await chrome.tabs.create({ url: `${origin}/replays` });
+      sendResponse({ ok: true });
       return;
     }
     if (message.type === "list-matches") {
@@ -717,6 +760,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         replayId: message.replayId
       });
       await putMatch(match);
+      const stored = await chrome.storage.local.get(SYNC_PRESENCE_KEY);
+      await chrome.storage.local.set({ [SYNC_PRESENCE_KEY]: {
+        ...(stored[SYNC_PRESENCE_KEY] || {}),
+        [origin]: { ok: true, at: Date.now(), username: message.username || null }
+      } });
       await cleanupRetention();
       sendResponse({ ok: true });
       return;
@@ -727,6 +775,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!match) throw new Error("Partida não encontrada.");
       markReplaySyncError(match, origin, message.error);
       await putMatch(match);
+      const stored = await chrome.storage.local.get(SYNC_PRESENCE_KEY);
+      await chrome.storage.local.set({ [SYNC_PRESENCE_KEY]: {
+        ...(stored[SYNC_PRESENCE_KEY] || {}),
+        [origin]: { ok: false, at: Date.now(), message: String(message.error || "Falha na sincronização").slice(0, 160) }
+      } });
       sendResponse({ ok: true });
       return;
     }

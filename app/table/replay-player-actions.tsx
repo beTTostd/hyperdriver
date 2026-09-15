@@ -2,6 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Icon from "../components/ui-icons";
+import { apiRequest, jsonRequest } from "../../lib/client-api";
 import styles from "./replay-table.module.css";
 
 type PlayerActionModal = "note" | "share";
@@ -127,13 +128,7 @@ export default function ReplayPlayerActions({
     setPending(true);
     setError("");
     try {
-      const response = await fetch(`/api/replays/${replayId}/bookmarks`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ frameIndex: noteFrameIndex, title: noteTitle, note }),
-      });
-      const body = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Não foi possível salvar a nota.");
+      await apiRequest(`/api/replays/${replayId}/bookmarks`, jsonRequest("POST", { frameIndex: noteFrameIndex, title: noteTitle, note }));
       setActionStatus(`Nota salva no frame ${noteFrameIndex + 1}.`);
       setActiveModal(null);
     } catch (reason) {
@@ -149,13 +144,8 @@ export default function ReplayPlayerActions({
     setError("");
     setCopied(false);
     try {
-      const response = await fetch(`/api/replays/${replayId}/shares`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ coachName, durationDays, ...permissions }),
-      });
-      const body = await response.json().catch(() => ({})) as { error?: string; url?: string };
-      if (!response.ok || !body.url) throw new Error(body.error || "Não foi possível criar o compartilhamento.");
+      const body = await apiRequest<{ url?: string }>(`/api/replays/${replayId}/shares`, jsonRequest("POST", { coachName, durationDays, ...permissions }));
+      if (!body.url) throw new Error("Não foi possível criar o compartilhamento.");
       setShareUrl(`${window.location.origin}${body.url}`);
       setActionStatus("Link seguro criado.");
     } catch (reason) {
