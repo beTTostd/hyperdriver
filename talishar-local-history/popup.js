@@ -10,8 +10,6 @@ const previousPageButton = document.querySelector("#previous-page");
 const nextPageButton = document.querySelector("#next-page");
 const pageIndicator = document.querySelector("#page-indicator");
 const environmentSelect = document.querySelector("#environment");
-const connectionState = document.querySelector("#connection-state");
-const connectionDetail = document.querySelector("#connection-detail");
 const openEnvironmentButton = document.querySelector("#open-environment");
 const downloadStates = new Map();
 let currentPage = 1;
@@ -31,15 +29,9 @@ async function refreshConnection() {
     const response = await send({ type: "sync-status", origin: environmentSelect.value });
     const value = response.result;
     environmentSelect.value = value.origin;
-    connectionState.textContent = value.connected ? "Hyperdriver conectado" : "Hyperdriver não aberto";
-    const lastSync = value.lastSync?.at
-      ? ` Última tentativa: ${formatDate(value.lastSync.at)}${value.lastSync.ok ? " com sucesso" : " com erro"}.`
-      : " Nenhuma sincronização registrada neste ambiente.";
-    connectionDetail.textContent = `${value.pending} ${value.pending === 1 ? "captura pendente" : "capturas pendentes"}.${lastSync}`;
     syncButton.textContent = value.pending ? `Sincronizar ${value.pending} pendente${value.pending === 1 ? "" : "s"}` : "Tudo sincronizado";
   } catch (error) {
-    connectionState.textContent = "Estado indisponível";
-    connectionDetail.textContent = error.message;
+    setStatus(error.message, true);
   }
 }
 

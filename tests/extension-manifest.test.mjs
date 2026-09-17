@@ -44,6 +44,12 @@ test("exibe a versão no rodapé semântico do popup", () => {
   assert.match(popupStyles, /\.popup-footer\s*\{/);
 });
 
+test("mantém a seleção de ambiente sem o resumo de conexão no popup", () => {
+  assert.match(popup, /<select id="environment" aria-label="Ambiente do Hyperdriver">/);
+  assert.doesNotMatch(popup, /connection-state|connection-detail/);
+  assert.doesNotMatch(popup, /<label for="environment">Ambiente<\/label>/);
+});
+
 test("lista somente a página solicitada pelo índice sem regravar replays", () => {
   assert.match(serviceWorker, /index\("startedAt"\)\.openCursor\(null, "prev"\)/);
   assert.match(serviceWorker, /listMatchPage\(message\.page\)/);

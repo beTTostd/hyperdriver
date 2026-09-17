@@ -63,9 +63,6 @@ section > h2 span { margin-right: 7px; color: var(--signal-red); font: 8px/1 "IB
 .match summary { color: var(--muted); cursor: pointer; font: 8px/1.4 "IBM Plex Mono", Consolas, monospace; text-transform: uppercase; }
 .match details > div { margin-top: 7px; }
 .connection-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); background: var(--panel); }
-.connection-card > strong { color: var(--paper); font: 900 15px/1.1 "Arial Narrow", Impact, sans-serif; text-transform: uppercase; }
-.connection-card > span, .connection-card label { color: var(--muted); font: 9px/1.4 "IBM Plex Mono", Consolas, monospace; }
-.connection-card label { margin-top: 3px; text-transform: uppercase; }
 .connection-card select { min-height: 34px; padding: 0 8px; border: 1px solid var(--line); color: var(--paper); background: var(--carbon); }
 .connection-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .match div { display: flex; flex-wrap: wrap; gap: 6px; }
