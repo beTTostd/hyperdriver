@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, sql } from "drizzle-orm";
 import { getDb, getSqlite } from "../db";
 import { analysisJobs, replayAnalyses } from "../db/schema";
-import { processReplayAnalysis } from "./decision-analysis";
+import { CURRENT_DECISION_MODEL_ID, processReplayAnalysis } from "./decision-analysis";
+import { recoverOutdatedAnalyses } from "./analysis-recovery.js";
 
 const LEASE_MS = 5 * 60 * 1000;
 const POLL_MS = 5_000;
@@ -184,6 +185,8 @@ async function drainQueue(): Promise<void> {
 
 export function startAnalysisWorker(): void {
   if (workerStarted || process.env.NEXT_PHASE === "phase-production-build") return;
+  const recovered = recoverOutdatedAnalyses(getSqlite(), CURRENT_DECISION_MODEL_ID);
+  if (recovered > 0) console.info(JSON.stringify({ type: "analysis_recovery_queued", count: recovered }));
   workerStarted = true;
   const timer = setInterval(() => void drainQueue(), POLL_MS);
   timer.unref();
