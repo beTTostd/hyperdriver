@@ -102,12 +102,13 @@ type ReplayDecisionMarker = {
   decisionLabel: string;
   marker: "good" | "opportunity" | "high_impact_error";
   confidence: "high" | "medium";
-  regretPp: number;
+  regretScore: number;
   executionQuality: number;
   explanation: string;
-  chosenAction: { key: string; label: string; identifier: string; estimatedWinProbability: number };
-  bestAction: { key: string; label: string; identifier: string; estimatedWinProbability: number };
-  alternatives: Array<{ key: string; label: string; identifier: string; estimatedWinProbability: number }>;
+  chosenSequence: Array<{ label: string; resourcesAfter?: number; actionPointsAfter?: number }>;
+  chosenAction: { key: string; label: string; identifier: string; heuristicScore: number };
+  bestAction: { key: string; label: string; identifier: string; heuristicScore: number; sequence?: Array<{ label: string }> };
+  alternatives: Array<{ key: string; label: string; identifier: string; heuristicScore: number }>;
 };
 type ReplayDecisionAnalysisResponse = {
   status: "pending" | "ready" | "insufficient_data" | "failed";
@@ -500,27 +501,35 @@ function DecisionSidebarPanel({
         <p className={styles.decisionSidebarEmpty}>Selecione um marcador colorido na timeline para ver a comparação neste painel.</p>
       ) : (
         <>
-          <p className={styles.decisionSidebarMeta}>{decision.decisionLabel} · confiança {decision.confidence === "high" ? "alta" : "média"} · execução {decision.executionQuality.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</p>
+          <p className={styles.decisionSidebarMeta}>{decision.decisionLabel} · confiança {decision.confidence === "high" ? "alta" : "média"} · execução {decision.executionQuality.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/100</p>
           <div className={styles.decisionSidebarComparison}>
             <article>
               <small>Ação realizada</small>
               <strong>{decision.chosenAction.label || decision.chosenAction.identifier}</strong>
-              <span>{decision.chosenAction.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% de vitória estimada</span>
+              <span>{decision.chosenAction.heuristicScore.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} pontos heurísticos</span>
             </article>
             {decision.marker !== "good" && (
               <article>
                 <small>Melhor linha encontrada</small>
                 <strong>{decision.bestAction.label || decision.bestAction.identifier}</strong>
-                <span>{decision.bestAction.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% · +{decision.regretPp.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.</span>
+                <span>{decision.bestAction.heuristicScore.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} pts. · +{decision.regretScore.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} pts.</span>
               </article>
             )}
+          </div>
+          <div className={styles.decisionSidebarAlternatives}>
+            <small>Continuação calculada com cartas conhecidas</small>
+            <ol>{decision.chosenSequence.map((step, index) => <li key={index}><span>{step.label}</span></li>)}</ol>
+            {decision.marker !== "good" && decision.bestAction.sequence && <>
+              <small>Sequência da alternativa</small>
+              <ol>{decision.bestAction.sequence.map((step, index) => <li key={index}>{step.label}</li>)}</ol>
+            </>}
           </div>
           {decision.marker !== "good" && <p className={styles.decisionSidebarExplanation}><b>Por que apareceu:</b> {decision.explanation}</p>}
           {decision.alternatives.length > 0 && (
             <div className={styles.decisionSidebarAlternatives}>
               <small>Outras alternativas</small>
               <ul>{decision.alternatives.slice(0, 2).map((alternative) => (
-                <li key={alternative.key}><span>{alternative.label || alternative.identifier}</span><b>{alternative.estimatedWinProbability.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</b></li>
+                <li key={alternative.key}><span>{alternative.label || alternative.identifier}</span><b>{alternative.heuristicScore.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} pts.</b></li>
               ))}</ul>
             </div>
           )}
@@ -1042,7 +1051,7 @@ export default function TalisharTable({
                 className={`${styles.decisionMarker} ${styles[marker.marker]} ${index === marker.frameIndex ? styles.selectedDecisionMarker : ""}`}
                 key={`${marker.stateFingerprint}-${marker.frameIndex}`}
                 style={{ "--decision-position": `${frames.length > 1 ? marker.frameIndex / (frames.length - 1) * 100 : 0}%` } as CSSProperties}
-                title={`Clique para abrir · ${marker.decisionLabel}: ${marker.regretPp.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.`}
+                title={`Clique para abrir · ${marker.decisionLabel}: ${marker.regretScore.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} pts.`}
                 type="button"
                 disabled={recordingLocked}
                 onClick={() => {

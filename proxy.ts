@@ -32,6 +32,7 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/api/coach/") ||
     pathname.startsWith("/coach/") ||
     pathname === "/api/profile/avatar-options" ||
+    pathname.startsWith("/api/training/") ||
     pathname.startsWith("/api/replays");
   const authenticated = request.cookies.has(SESSION_COOKIE);
   let response: NextResponse;

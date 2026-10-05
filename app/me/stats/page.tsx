@@ -279,15 +279,15 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
 
         {decisionAnalysisVisible && (
           <section className={`${styles.panel} ${styles.decisionPanel}`} aria-labelledby="decision-analysis-title">
-            {sectionHeading("05", "Decisões / pós-partida", "Potencial, execução e sinais de deck", "decision-analysis-title")}
+            {sectionHeading("05", "Decisões / pós-partida", "Potencial, execução e padrões", "decision-analysis-title")}
             {stats.decisionAnalysis.analyzedDecisions > 0 ? (
               <>
-                <p className={styles.panelNote}>{stats.decisionAnalysis.analyzedDecisions} decisões com confiança média ou alta · avaliação no estado conhecido de cada escolha</p>
+                <p className={styles.panelNote}>{stats.decisionAnalysis.analyzedDecisions} decisões com confiança média ou alta · avaliação heurística no estado conhecido · índices de 0 a 100</p>
                 <div className={styles.decisionSummary}>
-                  <article><small>Potencial das mãos</small><strong>{stats.decisionAnalysis.averageHandPotential === null ? "—" : formatPercent(stats.decisionAnalysis.averageHandPotential)}</strong><span>máximo médio estimado</span></article>
-                  <article><small>Qualidade da execução</small><strong>{stats.decisionAnalysis.averageExecutionQuality === null ? "—" : formatPercent(stats.decisionAnalysis.averageExecutionQuality)}</strong><span>linha escolhida vs. melhor encontrada</span></article>
+                  <article><small>Potencial das mãos</small><strong>{stats.decisionAnalysis.averageHandPotential === null ? "—" : `${formatMetric(stats.decisionAnalysis.averageHandPotential)}/100`}</strong><span>máximo médio estimado</span></article>
+                  <article><small>Qualidade da execução</small><strong>{stats.decisionAnalysis.averageExecutionQuality === null ? "—" : `${formatMetric(stats.decisionAnalysis.averageExecutionQuality)}/100`}</strong><span>linha escolhida vs. melhor encontrada</span></article>
                   <article><small>Variância do draw</small><strong>{stats.decisionAnalysis.varianceLimitedHands}</strong><span>baixo potencial com boa execução</span></article>
-                  <article><small>Abaixo do potencial</small><strong>{stats.decisionAnalysis.executionBelowPotential}</strong><span>arrependimento estimado ≥ 2 p.p.</span></article>
+                  <article><small>Abaixo do potencial</small><strong>{stats.decisionAnalysis.executionBelowPotential}</strong><span>arrependimento estimado ≥ 2 pts.</span></article>
                 </div>
 
                 <div className={styles.decisionInsights}>
@@ -299,11 +299,11 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
                     ))}</ul> : <p>Nenhum erro controlável se repetiu no recorte.</p>}
                   </article>
                   <article>
-                    <small>Cobertura estatística</small>
+                    <small>Limites da análise</small>
                     <h3>Sinais de deck</h3>
                     {stats.decisionAnalysis.deckSignals.length ? <ul>{stats.decisionAnalysis.deckSignals.map((signal) => (
                       <li key={signal.tag}><span>{DECISION_PATTERN_LABELS[signal.tag] ?? signal.tag}</span><b>{signal.occurrences}×</b></li>
-                    ))}</ul> : <p>Nenhum padrão repetido teve intervalo de confiança que excluísse efeito neutro.</p>}
+                    ))}</ul> : <p>Os padrões observados não permitem atribuir a causa ao deck.</p>}
                   </article>
                 </div>
 
@@ -316,9 +316,9 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
                         <tr key={`${matchup.playerHeroId}-${matchup.opponentHeroId}`}>
                           <th scope="row">{cardName(matchup.playerHeroId)} <span>vs.</span> {cardName(matchup.opponentHeroId)}</th>
                           <td>{matchup.decisions}</td>
-                          <td>{formatPercent(matchup.averagePotential)}</td>
-                          <td>{formatPercent(matchup.averageExecution)}</td>
-                          <td className={styles.tableMetric}>{formatMetric(matchup.averageRegretPp)} p.p.</td>
+                          <td>{`${formatMetric(matchup.averagePotential)}/100`}</td>
+                          <td>{`${formatMetric(matchup.averageExecution)}/100`}</td>
+                          <td className={styles.tableMetric}>{formatMetric(matchup.averageRegretScore)} pts.</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -332,6 +332,7 @@ export default async function UserStatsPage({ searchParams }: PageProps) {
 
         <section className={styles.panel} aria-labelledby="goals-title">
           {sectionHeading("06", "Treinamento / foco", "Metas ativas", "goals-title")}
+          <p><Link href="/me/training">Treinar decisões das minhas partidas</Link></p>
           {activeGoals.length ? <div className={styles.recentList}>{activeGoals.map((goal) => <article className={styles.recentMatch} key={goal.id}><div className={styles.recentInfo}><strong>{goal.title}</strong><small>{goal.progressMatches} de {goal.targetMatches} partidas acompanhadas</small></div><Link href="/me/goals">Abrir metas</Link></article>)}</div> : <div className={styles.inlineEmpty}>Nenhuma meta ativa. <Link href="/me/goals">Criar uma meta</Link></div>}
         </section>
 

@@ -69,6 +69,18 @@ docker compose -f compose.dev.yaml up --build
 Abra [http://localhost:3101](http://localhost:3101). As alterações nos arquivos
 do projeto serão refletidas automaticamente no container.
 
+Para inspecionar o frontend com Chromium, gerar screenshots de desktop e celular
+e registrar erros de JavaScript e rede, use o container dedicado de Playwright:
+
+```bash
+npm run browser:up
+npm run browser:capture
+npm run browser:capture -- / --mobile
+```
+
+As capturas ficam em `outputs/browser/`. Veja [as instruções de inspeção visual](scripts/browser/README.md)
+para navegar em outras páginas e executar interações antes da captura.
+
 ## Banco de dados e acesso
 
 O projeto usa SQLite local por meio do Drizzle. Os dados persistentes ficam

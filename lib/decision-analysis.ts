@@ -11,9 +11,10 @@ import {
   replays,
 } from "../db/schema";
 import {
-  analyzeReplayDecisions,
   publicDecisionDatasetExample,
+  analysisVersions,
 } from "./decision-analysis-core.js";
+import { analyzeInSeparateProcess } from "./decision-analysis-process.js";
 import { getReplayStorage } from "./replay-storage";
 import type { ReplayDocument, ReplayMetadata } from "./replays";
 
@@ -31,13 +32,32 @@ export type DecisionAction = {
   source: string;
   pitchValue: number | null;
   cardType: string | null;
-  estimatedWinProbability?: number;
+  heuristicScore?: number;
   utility?: number;
+  members?: DecisionAction[];
   decomposition?: DecisionDecomposition;
+  rootDecomposition?: DecisionDecomposition;
+  sequence?: DecisionSequenceStep[];
+  scoreTrace?: Array<{ term: string; value: number; weight: number; contribution: number }>;
+  endState?: Record<string, unknown>;
+};
+
+export type DecisionSequenceStep = {
+  label: string;
+  kind?: string;
+  instance?: string;
+  identifier?: string;
+  resourcesBefore?: number;
+  resourcesAfter?: number;
+  actionPointsBefore?: number;
+  actionPointsAfter?: number;
+  power?: number;
 };
 
 export type DecisionDecomposition = {
   expectedDamage: number;
+  powerOffered?: number;
+  resourcesPaid?: number;
   lifePreserved: number;
   cardsConsumed: number;
   wastedPitch: number;
@@ -45,6 +65,9 @@ export type DecisionDecomposition = {
   equipmentSpent: number;
   chainContinuity: number;
   firstTurnCardsReplaced: number;
+  rawBlock: number;
+  overblock: number;
+  resourcesGenerated: number;
 };
 
 export type DecisionObservation = {
@@ -72,17 +95,71 @@ export type HandAnalysis = {
   decisionLabel: string;
   handPotential: number;
   executionQuality: number;
-  chosenAction: DecisionAction & { estimatedWinProbability: number; decomposition: DecisionDecomposition };
+  chosenAction: DecisionAction & { heuristicScore: number; decomposition: DecisionDecomposition };
   chosenActionValue: number;
-  bestAction: DecisionAction & { estimatedWinProbability: number; decomposition: DecisionDecomposition };
+  bestAction: DecisionAction & { heuristicScore: number; decomposition: DecisionDecomposition };
   bestActionValue: number;
-  alternatives: Array<DecisionAction & { estimatedWinProbability: number; decomposition: DecisionDecomposition }>;
-  regretPp: number;
+  alternatives: Array<DecisionAction & { heuristicScore: number; decomposition: DecisionDecomposition }>;
+  regretScore: number;
+  scoreUnit: "heuristic_points";
+  horizon: string;
+  chosenSequence: DecisionSequenceStep[];
+  candidateSequences: Array<{ actionKey: string; sequence: DecisionSequenceStep[]; score: number;
+    scoreTrace: Array<{ term: string; value: number; weight: number; contribution: number }>; endState: Record<string, unknown> | null }>;
+  search: { engine: string; algorithm: string; seed: number; budget: number; nodesVisited: number; nodesPruned: number; budgetExhausted: boolean; complete: boolean };
+  hiddenInformation: HiddenInformationAnalysis;
+  learning: {
+    version: string; mode: "shadow"; modelId: string | null; affectsRecommendation: false;
+    humanChoice: { supported: boolean; reasons: string[]; actions: Array<{ actionKey: string; probability: number }> };
+    observedOutcome: { supported: boolean; reasons: string[]; probability?: number; counterfactualValue?: false };
+    searchPriorEligible: boolean; limitations: string[];
+  };
+  coverage: { supported: boolean; evaluatedCandidates: number; budget: number; budgetExhausted: boolean };
+  uncertaintyReasons: string[];
+  limitations: string[];
   confidence: AnalysisConfidence;
   marker: DecisionMarker;
   explanation: string;
   improvementTags: string[];
   evidence: string;
+};
+
+export type HiddenInformationAnalysis = {
+  version: string;
+  mode: "shadow";
+  affectsRecommendation: false;
+  scoreUnit: "heuristic_points";
+  calibrated: false;
+  seed: number;
+  supported: boolean;
+  reasons: string[];
+  recommendationActionKey: string | null;
+  guidance: { modelId: string | null; applied: boolean; kind: string; affectsReward: false;
+    outcomeModelUsedForSearch: false; reasons: string[] };
+  belief: {
+    version: string;
+    supported: boolean;
+    source?: string;
+    reasons: string[];
+    constraints: { hero: string | null; format: string | null; maxCopies: number | null;
+      handCount: number; arsenalCount: number; deckCount: number | null;
+      lowerBoundCounts: Record<string, number>; currentPitch: Record<string, number>;
+      returnedPitchHistory: Array<{ observedAtFrame: number; turn: number | null;
+        cards: Array<{ identifier: string; count: number }>; orderKnown: false; destination: string }> };
+    archetypes: Array<{ id: string; label: string; weight: number; counts: Record<string, number>; unknownCount: number }>;
+    limitations?: string[];
+  };
+  candidates: Array<{ actionKey: string; sequence: DecisionSequenceStep[]; trainingScore: number; visits: number }>;
+  search: { budget: number; workUnits: number; enumerationNodes: number; iterations: number;
+    supportedIterations: number; treePolicy: string; strategy: string; budgetExhausted: boolean };
+  stability: { agreement: number; stableAcrossCoveredGroups: boolean; complete: boolean;
+    testedArchetypes: number; policies: string[]; tolerancePoints: number } | null;
+  comparison: { baseline: string; algorithmBudget: number; validationBudget: number; pairedScenarios: number;
+    meanGain: number; sampledGainRange: number[]; experimentalMeanScore: number; baselineMeanScore: number;
+    conditionalOnCoveredScenarios: boolean; strategicallyValidated: false } | null;
+  validation: { budget: number; workUnits: number; budgetExhausted: boolean;
+    groups: Array<{ archetype: string; policy: string; weight: number; attempted: number; covered: number;
+      candidates: Array<{ actionKey: string; meanScore: number }>; meanGainOverBaseline: number | null }> };
 };
 
 export type AnalysisSummary = {
@@ -96,7 +173,7 @@ export type AnalysisSummary = {
     tag: string;
     label: string;
     occurrences: number;
-    averageRegretPp: number;
+    averageRegretScore: number;
   }>;
   deckSignals: Array<{
     tag: string;
@@ -124,10 +201,24 @@ export type ReplayDecisionAnalysis = {
   summary: AnalysisSummary | null;
   methodology: {
     primaryObjective: string;
+    scoreUnit: string;
+    calibrated: boolean;
+    horizon: string;
+    benchmarkValidated: boolean;
     optimizationLabel: string;
     usesFinalResult: boolean;
     collectiveEvidenceUsed: boolean;
     simulatorUsed: boolean;
+    engineVersion: string;
+    searchBudgetPerDecision: number;
+    totalSearchBudget: number;
+    informationSearchVersion: string;
+    opponentModelVersion: string;
+    informationSearchMode: "shadow";
+    totalInformationSearchBudget: number;
+    learningVersion: string;
+    learningMode: "shadow";
+    experimentalLearningUsed: boolean;
     note: string;
   } | null;
   handAnalyses: HandAnalysis[];
@@ -158,10 +249,6 @@ function parseJson<T>(value: string | null, fallback: T): T {
 function configuredVersions(document: ReplayDocument) {
   return {
     replaySchema: document.schemaVersion,
-    evaluator: process.env.DECISION_EVALUATOR_VERSION,
-    cardCatalog: process.env.CARD_CATALOG_VERSION,
-    rules: process.env.FAB_RULES_VERSION,
-    talisharCommit: process.env.TALISHAR_COMPATIBLE_COMMIT,
   };
 }
 
@@ -178,6 +265,8 @@ function modelVersionId(versions: AnalysisVersions): string {
     .slice(0, 16);
   return `${versions.evaluator}:${digest}`;
 }
+
+export const CURRENT_DECISION_MODEL_ID = modelVersionId(analysisVersions());
 
 function collectiveAnalysisEnabled() {
   return collectiveAnalysisConfiguration().enabled;
@@ -244,6 +333,7 @@ export function replayAnalysisStatus(replayId: number): AnalysisStatus | null {
 export async function processReplayAnalysis(
   replayId: number,
   suppliedDocument?: ReplayDocument,
+  execution: { signal?: AbortSignal; canCommit?: () => boolean } = {},
 ): Promise<AnalysisStatus> {
   const database = getDb();
   const metadata = database.select().from(replays).where(eq(replays.id, replayId)).get();
@@ -265,14 +355,12 @@ export async function processReplayAnalysis(
     const document = suppliedDocument ?? JSON.parse(
       await getReplayStorage().read(metadata.storageKey),
     ) as ReplayDocument;
-    const result = analyzeReplayDecisions(
-      document,
-      configuredVersions(document),
-    ) as CoreAnalysis;
+    const result = await analyzeInSeparateProcess(document, configuredVersions(document), { signal: execution.signal }) as CoreAnalysis;
     const modelId = modelVersionId(result.versions);
     const now = Date.now();
 
     database.transaction((transaction) => {
+      if (execution.canCommit && !execution.canCommit()) throw new Error("Analysis lease lost");
       transaction
         .insert(analysisModelVersions)
         .values({
@@ -286,8 +374,8 @@ export async function processReplayAnalysis(
         .onConflictDoNothing()
         .run();
 
-      transaction.delete(decisionDatasetExamples).where(eq(decisionDatasetExamples.replayId, replayId)).run();
-      transaction.delete(decisionObservations).where(eq(decisionObservations.replayId, replayId)).run();
+      transaction.delete(decisionDatasetExamples).where(and(eq(decisionDatasetExamples.replayId, replayId), eq(decisionDatasetExamples.modelVersionId, modelId))).run();
+      transaction.delete(decisionObservations).where(and(eq(decisionObservations.replayId, replayId), eq(decisionObservations.modelVersionId, modelId))).run();
 
       const observationIds = new Map<number, number>();
       for (const observation of result.observations) {
@@ -296,6 +384,7 @@ export async function processReplayAnalysis(
           .values({
             replayId,
             ordinal: observation.ordinal,
+            modelVersionId: modelId,
             frameSequence: observation.frameSequence,
             frameIndex: observation.frameIndex,
             turn: observation.turn,
@@ -341,7 +430,8 @@ export async function processReplayAnalysis(
           executionQuality: analysis.executionQuality,
           chosenValue: analysis.chosenActionValue,
           bestValue: analysis.bestActionValue,
-          regretPp: analysis.regretPp,
+          regretPp: analysis.regretScore,
+          scoreUnit: analysis.scoreUnit,
           tagsJson: JSON.stringify(analysis.improvementTags),
           analysisJson: JSON.stringify(analysis),
         }).run();
@@ -384,6 +474,7 @@ export async function processReplayAnalysis(
     }
     return result.status;
   } catch (error) {
+    if (execution.signal?.aborted || (execution.canCommit && !execution.canCommit())) throw error;
     const now = Date.now();
     database
       .insert(replayAnalyses)
@@ -443,15 +534,17 @@ export function getReplayDecisionAnalysis(
     };
   }
 
-  const analyses = run.run.status === "ready"
+  const compatible = run.model?.id === CURRENT_DECISION_MODEL_ID;
+  const historical = !compatible && ["ready", "insufficient_data"].includes(run.run.status);
+  const analyses = compatible && ["ready", "insufficient_data"].includes(run.run.status)
     ? database
       .select({ analysisJson: handAnalyses.analysisJson })
       .from(handAnalyses)
-      .where(eq(handAnalyses.replayId, replay.id))
+      .where(and(eq(handAnalyses.replayId, replay.id), eq(handAnalyses.scoreUnit, "heuristic_points"), eq(handAnalyses.modelVersionId, CURRENT_DECISION_MODEL_ID)))
       .orderBy(asc(handAnalyses.frameSequence), asc(handAnalyses.id))
       .all()
       .map(({ analysisJson }) => parseJson<HandAnalysis | null>(analysisJson, null))
-      .filter((analysis): analysis is HandAnalysis => analysis !== null && analysis.confidence !== "low")
+      .filter((analysis): analysis is HandAnalysis => analysis !== null)
     : [];
   const versions = run.model ? {
     analysisSchema: run.model.analysisSchema,
@@ -463,16 +556,16 @@ export function getReplayDecisionAnalysis(
   } : null;
 
   return {
-    status: run.run.status as AnalysisStatus,
+    status: historical ? "insufficient_data" : run.run.status as AnalysisStatus,
     observationCount: run.run.observationCount,
     analysisCount: run.run.analysisCount,
     versions,
-    summary: visible ? parseJson<AnalysisSummary | null>(run.run.summaryJson, null) : null,
+    summary: visible && compatible ? parseJson<AnalysisSummary | null>(run.run.summaryJson, null) : null,
     methodology: parseJson<ReplayDecisionAnalysis["methodology"]>(run.run.methodologyJson, null),
     handAnalyses: visible ? analyses : [],
     recommendationsVisible: visible,
     shadowMode: !visible,
-    reason: run.run.errorCode ?? undefined,
+    reason: historical ? "legacy_analysis_methodology" : run.run.errorCode ?? undefined,
     updatedAt: run.run.updatedAt,
   };
 }
@@ -521,7 +614,7 @@ export type DecisionAnalysisAggregate = {
   deckSignals: Array<{
     tag: string;
     occurrences: number;
-    averageRegretPp: number;
+    averageRegretScore: number;
     confidenceIntervalExcludesNeutral: true;
   }>;
   byHeroMatchup: Array<{
@@ -530,7 +623,7 @@ export type DecisionAnalysisAggregate = {
     decisions: number;
     averagePotential: number;
     averageExecution: number;
-    averageRegretPp: number;
+    averageRegretScore: number;
   }>;
 };
 
@@ -542,6 +635,8 @@ export function aggregateDecisionAnalysis(
     eq(replays.userId, userId),
     ne(replays.participation, "watched"),
     inArray(handAnalyses.confidence, ["high", "medium"] as const),
+    eq(handAnalyses.scoreUnit, "heuristic_points"),
+    eq(handAnalyses.modelVersionId, CURRENT_DECISION_MODEL_ID),
   ];
   if (options.startAt !== null && options.startAt !== undefined) conditions.push(gte(replays.startedAt, options.startAt));
   if (options.endAt !== null && options.endAt !== undefined) conditions.push(lte(replays.startedAt, options.endAt));
@@ -550,18 +645,17 @@ export function aggregateDecisionAnalysis(
     .select({ replay: replays, analysis: handAnalyses })
     .from(handAnalyses)
     .innerJoin(replays, eq(handAnalyses.replayId, replays.id))
+    .innerJoin(analysisModelVersions, eq(handAnalyses.modelVersionId, analysisModelVersions.id))
     .where(and(...conditions))
     .all();
   const average = (values: number[]) => values.length
     ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10
     : null;
   const patterns = new Map<string, number>();
-  const patternRegrets = new Map<string, number[]>();
   const matchups = new Map<string, { playerHeroId: string; opponentHeroId: string; potential: number[]; execution: number[]; regret: number[] }>();
   for (const row of rows) {
     for (const tag of parseJson<string[]>(row.analysis.tagsJson, [])) {
       patterns.set(tag, (patterns.get(tag) ?? 0) + 1);
-      patternRegrets.set(tag, [...(patternRegrets.get(tag) ?? []), row.analysis.regretPp]);
     }
     if (!row.replay.playerHeroId || !row.replay.opponentHeroId) continue;
     const key = `${row.replay.playerHeroId}:${row.replay.opponentHeroId}`;
@@ -588,28 +682,14 @@ export function aggregateDecisionAnalysis(
       .map(([tag, occurrences]) => ({ tag, occurrences }))
       .sort((left, right) => right.occurrences - left.occurrences)
       .slice(0, 3),
-    deckSignals: [...patternRegrets.entries()]
-      .filter(([, values]) => {
-        if (values.length < 3) return false;
-        const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-        const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1);
-        return mean - 1.96 * Math.sqrt(variance / values.length) > 0;
-      })
-      .map(([tag, values]) => ({
-        tag,
-        occurrences: values.length,
-        averageRegretPp: average(values) ?? 0,
-        confidenceIntervalExcludesNeutral: true as const,
-      }))
-      .sort((left, right) => right.occurrences - left.occurrences)
-      .slice(0, 3),
+    deckSignals: [],
     byHeroMatchup: [...matchups.values()].map((bucket) => ({
       playerHeroId: bucket.playerHeroId,
       opponentHeroId: bucket.opponentHeroId,
       decisions: bucket.potential.length,
       averagePotential: average(bucket.potential) ?? 0,
       averageExecution: average(bucket.execution) ?? 0,
-      averageRegretPp: average(bucket.regret) ?? 0,
+      averageRegretScore: average(bucket.regret) ?? 0,
     })).sort((left, right) => right.decisions - left.decisions),
   };
 }

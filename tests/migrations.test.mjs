@@ -39,9 +39,11 @@ test("migrations create a new database once with checksums and hardening tables"
         "0012_training_goals",
         "0013_replay_participation_admin_json",
         "0014_analysis_jobs_maintenance",
+        "0015_decision_score_units",
+        "0016_training_exercise_attempts",
       ],
     );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 15);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 17);
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='replay_metrics'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rate_limit_events'").get());
     assert.ok(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='upload_events'").get());
@@ -100,7 +102,7 @@ test("migration adoption preserves an existing legacy user and replay", () => {
       migrated.prepare("SELECT participation, participation_source AS participationSource FROM replays WHERE id=1").get(),
       { participation: "unknown", participationSource: null },
     );
-    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 15);
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 17);
   } finally {
     migrated.close();
   }
@@ -141,6 +143,7 @@ test("replay deletion cascades through decision observations, analyses, feedback
       ) VALUES (?, ?, 'model-1', 'state', 1, 0, 'action', 'medium', 50, 90, 50, 51, 1, '[]', '{}')
     `).run(replay.id, observation.id);
     database.prepare("INSERT INTO analysis_feedback (replay_id, user_id, analysis_fingerprint, helpful) VALUES (?, 1, 'state', 1)").run(replay.id);
+    database.prepare("INSERT INTO training_exercise_attempts (user_id, replay_id, exercise_key, model_version_id, chosen_action_key, within_tolerance, score_gap, created_at, updated_at) VALUES (1, ?, 'exercise', 'model-1', 'choice', 1, 0, 1, 1)").run(replay.id);
     database.prepare(`
       INSERT INTO decision_dataset_examples (
         replay_id, model_version_id, example_key, user_cohort, decision_kind, payload_json
@@ -162,6 +165,7 @@ test("replay deletion cascades through decision observations, analyses, feedback
       "decision_observations",
       "hand_analyses",
       "analysis_feedback",
+      "training_exercise_attempts",
       "decision_dataset_examples",
     ]) {
       assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0, table);
@@ -336,3 +340,49 @@ function playerTwoReplay(id) {
     },
   };
 }
+
+test("score-unit migration preserves historical values, model identity and goal denominators", () => {
+  const databaseFile = temporaryDatabase();
+  migrate(databaseFile);
+  const database = new Database(databaseFile);
+  try {
+    // Build the pre-upgrade analysis tables in isolation to exercise the data migration.
+    const legacy = new Database(":memory:");
+    try {
+      legacy.exec(`CREATE TABLE replays (id INTEGER PRIMARY KEY); CREATE TABLE users (id INTEGER PRIMARY KEY);`);
+      legacy.exec(readMigration("0008_decision_analysis.sql"));
+      legacy.exec(readMigration("0012_training_goals.sql"));
+      legacy.exec(`
+        INSERT INTO replays VALUES (1);
+        INSERT INTO users VALUES (1);
+        INSERT INTO analysis_model_versions (id, analysis_schema, evaluator_version, card_catalog_version, rules_version, talishar_commit)
+          VALUES ('old', '1.1.0', 'old-evaluator', 'old-catalog', 'old-rules', 'old-commit');
+        INSERT INTO replay_analyses (replay_id, model_version_id, status) VALUES (1, 'old', 'ready');
+        INSERT INTO decision_observations (id, replay_id, ordinal, frame_sequence, frame_index, kind, state_fingerprint, hand_fingerprint, data_quality, state_json, legal_actions_json)
+          VALUES (1, 1, 1, 1, 0, 'pitch', 'state', 'hand', 'captured', '{}', '[]');
+        INSERT INTO hand_analyses (replay_id, observation_id, model_version_id, state_fingerprint, frame_sequence, frame_index, decision_kind, confidence, hand_potential, execution_quality, chosen_value, best_value, regret_pp, tags_json, analysis_json)
+          VALUES (1, 1, 'old', 'state', 1, 0, 'pitch', 'medium', 50, 60, 40, 45, 5, '[]', '{"old":true}');
+        INSERT INTO training_goals (user_id, title, origin, source_replay_id, baseline_rate)
+          VALUES (1, 'Old goal', 'analysis_pattern', 1, 25);
+      `);
+      legacy.exec(readMigration("0015_decision_score_units.sql"));
+      assert.deepEqual(legacy.prepare("SELECT score_unit, model_version_id, chosen_value, regret_pp, analysis_json FROM hand_analyses").get(), {
+        score_unit: "legacy_win_probability", model_version_id: "old", chosen_value: 40, regret_pp: 5, analysis_json: '{"old":true}',
+      });
+      assert.deepEqual(legacy.prepare("SELECT model_version_id, metric_version, baseline_rate FROM training_goals").get(), {
+        model_version_id: "old", metric_version: "all_decisions_v1", baseline_rate: 25,
+      });
+      assert.equal(legacy.prepare("SELECT model_version_id FROM decision_observations").get().model_version_id, "old");
+      legacy.exec(`INSERT INTO analysis_model_versions (id, analysis_schema, evaluator_version, card_catalog_version, rules_version, talishar_commit)
+        VALUES ('new', '2.0.0', 'new-evaluator', 'new-catalog', 'new-rules', 'new-commit');`);
+      // The same decision ordinal may coexist in two methodologies.
+      legacy.exec(`INSERT INTO decision_observations (replay_id, ordinal, model_version_id, frame_sequence, frame_index, kind, state_fingerprint, hand_fingerprint, data_quality, state_json, legal_actions_json)
+        VALUES (1, 1, 'new', 1, 0, 'pitch', 'new-state', 'hand', 'captured', '{}', '[]');`);
+      assert.equal(legacy.prepare("SELECT COUNT(*) AS count FROM decision_observations").get().count, 2);
+    } finally {
+      legacy.close();
+    }
+  } finally {
+    database.close();
+  }
+});

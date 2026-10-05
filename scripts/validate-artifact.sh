@@ -20,4 +20,11 @@ static_dir="${project_root}/.next/static"
   exit 66
 }
 
+for analysis_file in decision-analysis-process.mjs decision-analysis-core.js decision-card-catalog.js decision-turn-search.js decision-opponent-knowledge.js decision-opponent-model.js decision-information-search.js decision-learning.js; do
+  [[ -f "${project_root}/.next/standalone/lib/${analysis_file}" ]] || {
+    echo "Missing standalone analysis worker dependency: ${analysis_file}" >&2
+    exit 66
+  }
+done
+
 echo "Validated standalone Next.js artifact."

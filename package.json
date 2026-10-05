@@ -11,6 +11,9 @@
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "npm run db:migrate && next dev --hostname 0.0.0.0",
+    "browser:up": "docker compose -f compose.browser.yaml up -d --build",
+    "browser:capture": "docker compose -f compose.browser.yaml exec -T browser node /opt/browser/scripts/capture.mjs",
+    "browser:down": "docker compose -f compose.browser.yaml down",
     "build": "npm run supervisor:build && bash scripts/build-verified.sh",
     "start": "next start --hostname 0.0.0.0",
     "test": "npm run build && node --test tests/*.test.mjs",

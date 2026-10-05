@@ -79,7 +79,7 @@ test("hides improvement comparison cards when the marker is a good decision", ()
   assert.match(tableSource, /decision\.marker !== "good" && <p className=\{styles\.decisionSidebarExplanation\}><b>Por que apareceu:<\/b>/);
   assert.match(reportSource, /item\.marker !== "good" && <p className=\{styles\.decisionMeaning\}><strong>Por que este marcador apareceu:<\/strong>/);
   assert.match(reportSource, /item\.marker !== "good" && \([\s\S]*<small>Melhor linha encontrada<\/small>/);
-  assert.match(reportSource, /item\.marker !== "good" && <p>\{item\.explanation\}<\/p>/);
+  assert.match(reportSource, /<p>\{item\.explanation\}<\/p>/);
   assert.match(reportSource, /item\.marker === "good" \? styles\.singleDecisionComparison/);
   assert.match(reportStyles, /\.singleDecisionComparison \{ grid-template-columns: 1fr; \}/);
 });

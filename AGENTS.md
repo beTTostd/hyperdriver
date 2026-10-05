@@ -25,6 +25,12 @@ npm run db:generate         # generate Drizzle migrations from schema changes
 
 Run `npm run install:ci` for a lockfile-exact CI installation.
 
+For visual frontend inspection, run `npm run browser:up`, then
+`npm run browser:capture -- /` (add `--mobile` for a phone viewport). Open
+the PNG files under `outputs/browser/` to inspect the rendered page. This
+dedicated Playwright container connects to the development service; see
+`scripts/browser/README.md` for custom routes, interaction scenarios, and error reports.
+
 ## Coding Style & Naming Conventions
 
 Use TypeScript/TSX for application code and modern ESM syntax. Follow the existing two-space indentation, double-quoted strings, trailing commas, and semicolon style. Use PascalCase for React components, camelCase for variables/functions, and kebab-case for route or asset names where appropriate. Prefer colocated CSS modules for page-specific styles. Run `npm run lint` before submitting changes.

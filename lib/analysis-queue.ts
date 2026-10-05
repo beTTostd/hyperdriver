@@ -132,8 +132,26 @@ function failJob(job: ClaimedJob, error: unknown, now = Date.now()): void {
 export async function processNextAnalysisJob(): Promise<boolean> {
   const job = claimNextJob();
   if (!job) return false;
+  const controller = new AbortController();
+  const ownsLease = () => Boolean(getDb().select({ id: analysisJobs.replayId }).from(analysisJobs).where(and(
+    eq(analysisJobs.replayId, job.replayId), eq(analysisJobs.leaseToken, job.leaseToken), eq(analysisJobs.status, "running"),
+    sql`${analysisJobs.leaseExpiresAt} > ${Date.now()}`,
+  )).get());
+  const heartbeat = setInterval(() => {
+    try {
+      const now = Date.now();
+      const renewed = getDb().update(analysisJobs).set({ leaseExpiresAt: now + LEASE_MS, updatedAt: now }).where(and(
+        eq(analysisJobs.replayId, job.replayId), eq(analysisJobs.leaseToken, job.leaseToken), eq(analysisJobs.status, "running"),
+        sql`${analysisJobs.leaseExpiresAt} > ${now}`,
+      )).run().changes;
+      if (!renewed) controller.abort();
+    } catch {
+      controller.abort();
+    }
+  }, 30_000);
+  heartbeat.unref();
   try {
-    await processReplayAnalysis(job.replayId);
+    await processReplayAnalysis(job.replayId, undefined, { signal: controller.signal, canCommit: ownsLease });
     completeJob(job);
   } catch (error) {
     failJob(job, error);
@@ -145,6 +163,7 @@ export async function processNextAnalysisJob(): Promise<boolean> {
       terminal: job.attempts >= MAX_ATTEMPTS,
     }));
   }
+  finally { clearInterval(heartbeat); }
   return true;
 }
 

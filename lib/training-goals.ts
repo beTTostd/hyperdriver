@@ -8,6 +8,7 @@ import {
   trainingGoals,
 } from "../db/schema";
 import { findUserReplay } from "./replays";
+import { CURRENT_DECISION_MODEL_ID } from "./decision-analysis";
 import { automaticGoalResult } from "./training-goals-core.js";
 
 export class GoalError extends Error {
@@ -42,9 +43,23 @@ function analyzedReplayRows(userId: number, options: { before?: number; after?: 
   return getDb().select({ replay: replays }).from(replays).innerJoin(replayAnalyses, eq(replayAnalyses.replayId, replays.id)).where(and(...conditions)).orderBy(desc(replays.startedAt), desc(replays.id)).all().map((row) => row.replay);
 }
 
-function patternMetrics(replayIds: number[], patternTag: string) {
+function patternMetrics(replayIds: number[], patternTag: string, modelVersionId: string | null, metricVersion = "relevant_opportunities_v2") {
   if (!replayIds.length) return { eligibleReplayIds: [] as number[], occurrences: 0, decisions: 0, rate: 0 };
-  const rows = getDb().select({ replayId: handAnalyses.replayId, confidence: handAnalyses.confidence, tagsJson: handAnalyses.tagsJson }).from(handAnalyses).where(inArray(handAnalyses.replayId, replayIds)).all().filter((row) => row.confidence !== "low");
+  if (!modelVersionId) return { eligibleReplayIds: [] as number[], occurrences: 0, decisions: 0, rate: 0 };
+  const opportunityKinds: Record<string, string[]> = {
+    "early-blue-pitch": ["pitch"], "insufficient-pitch": ["pitch"],
+    overblock: ["defense"], "equipment-efficiency": ["defense"],
+    "lost-arsenal": ["arsenal"], "weak-arsenal": ["arsenal"],
+    "interrupted-line": ["action", "reaction", "instant"], "incompatible-hand": ["action"],
+  };
+  const kinds = opportunityKinds[patternTag];
+  if (!kinds && metricVersion !== "all_decisions_v1") return { eligibleReplayIds: [] as number[], occurrences: 0, decisions: 0, rate: 0 };
+  const rows = getDb().select({ replayId: handAnalyses.replayId, confidence: handAnalyses.confidence, tagsJson: handAnalyses.tagsJson })
+    .from(handAnalyses).where(and(
+      inArray(handAnalyses.replayId, replayIds), eq(handAnalyses.modelVersionId, modelVersionId),
+      ...(metricVersion === "all_decisions_v1" ? [] : [inArray(handAnalyses.decisionKind, kinds)]),
+      inArray(handAnalyses.confidence, ["medium", "high"]),
+    )).all();
   const eligibleReplayIds = [...new Set(rows.map((row) => row.replayId))];
   const occurrences = rows.filter((row) => tags(row.tagsJson).includes(patternTag)).length;
   return { eligibleReplayIds, occurrences, decisions: rows.length, rate: rows.length ? occurrences * 100 / rows.length : 0 };
@@ -53,15 +68,17 @@ function patternMetrics(replayIds: number[], patternTag: string) {
 function baseline(userId: number, replayId: number, patternTag: string, gameMode: string | null, heroId: string | null) {
   const source = findUserReplay(userId, String(replayId));
   if (!source || source.participation === "watched") throw new GoalError("Replay de origem não encontrado.", 404);
+  const sourceAnalysis = getDb().select({ modelVersionId: replayAnalyses.modelVersionId }).from(replayAnalyses).where(eq(replayAnalyses.replayId, source.id)).get();
+  const modelVersionId = sourceAnalysis?.modelVersionId ?? null;
   const candidates = analyzedReplayRows(userId, { before: source.startedAt, gameMode, heroId }).filter((replay) => replay.id !== source.id);
   const eligibleIds: number[] = [];
   for (const replay of candidates) {
-    if (patternMetrics([replay.id], patternTag).decisions > 0) eligibleIds.push(replay.id);
+    if (patternMetrics([replay.id], patternTag, modelVersionId).decisions > 0) eligibleIds.push(replay.id);
     if (eligibleIds.length === 10) break;
   }
-  const metrics = patternMetrics(eligibleIds, patternTag);
+  const metrics = patternMetrics(eligibleIds, patternTag, modelVersionId);
   if (metrics.eligibleReplayIds.length < 5) throw new GoalError("São necessários ao menos 5 replays analisados anteriores no mesmo escopo.", 422);
-  return { ...metrics, replayCount: metrics.eligibleReplayIds.length };
+  return { ...metrics, modelVersionId, replayCount: metrics.eligibleReplayIds.length };
 }
 
 export function createGoal(userId: number, input: Record<string, unknown>) {
@@ -91,6 +108,8 @@ export function createGoal(userId: number, input: Record<string, unknown>) {
     baselineOccurrences: frozen?.occurrences ?? null,
     baselineDecisions: frozen?.decisions ?? null,
     baselineRate: frozen?.rate ?? null,
+    modelVersionId: frozen?.modelVersionId ?? null,
+    metricVersion: "relevant_opportunities_v2",
     targetRate: frozen ? frozen.rate * 0.75 : null,
     currentOccurrences: origin === "analysis_pattern" ? 0 : null,
     currentDecisions: origin === "analysis_pattern" ? 0 : null,
@@ -105,10 +124,10 @@ export function recalculateActiveGoals(userId: number) {
     const candidates = analyzedReplayRows(userId, { after: goal.startedAt, gameMode: goal.gameMode, heroId: goal.heroId }).reverse();
     const firstEligible: number[] = [];
     for (const replay of candidates) {
-      if (patternMetrics([replay.id], goal.patternTag!).decisions > 0) firstEligible.push(replay.id);
+      if (patternMetrics([replay.id], goal.patternTag!, goal.modelVersionId, goal.metricVersion).decisions > 0) firstEligible.push(replay.id);
       if (firstEligible.length >= goal.targetMatches) break;
     }
-    const metrics = patternMetrics(firstEligible, goal.patternTag!);
+    const metrics = patternMetrics(firstEligible, goal.patternTag!, goal.modelVersionId, goal.metricVersion);
     const automaticResult = automaticGoalResult({ baselineRate: goal.baselineRate, currentRate: metrics.rate, progressMatches: firstEligible.length, targetMatches: goal.targetMatches });
     const reduction = automaticResult.reduction;
     const finished = automaticResult.complete;
@@ -181,7 +200,7 @@ export function deleteGoalCheckin(userId: number, goalId: number, checkinId: num
 
 export function goalSuggestions(userId: number) {
   const recent = analyzedReplayRows(userId, {}).slice(0, 10);
-  const rows = recent.length ? getDb().select({ replayId: handAnalyses.replayId, confidence: handAnalyses.confidence, tagsJson: handAnalyses.tagsJson }).from(handAnalyses).where(inArray(handAnalyses.replayId, recent.map((replay) => replay.id))).all() : [];
+  const rows = recent.length ? getDb().select({ replayId: handAnalyses.replayId, confidence: handAnalyses.confidence, tagsJson: handAnalyses.tagsJson }).from(handAnalyses).where(and(inArray(handAnalyses.replayId, recent.map((replay) => replay.id)), eq(handAnalyses.scoreUnit, "heuristic_points"), eq(handAnalyses.modelVersionId, CURRENT_DECISION_MODEL_ID))).all() : [];
   const counts = new Map<string, number>();
   for (const row of rows) if (row.confidence !== "low") for (const tag of tags(row.tagsJson)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([patternTag, occurrences]) => ({ patternTag, occurrences }));

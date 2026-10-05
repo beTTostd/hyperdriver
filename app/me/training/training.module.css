@@ -1,0 +1,7 @@
+.choices { margin: 1rem 0; border: 1px solid #8b9298; display: grid; gap: .6rem; }
+.choices label { display: flex; gap: .6rem; padding: .5rem; cursor: pointer; }
+.choices label:focus-within { outline: 2px solid #6bb8ff; }
+.choices input { accent-color: #ff4d3d; }
+.result { border-left: 3px solid #6bb8ff; padding: 1rem; margin-top: 1rem; background: #121416; }
+.result ol { padding-left: 1.4rem; }
+.result li { margin: .4rem 0; }

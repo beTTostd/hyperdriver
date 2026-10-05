@@ -29,7 +29,8 @@ function basePayload(overrides = {}) {
     priorityPlayer: "1",
     canPassPhase: true,
     playerAP: 1,
-    playerPitchCount: 0,
+    opponentAP: 0,
+    playerPitchCount: 1,
     opponentPitchCount: 0,
     playerHealth: 20,
     opponentHealth: 20,
@@ -38,8 +39,8 @@ function basePayload(overrides = {}) {
     playerEquipment: [{ cardNumber: "local_hero", slot: "Hero", controller: "1" }],
     opponentEquipment: [{ cardNumber: "opponent_hero", slot: "Hero", controller: "2" }],
     playerHand: [
-      card("strong_attack_red", 0, 1),
-      card("resource_card_blue", 1, 3),
+      card("critical_strike_red", 0, 1),
+      card("wounding_blow_blue", 1, 3),
     ],
     opponentHand: [{ cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }],
     playerArse: [],
@@ -70,7 +71,7 @@ test("recognizes action, pitch, reaction, arsenal, instant, defense and modal de
       turnPhase: { turnPhase: "D", caption: "Declare seus bloqueios" },
       playerHealth: 6,
       activeChainLink: {
-        attackingCard: { cardNumber: "opponent_attack", controller: "2" },
+        attackingCard: { cardNumber: "wounding_blow_red", controller: "2" },
         totalPower: 8,
         totalDefense: 0,
       },
@@ -153,11 +154,11 @@ test("does not charge the normal hand-consumption penalty when both players refi
     turnPhase: { turnPhase: "D", caption: "Declare seus bloqueios" },
     playerHealth: 17,
     playerHand: [
-      card("dampen_red", 0, 1),
-      card("conflicting_thoughts_blue", 1, 3),
+      card("wounding_blow_red", 0, 1),
+      card("wounding_blow_blue", 1, 3),
     ],
     activeChainLink: {
-      attackingCard: { cardNumber: "opponent_attack", controller: "2" },
+      attackingCard: { cardNumber: "wounding_blow_red", controller: "2" },
       totalPower: 4,
       totalDefense: 0,
     },
@@ -183,10 +184,10 @@ test("does not charge the normal hand-consumption penalty when both players refi
   assert.equal(firstTurnAnalysis.chosenAction.decomposition.firstTurnCardsReplaced, 1);
   assert.equal(laterTurnAnalysis.chosenAction.decomposition.firstTurnCardsReplaced, 0);
   assert.equal(firstTurnAnalysis.chosenAction.utility, 2.7);
-  assert.equal(laterTurnAnalysis.chosenAction.utility, 1);
-  assert.equal(firstTurnAnalysis.regretPp, 0);
-  assert.equal(firstTurnAnalysis.marker, "good");
-  assert.match(firstTurnAnalysis.explanation, /primeiro turno, ambos os jogadores compram até o intelecto/i);
+  assert.equal(laterTurnAnalysis.chosenAction.rootDecomposition.lifePreserved, 3);
+  assert.equal(firstTurnAnalysis.regretScore, 0);
+  assert.equal(firstTurnAnalysis.marker, null);
+  assert.ok(firstTurnAnalysis.uncertaintyReasons.includes("first_turn_response_requires_unknown_draw"));
 });
 
 test("uses the form mode for modal card choices without a card play action", () => {
@@ -217,12 +218,12 @@ test("represents a multi-card block as one sanitized chosen action", () => {
     turnPhase: { turnPhase: "D", caption: "Declare seus bloqueios" },
     playerHealth: 5,
     playerHand: [
-      card("first_block", 0, 1),
-      card("second_block", 1, 2),
-      card("third_block", 2, 3),
+      card("wounding_blow_red", 0, 1),
+      card("brutal_assault_yellow", 1, 2),
+      card("wounding_blow_blue", 2, 3),
     ],
     activeChainLink: {
-      attackingCard: { cardNumber: "lethal_attack", controller: "2" },
+      attackingCard: { cardNumber: "wounding_blow_red", controller: "2" },
       totalPower: 9,
       totalDefense: 0,
     },
@@ -233,9 +234,9 @@ test("represents a multi-card block as one sanitized chosen action", () => {
   }));
 
   assert.equal(result.observations[0].chosenAction.source, "multi");
-  assert.deepEqual(result.observations[0].chosenAction.identifiers, ["first_block", "second_block"]);
+  assert.deepEqual(result.observations[0].chosenAction.identifiers, ["wounding_blow_red", "brutal_assault_yellow"]);
   assert.equal(result.analyses[0].decisionKind, "defense");
-  assert.equal(result.analyses[0].chosenAction.decomposition.cardsConsumed, 2);
+  assert.equal(result.analyses[0].chosenAction.rootDecomposition.cardsConsumed, 2);
 });
 
 test("drops decisions from an abandoned undo branch", () => {
@@ -348,4 +349,142 @@ test("collective examples omit account, replay and deck identifiers", () => {
   for (const forbidden of ["private-user", "private-match-id", "private-storage", "private-deck"]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test("reports heuristic units and never manufactures a win probability", () => {
+  const result = analyzeReplayDecisions(capturedDocument());
+  const analysis = result.analyses[0];
+  assert.equal(result.versions.analysisSchema, "5.0.0");
+  assert.equal(result.methodology.primaryObjective, "heuristic_score");
+  assert.equal(result.methodology.calibrated, false);
+  assert.equal(analysis.scoreUnit, "heuristic_points");
+  assert.equal(analysis.horizon, "end_of_turn");
+  assert.equal(analysis.chosenAction.decomposition.chainContinuity, 0);
+  assert.equal(analysis.bestAction.heuristicScore, 4.15);
+  assert.equal(analysis.regretScore, 3.26);
+  assert.equal(JSON.stringify(result).includes("estimatedWinProbability"), false);
+});
+
+test("detects actual excess block, including when no incoming damage remains", () => {
+  for (const [power, defense, preserved, excess] of [[4, 0, 4, 2], [4, 4, 0, 6]]) {
+    const payload = basePayload({
+      turnPhase: { turnPhase: "D", caption: "Block" },
+      playerHand: [card("wounding_blow_red", 0, 1), card("wounding_blow_blue", 1, 3)],
+      activeChainLink: { attackingCard: { cardNumber: "wounding_blow_red" }, totalPower: power, totalDefense: defense },
+    });
+    const analysis = analyzeReplayDecisions(capturedDocument({ payload, choice: { action: "3", zone: "MYHAND", identifiers: ["0", "1"] } })).analyses[0];
+    assert.equal(analysis.chosenAction.decomposition.rawBlock, 6);
+    assert.equal(analysis.chosenAction.decomposition.lifePreserved, preserved);
+    assert.equal(analysis.chosenAction.decomposition.overblock, excess);
+    assert.ok(analysis.improvementTags.includes("overblock"));
+    assert.equal(analysis.chosenAction.decomposition.cardsConsumed, 2);
+    assert.ok(analysis.bestActionValue >= analysis.chosenActionValue);
+    assert.ok(analysis.candidateSequences.some((candidate) => candidate.actionKey === analysis.chosenAction.key));
+  }
+});
+
+test("enumerates equivalent composite candidates and preserves duplicate card instances", () => {
+  const payload = basePayload({
+    playerHealth: 4,
+    turnPhase: { turnPhase: "D", caption: "Block" },
+    playerHand: [card("wounding_blow_red", 0, 1), card("wounding_blow_red", 1, 1), card("wounding_blow_blue", 2, 3)],
+    activeChainLink: { attackingCard: { cardNumber: "wounding_blow_red" }, totalPower: 8, totalDefense: 0 },
+  });
+  const analysis = analyzeReplayDecisions(capturedDocument({ payload, choice: { action: "3", zone: "MYHAND", identifiers: ["0", "1"] } })).analyses[0];
+  assert.equal(analysis.candidateSequences.filter((candidate) => candidate.actionKey.startsWith("multi:")).length, 3);
+  assert.equal(new Set(analysis.chosenAction.members.map((member) => member.key)).size, 2);
+  assert.equal(analysis.chosenAction.rootDecomposition.lifePreserved, 6);
+});
+
+test("rejects partial, repeated and wrong-mode compound selections", () => {
+  for (const choice of [
+    { action: "3", zone: "MYHAND", identifiers: ["0", "missing"] },
+    { action: "3", zone: "MYHAND", identifiers: ["0", "0"] },
+    { action: "wrong", zone: "MYHAND", identifiers: ["0", "1"] },
+    { action: "3", zone: "MYARSENAL", identifiers: ["0", "1"] },
+  ]) {
+    assert.equal(extractDecisionObservations(capturedDocument({ choice }))[0].chosenAction, null);
+    assert.equal(analyzeReplayDecisions(capturedDocument({ choice })).analyses.length, 0);
+  }
+});
+
+test("unknown cards and effects cause abstention despite an arbitrarily large score gap", () => {
+  for (const overrides of [
+    { playerHand: [card("unknown_red", 0, 1), card("wounding_blow_blue", 1, 3)] },
+    { playerAuras: [{ cardNumber: "unknown_aura" }] },
+    { playerHand: [card("critical_strike_red", 0, 1, "3", { countersMap: { attack: 1000 } }), card("wounding_blow_blue", 1, 3)] },
+  ]) {
+    const analysis = analyzeReplayDecisions(capturedDocument({ payload: basePayload(overrides) })).analyses[0];
+    assert.equal(analysis.confidence, "low");
+    assert.equal(analysis.marker, null);
+    assert.ok(analysis.uncertaintyReasons.length > 0);
+    assert.deepEqual(analysis.improvementTags, []);
+  }
+});
+
+test("pitch is evaluated against the observed payment cost and abstains when it is absent", () => {
+  const pitch = { turnPhase: { turnPhase: "P", caption: "Pitch" }, playerPitchCount: 0 };
+  const lowCost = analyzeReplayDecisions(capturedDocument({ payload: basePayload({ ...pitch, playerPitchCost: 1 }) })).analyses[0];
+  const highCost = analyzeReplayDecisions(capturedDocument({ payload: basePayload({ ...pitch, playerPitchCost: 5 }) })).analyses[0];
+  const unknown = analyzeReplayDecisions(capturedDocument({ payload: basePayload(pitch) })).analyses[0];
+  assert.equal(lowCost.chosenAction.decomposition.wastedPitch, 2);
+  assert.equal(highCost.chosenAction.decomposition.wastedPitch, 0);
+  assert.equal(highCost.bestAction.identifier, "wounding_blow_blue");
+  assert.equal(unknown.confidence, "low");
+  assert.equal(unknown.chosenAction.decomposition.wastedPitch, 0);
+  assert.ok(unknown.uncertaintyReasons.includes("unknown_payment_cost"));
+});
+
+test("does not generate high confidence or causal deck signals from repeated heuristic decisions", () => {
+  const document = capturedDocument();
+  const original = document.match.frames[0];
+  for (let index = 2; index <= 8; index += 1) {
+    document.match.frames.push({ ...original, sequence: index, payload: { ...original.payload, turnNo: index } });
+    document.match.decisionEvents.push({ frameSequence: index, choice: { action: "3", zone: "MYHAND", identifier: "1" } });
+  }
+  const result = analyzeReplayDecisions(document);
+  assert.ok(result.analyses.length >= 3);
+  assert.ok(result.analyses.every((analysis) => analysis.confidence !== "high"));
+  assert.deepEqual(result.summary.deckSignals, []);
+});
+
+test("future revelations, final results and opponent private cards cannot change an earlier analysis", () => {
+  const before = capturedDocument();
+  const future = structuredClone(before);
+  future.match.summary = { winner: "2" };
+  future.match.frames.push({ sequence: 2, payload: basePayload({ turnNo: 2, opponentDiscard: [{ cardNumber: "future_reveal" }] }) });
+  future.match.frames[0].payload.opponentHand = future.match.frames[0].payload.opponentHand.map(() => ({ cardNumber: "private_identity" }));
+  assert.deepEqual(analyzeReplayDecisions(before).analyses[0], analyzeReplayDecisions(future).analyses[0]);
+  const observation = extractDecisionObservations(future)[0];
+  assert.equal(JSON.stringify(observation).includes("future_reveal"), false);
+  assert.equal(JSON.stringify(observation).includes("private_identity"), false);
+});
+
+test("public copy counts are retained without counting repeated frames as new copies", () => {
+  const payload = basePayload({ opponentPitch: [{ cardNumber: "wounding_blow_blue" }, { cardNumber: "wounding_blow_blue" }] });
+  const document = capturedDocument({ payload });
+  document.match.frames.push({ sequence: 2, payload: { ...payload, playerHealth: 19 } });
+  document.match.decisionEvents.push({ frameSequence: 2, choice: { action: "3", zone: "MYHAND", identifier: "1" } });
+  const observations = extractDecisionObservations(document);
+  assert.equal(observations[0].state.opponentVisibleCardCounts.wounding_blow_blue, 2);
+  assert.equal(observations[1].state.opponentVisibleCardCounts.wounding_blow_blue, 2);
+});
+
+
+test("unknown prototype property names cannot be mistaken for catalog entries", () => {
+  const payload = basePayload({ playerHand: [card("constructor", 0, 1), card("__proto__", 1, 3)] });
+  const analysis = analyzeReplayDecisions(capturedDocument({ payload })).analyses[0];
+  assert.equal(analysis.confidence, "low");
+  assert.ok(analysis.uncertaintyReasons.includes("card_not_in_catalog"));
+});
+
+test("face-down opponent chain cards and reactions remain private", () => {
+  const payload = basePayload({ activeChainLink: {
+    attackingCard: { cardNumber: "hidden_attacker", controller: "2", facing: "DOWN" },
+    totalPower: 4, totalDefense: 0,
+    reactions: [{ cardNumber: "hidden_reaction", controller: "2", facing: "DOWN" }],
+  } });
+  const state = extractDecisionObservations(capturedDocument({ payload }))[0].state;
+  assert.equal(JSON.stringify(state).includes("hidden_attacker"), false);
+  assert.equal(JSON.stringify(state).includes("hidden_reaction"), false);
 });

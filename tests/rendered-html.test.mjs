@@ -328,15 +328,57 @@ test("shows decision analysis and feedback to the replay owner and administrator
   const adminAnalysis = await waitForDecisionAnalysis(replayId, ownerCookie);
   assert.equal(adminAnalysis.status, "ready");
   assert.equal(adminAnalysis.recommendationsVisible, true);
-  assert.equal(adminAnalysis.methodology.primaryObjective, "estimated_win_probability");
+  assert.equal(adminAnalysis.methodology.primaryObjective, "heuristic_score");
   assert.equal(adminAnalysis.methodology.usesFinalResult, false);
+  assert.equal(adminAnalysis.methodology.simulatorUsed, true);
+  assert.equal(adminAnalysis.versions.analysisSchema, "5.0.0");
   assert.equal(adminAnalysis.versions.replaySchema, "0.3.0");
   assert.equal(adminAnalysis.handAnalyses.length, 1);
   assert.equal(adminAnalysis.handAnalyses[0].confidence, "medium");
   assert.equal(adminAnalysis.handAnalyses[0].marker, "opportunity");
-  assert.ok(adminAnalysis.handAnalyses[0].regretPp > 0);
+  assert.ok(adminAnalysis.handAnalyses[0].regretScore > 0);
   assert.ok(adminAnalysis.handAnalyses[0].alternatives.length > 0);
   assert.ok(adminAnalysis.handAnalyses[0].alternatives.length <= 2);
+  assert.equal(adminAnalysis.handAnalyses[0].horizon, "end_of_turn");
+  assert.ok(adminAnalysis.handAnalyses[0].bestAction.sequence.some((step) => step.kind === "resolve"));
+  assert.equal(adminAnalysis.handAnalyses[0].search.complete, true);
+  assert.equal(adminAnalysis.methodology.informationSearchMode, "shadow");
+  assert.equal(adminAnalysis.handAnalyses[0].hiddenInformation.affectsRecommendation, false);
+  assert.equal(adminAnalysis.handAnalyses[0].hiddenInformation.belief.archetypes.length, 3);
+  assert.equal(adminAnalysis.methodology.learningMode, "shadow");
+  assert.equal(adminAnalysis.handAnalyses[0].learning.modelId, null);
+
+  assert.equal((await fetch(new URL("/api/training/exercises", baseUrl))).status, 401);
+  const exerciseResponse = await fetch(new URL("/api/training/exercises", baseUrl), { headers: { cookie: ownerCookie } });
+  assert.equal(exerciseResponse.status, 200);
+  assert.match(exerciseResponse.headers.get("cache-control"), /private|no-store/);
+  const practice = await exerciseResponse.json();
+  assert.equal(practice.exercises.length, 1);
+  const exercise = practice.exercises[0];
+  for (const key of ["bestAction", "analysis", "regretScore", "chosenAction", "sequence"]) assert.equal(Object.hasOwn(exercise, key), false);
+  assert.equal(exercise.practiced, false);
+  const attemptUrl = new URL(`/api/training/exercises/${exercise.id}/attempt`, baseUrl);
+  const responseBody = { actionKey: adminAnalysis.handAnalyses[0].bestAction.key };
+  const otherAttempt = await fetch(attemptUrl, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(responseBody) });
+  assert.equal(otherAttempt.status, 404);
+  const externalAttempt = await fetch(attemptUrl, { method: "POST", headers: { "content-type": "application/json", cookie: ownerCookie, origin: "https://untrusted.example" }, body: JSON.stringify(responseBody) });
+  assert.equal(externalAttempt.status, 403);
+  const attempt = await fetch(attemptUrl, { method: "POST", headers: { "content-type": "application/json", cookie: ownerCookie }, body: JSON.stringify(responseBody) });
+  assert.equal(attempt.status, 200);
+  const comparison = await attempt.json();
+  assert.equal(comparison.withinTolerance, true);
+  assert.equal(comparison.scoreGap, 0);
+  assert.equal(comparison.strategicallyValidated, false);
+  assert.ok(comparison.best.sequence.some((step) => step.kind === "resolve"));
+  const exerciseFeedback = await fetch(attemptUrl, { method: "POST", headers: { "content-type": "application/json", cookie: ownerCookie }, body: JSON.stringify({ helpful: true }) });
+  assert.equal(exerciseFeedback.status, 200);
+  const progress = await (await fetch(new URL("/api/training/exercises", baseUrl), { headers: { cookie: ownerCookie } })).json();
+  assert.equal(progress.practiced, 1); assert.equal(progress.exercises[0].attempts, 1);
+  const trainingPage = await fetch(new URL("/me/training", baseUrl), { headers: { cookie: ownerCookie } });
+  assert.equal(trainingPage.status, 200);
+  const trainingHtml = await trainingPage.text();
+  assert.match(trainingHtml, /Treinar decisões/); assert.match(trainingHtml, /Qual escolha inicia seu plano/);
+  assert.doesNotMatch(trainingHtml, /Melhor linha encontrada/);
 
   const ownerFeedback = await fetch(new URL(`/api/replays/${replayId}/analysis/feedback`, baseUrl), {
     method: "POST",
@@ -366,11 +408,17 @@ test("shows decision analysis and feedback to the replay owner and administrator
   assert.match(reportHtml, /Melhor linha encontrada/);
   assert.match(reportHtml, /Como usar os marcadores/);
   assert.match(reportHtml, /Oportunidade de melhoria/);
-  assert.match(reportHtml, /p\.p.*pontos percentuais/);
+  assert.match(reportHtml, /pts\..*pontos heurísticos/);
   assert.match(reportHtml, /Ação realizada/);
   assert.match(reportHtml, /execução/);
   assert.match(reportHtml, /Abrir decisão na mesa/);
-  assert.match(reportHtml, /probabilidade estimada de vitória/);
+  assert.match(reportHtml, /pontuação é heurística/);
+  assert.match(reportHtml, /Sequência calculada com cartas conhecidas/);
+  assert.match(reportHtml, /Decomposição da pontuação/);
+  assert.match(reportHtml, /Informação oculta — experimento/);
+  assert.match(reportHtml, /não alteram os marcadores/);
+  assert.match(reportHtml, /peso da hipótese/);
+  assert.match(reportHtml, /fim do turno/);
 
   const ownerReport = await fetch(new URL(`/replays/${replayId}`, baseUrl), { headers: { cookie: ownerCookie } });
   assert.equal(ownerReport.status, 200);
@@ -381,7 +429,7 @@ test("shows decision analysis and feedback to the replay owner and administrator
   assert.match(ownerReportHtml, /Abrir decisão na mesa/);
   assert.doesNotMatch(ownerReportHtml, /Meu caderno/);
 
-  const ownerStats = await fetch(new URL("/me/stats", baseUrl), { headers: { cookie: ownerCookie } });
+  const ownerStats = await fetch(new URL("/me/stats?period=all", baseUrl), { headers: { cookie: ownerCookie } });
   assert.equal(ownerStats.status, 200);
   const ownerStatsHtml = await ownerStats.text();
   assert.match(ownerStatsHtml, /Decisões \/ pós-partida/);
@@ -394,6 +442,7 @@ test("shows decision analysis and feedback to the replay owner and administrator
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM decision_observations WHERE replay_id = ?").get(replay.id).count, 1);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM hand_analyses WHERE replay_id = ?").get(replay.id).count, 1);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM analysis_feedback WHERE replay_id = ?").get(replay.id).count, 1);
+    assert.deepEqual(database.prepare("SELECT attempts, helpful FROM training_exercise_attempts WHERE replay_id = ?").get(replay.id), { attempts: 1, helpful: 1 });
     const dataset = database.prepare("SELECT user_cohort AS userCohort, payload_json AS payloadJson FROM decision_dataset_examples WHERE replay_id = ?").get(replay.id);
     assert.match(dataset.userCohort, /^[0-9a-f]{64}$/);
     for (const forbidden of ["analysis-admin-only-owner", replayId, "private-deck"]) {
@@ -1871,7 +1920,7 @@ function decisionReplayDocument(id) {
     priorityPlayer: "1",
     canPassPhase: true,
     playerAP: 1,
-    playerPitchCount: 0,
+    playerPitchCount: 1,
     opponentPitchCount: 0,
     playerHealth: 20,
     opponentHealth: 20,
@@ -1880,8 +1929,8 @@ function decisionReplayDocument(id) {
     playerEquipment: [{ slot: "Hero", cardNumber: "alpha_hero", controller: "1" }],
     opponentEquipment: [{ slot: "Hero", cardNumber: "beta_hero", controller: "2" }],
     playerHand: [
-      { cardNumber: "strong_attack_red", controller: "1", action: 3, actionData: "0", pitchValue: 1 },
-      { cardNumber: "resource_card_blue", controller: "1", action: 3, actionData: "1", pitchValue: 3 },
+      { cardNumber: "critical_strike_red", controller: "1", action: 3, actionData: "0", pitchValue: 1 },
+      { cardNumber: "wounding_blow_blue", controller: "1", action: 3, actionData: "1", pitchValue: 3 },
     ],
     opponentHand: [{ cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }, { cardNumber: "CardBack" }],
     playerArse: [],

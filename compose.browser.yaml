@@ -1,0 +1,24 @@
+name: hyperdriver-browser
+
+services:
+  browser:
+    build:
+      context: ./docker/browser
+    init: true
+    shm_size: "256mb"
+    mem_limit: "1g"
+    environment:
+      BROWSER_BASE_URL: https://beta.hyperdriver.com.br
+      BROWSER_OUTPUT_DIR: /output
+    volumes:
+      - ./scripts/browser:/opt/browser/scripts:ro
+      - ./outputs/browser:/output
+    networks:
+      - frontend
+    command: ["node", "-e", "setInterval(() => {}, 3600000)"]
+    restart: unless-stopped
+
+networks:
+  frontend:
+    external: true
+    name: ${HYPERDRIVER_NETWORK:-hyperdriver_default}

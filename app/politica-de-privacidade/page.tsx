@@ -135,13 +135,14 @@ export default function PrivacyPolicyPage() {
 
           <section id="analise">
             <SectionTitle number="07">Análises e aprendizado coletivo</SectionTitle>
-            <p>O Hyperdriver pode derivar do replay observações de decisão, análises de mão e exemplos destinados a avaliar e melhorar o treinador pós-partida. O objetivo principal do avaliador é estimar a probabilidade de vitória usando apenas as informações disponíveis no instante da escolha. A análise é versionada e mantida separada do replay original, para permitir recálculo sem alterar a partida.</p>
+            <p>O Hyperdriver pode derivar do replay observações de decisão, análises de mão e exemplos destinados a avaliar e melhorar o treinador pós-partida. O avaliador compara pontuações heurísticas experimentais, sem calibração como probabilidade de vitória, usando apenas as informações disponíveis no instante da escolha. A análise é versionada e mantida separada do replay original, para permitir recálculo sem alterar a partida.</p>
             <p>Para aprendizado coletivo, o exemplo derivado exclui nome de usuário, URL, identificador da partida, link do deck e conteúdo bruto do replay. A conta é substituída por um código pseudônimo criptográfico. Pseudonimização é uma salvaguarda e não transforma automaticamente o dado em anônimo.</p>
             <div className={styles.notice}>
               <strong>Limites e salvaguardas</strong>
               <p>Não será feito backfill de replays históricos para aprendizado coletivo sem avaliação documentada da base legal aplicável. Novos usos dependem de finalidade explícita, necessidade, transparência, balanceamento e medidas de segurança. A exclusão de um replay remove também suas observações e exemplos derivados do conjunto usado em versões futuras.</p>
             </div>
             <p>O feedback opcional “útil” ou “não útil” serve para monitorar a qualidade da análise. Ele não altera automaticamente o modelo nem a recomendação exibida.</p>
+            <p>Os exercícios de treinamento usam análises das suas próprias partidas. Guardamos a escolha feita no exercício, a diferença de pontuação, o número de tentativas e o feedback opcional para acompanhar sua prática. Esses registros são privados, ficam vinculados à versão do avaliador e são apagados ao excluir a partida ou a conta. Acertos no exercício não são usados como medida automática de evolução nas partidas nem como rótulos de jogada correta para aprendizado coletivo.</p>
             <p>Recomendações de baixa confiança não são apresentadas como melhoria. Uma única derrota não produz recomendação de troca de carta; sinais de construção de deck exigem repetição e intervalo de confiança que exclua efeito neutro.</p>
             <p>As salvaguardas seguem os princípios do <a href="https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm">artigo 6º da LGPD</a> e o <a href="https://www.gov.br/anpd/pt-br/centrais-de-conteudo/materiais-educativos-e-publicacoes/guia_orientativo_hipoteses_legais_tratamento_de_dados_pessoais_legitimo_interesse">guia orientativo da ANPD</a>.</p>
           </section>

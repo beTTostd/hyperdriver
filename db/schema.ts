@@ -194,6 +194,7 @@ export const decisionObservations = sqliteTable(
       .notNull()
       .references(() => replays.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
+    modelVersionId: text("model_version_id").references(() => analysisModelVersions.id),
     frameSequence: integer("frame_sequence").notNull(),
     frameIndex: integer("frame_index").notNull(),
     turn: integer("turn"),
@@ -207,7 +208,7 @@ export const decisionObservations = sqliteTable(
     createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    uniqueIndex("decision_observations_replay_ordinal_unique").on(table.replayId, table.ordinal),
+    uniqueIndex("decision_observations_replay_ordinal_model_unique").on(table.replayId, table.ordinal, table.modelVersionId),
     index("decision_observations_fingerprint_idx").on(table.stateFingerprint),
     index("decision_observations_replay_kind_idx").on(table.replayId, table.kind),
   ],
@@ -238,6 +239,7 @@ export const handAnalyses = sqliteTable(
     chosenValue: real("chosen_value").notNull(),
     bestValue: real("best_value").notNull(),
     regretPp: real("regret_pp").notNull(),
+    scoreUnit: text("score_unit").notNull().default("legacy_win_probability"),
     tagsJson: text("tags_json").notNull(),
     analysisJson: text("analysis_json").notNull(),
     createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
@@ -432,6 +434,8 @@ export const trainingGoals = sqliteTable(
     baselineOccurrences: integer("baseline_occurrences"),
     baselineDecisions: integer("baseline_decisions"),
     baselineRate: real("baseline_rate"),
+    metricVersion: text("metric_version").notNull().default("all_decisions_v1"),
+    modelVersionId: text("model_version_id").references(() => analysisModelVersions.id),
     targetRate: real("target_rate"),
     currentOccurrences: integer("current_occurrences"),
     currentDecisions: integer("current_decisions"),
@@ -447,6 +451,21 @@ export const trainingGoals = sqliteTable(
     index("training_goals_source_replay_idx").on(table.sourceReplayId),
   ],
 );
+
+export const trainingExerciseAttempts = sqliteTable("training_exercise_attempts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  replayId: integer("replay_id").notNull().references(() => replays.id, { onDelete: "cascade" }),
+  exerciseKey: text("exercise_key").notNull(),
+  modelVersionId: text("model_version_id").notNull().references(() => analysisModelVersions.id),
+  chosenActionKey: text("chosen_action_key").notNull(),
+  withinTolerance: integer("within_tolerance", { mode: "boolean" }).notNull(),
+  scoreGap: real("score_gap").notNull(),
+  attempts: integer("attempts").notNull().default(1),
+  helpful: integer("helpful", { mode: "boolean" }),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [uniqueIndex("training_exercise_user_key_unique").on(table.userId, table.exerciseKey)]);
 
 export const trainingGoalCheckins = sqliteTable(
   "training_goal_checkins",
