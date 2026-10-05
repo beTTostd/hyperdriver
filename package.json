@@ -34,7 +34,7 @@
   "dependencies": {
     "better-sqlite3": "11.10.0",
     "drizzle-orm": "0.45.2",
-    "next": "16.3.5",
+    "next": "16.3.8",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -46,7 +46,7 @@
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },
