@@ -41,6 +41,13 @@ formulários, verificar estados e criar capturas adicionais usando Playwright.
 O diretório de scripts é montado como somente leitura; alterações não exigem
 rebuild da imagem. As capturas usam contextos novos, sem login persistente.
 
+`replay-mobile.mjs` verifica o tabuleiro em 320, 390, 430 e 844 px, incluindo
+sobreposição de zonas, navegação entre frames, telemetria e ampliação por toque.
+Importe esse cenário após autenticar e abrir um replay em um contexto com
+`isMobile: true` e `hasTouch: true`. Use um frame intermediário com cartas
+visíveis (por exemplo, `/table?frame=78` na instância de teste com a partida
+de exemplo). As capturas são salvas como `replay-*.png` em `outputs/browser/`.
+
 Também é possível passar uma URL completa como primeiro argumento. O endereço
 padrão é `https://beta.hyperdriver.com.br`, permitido em `allowedDevOrigins`.
 Usar o domínio evita o bloqueio de recursos do Next.js que pode impedir a

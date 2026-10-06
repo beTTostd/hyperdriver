@@ -20,7 +20,7 @@ const replayTablePageSource = readFileSync(
   "utf8",
 );
 
-test("keeps the replay player transport focused on four ordered controls", () => {
+test("keeps four ordered transport controls and an accessible speed selector", () => {
   const transport = tableSource.match(
     /<div className=\{styles\.transport\}>([\s\S]*?)<\/div>/,
   )?.[1] ?? "";
@@ -28,7 +28,8 @@ test("keeps the replay player transport focused on four ordered controls", () =>
   const labels = [...transport.matchAll(/aria-label=(?:"([^"]+)"|\{playing \? "([^"]+)" : "([^"]+)"\})/g)]
     .flatMap((match) => match.slice(1).filter(Boolean));
 
-  assert.deepEqual(labels, ["Voltar", "Frame anterior", "Pausar", "Reproduzir", "Próximo frame"]);
+  assert.deepEqual(labels, ["Voltar", "Frame anterior", "Pausar", "Reproduzir", "Próximo frame", "Velocidade de reprodução"]);
+  assert.match(transport, /<select aria-label="Velocidade de reprodução"/);
   assert.doesNotMatch(transport, /Primeiro snapshot|\u00daltimo snapshot|Criar bookmark|Compartilhar com treinador/);
   assert.match(transport, /disabled=\{recordingLocked \|\| index === 0\}/);
   assert.match(transport, /disabled=\{recordingLocked \|\| index === frames\.length - 1\}/);

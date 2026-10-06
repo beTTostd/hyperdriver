@@ -180,6 +180,7 @@
 .marker.aim { color: var(--paper); background: #33383d; }
 .broken { position: absolute; top: 3px; right: 3px; z-index: 5; display: grid; width: 18px; height: 18px; place-items: center; border-radius: 50%; color: var(--paper); background: var(--signal-red); font-size: 12px; }
 
+.zoneLabel, .zone > .mobileCount { display: none; }
 .zone, .arsenal, .heroCluster, .equipment, .hand, .permanents { position: absolute; z-index: 10; }
 .zone { display: grid; justify-items: center; }
 .zoneCard { position: relative; }
@@ -444,7 +445,7 @@
 
 @media (max-width: 680px) {
   .replay {
-    --card-size: clamp(44px, 11.8vw, 54px);
+    --card-size: clamp(38px, calc((100vw - 40px) / 7), 62px);
     --equipment-size: var(--card-size);
     --equipment-gap: 2px;
     display: grid;
@@ -468,6 +469,7 @@
     width: 100%;
     height: auto;
     min-height: 100%;
+    grid-template-rows: 1fr auto 1fr;
     overflow: hidden;
   }
   .sidebar { display: none; }
@@ -476,13 +478,15 @@
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, var(--card-size));
+    justify-content: space-between;
+    align-content: center;
     grid-auto-rows: min-content;
     align-items: center;
-    gap: 7px 3px;
+    gap: 6px 2px;
     height: auto;
     min-width: 0;
-    padding: 20px 8px 18px;
+    padding: 32px max(8px, var(--safe-right)) 8px max(8px, var(--safe-left));
   }
   .halfLabel {
     position: absolute;
@@ -517,32 +521,42 @@
   .playerHalf > .permanents {
     width: 100%;
     max-width: 100%;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    justify-content: safe center;
+    padding: 3px 0;
+    scrollbar-width: thin;
   }
   .playerHalf > .hand { grid-column: 1 / -1; justify-self: center; }
   .hand { min-width: 0; }
   .opponentHand { grid-row: 1; }
   .playerHand { grid-row: 5; }
-  .opponentEquipment { grid-column: 1 / 3; grid-row: 2 / span 3; justify-self: start; }
-  .playerEquipment { grid-column: 5 / 7; grid-row: 2 / span 3; justify-self: end; }
-  .opponentHero { grid-column: 3 / 6; grid-row: 3; justify-self: center; }
-  .playerHero { grid-column: 2 / 5; grid-row: 3; justify-self: center; }
-  .opponentArsenal { grid-column: 6; grid-row: 3; justify-self: end; }
-  .playerArsenal { grid-column: 1; grid-row: 3; justify-self: start; }
-  .opponentBanish { grid-column: 3; grid-row: 2; }
-  .opponentDeck { grid-column: 4; grid-row: 2; }
-  .opponentPitch { grid-column: 5; grid-row: 2; }
-  .opponentGraveyard { grid-column: 6; grid-row: 2; }
-  .opponentPermanents { grid-column: 1 / -1; grid-row: 5; justify-self: center; }
-  .playerPermanents { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
+  /* Talishar-style lanes: equipment, hero/weapons, then piles on the edge. */
+  .opponentEquipment, .playerEquipment { grid-column: 1 / 3; grid-row: 2 / 5; justify-self: start; }
+  .opponentHero, .playerHero { grid-column: 3 / 6; grid-row: 3; justify-self: center; }
+  .opponentArsenal, .playerArsenal { grid-column: 3 / 6; grid-row: 2; justify-self: center; }
+  .opponentBanish, .playerBanish { grid-column: 7; grid-row: 2; }
+  .opponentDeck, .playerDeck { grid-column: 7; grid-row: 3; }
+  .opponentPitch, .playerPitch { grid-column: 6; grid-row: 3; }
+  .opponentGraveyard, .playerGraveyard { grid-column: 7; grid-row: 4; }
+  .opponentPermanents, .playerPermanents { grid-column: 3 / 7; grid-row: 4; }
   .playerZoneColumn { display: contents; }
-  .playerGraveyard { grid-column: 1; grid-row: 2; }
-  .playerDeck { grid-column: 2; grid-row: 2; }
-  .playerBanish { grid-column: 3; grid-row: 2; }
-  .playerPitch { grid-column: 4; grid-row: 2; }
-  .permanents { justify-content: center; }
+  .playerHalf { grid-template-rows: auto repeat(3, calc(var(--card-size) + 8px)) auto; }
+  .opponentEquipment { grid-template-areas: "legs ." "chest arms" "head ."; }
+  .playerEquipment { grid-template-areas: "head ." "chest arms" "legs ."; }
+  .equipment { row-gap: 14px; }
+  .heroLife { top: -12px; height: 26px; font: 700 16px var(--font-mono); }
+  .zoneLabel { display: block; position: absolute; z-index: 15; right: 0; bottom: 1px; left: 0; padding: 2px 0; color: var(--paper); background: rgba(9,10,11,.9); font: 8px var(--font-mono); text-align: center; pointer-events: none; }
+  .zoneGhost { font-size: 8px; }
+  .zone > .mobileCount { display: grid; }
+  .zone > b, .hoverCount > b { top: -5px; right: -2px; left: auto; min-width: 22px; height: 22px; opacity: 1; transform: none; font: 700 11px var(--font-mono); }
+  .hoverCount:hover > b { transform: none; }
+  .stackedZoneCards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .stackedCard { position: relative; top: auto!important; flex: 0 0 var(--card-size); scroll-snap-align: start; }
   .permanents .card + .card { margin-left: 0; }
-  .hoverCount > b { opacity: 1; transform: translate(-50%,-50%) scale(.72); }
+  .hand .card + .card { margin-left: 2px; }
+  .valueToggle { top: 3px; right: 8px; min-width: 100px; min-height: 28px; grid-template-columns: repeat(3, auto); gap: 6px; padding: 4px 8px; }
+  .valueToggle > strong { grid-area: auto; font-size: 16px; }
   .centerLane {
     position: relative;
     z-index: 40;
@@ -564,6 +578,9 @@
   .combatChain { flex-wrap: wrap; justify-content: center; gap: 6px; padding: 8px 10px; }
   .combatChain > small { width: 100%; font-family: var(--font-display); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
   .chainInfo { min-width: 76px; }
+  .chainInfo > strong { font-size: 14px; }
+  .chainInfo > span, .actionInfo span, .reactions > span { font-size: 10px; }
+  .chainInfo em { font-size: 8px; }
   .chainInfo > span { max-width: min(130px, 34vw); white-space: normal; }
   .actionDisplay { flex-wrap: nowrap; }
   .result { min-width: 0; padding: 12px; }
@@ -572,13 +589,17 @@
     grid-template-rows: auto auto;
     gap: 6px 8px;
     height: auto;
-    min-height: calc(142px + var(--safe-bottom));
+    min-height: calc(124px + var(--safe-bottom));
     padding: 8px max(8px, var(--safe-right)) max(8px, var(--safe-bottom)) max(8px, var(--safe-left));
   }
-  .transport { grid-column: 1 / -1; justify-content: center; }
+  .transport { grid-column: 1 / -1; justify-content: center; gap: 3px; }
+  .speedControl { margin-left: 0; }
+  .speedControl > span, .shortcutHint { display: none; }
+  .speedControl select { width: 44px; min-height: 44px; font-size: 12px; }
   .timelineWithActions .transport { grid-column: 1; justify-self: start; }
   .transport button, .backButton { width: var(--touch-target); height: var(--touch-target); border-radius: 4px; }
-  .transport .playButton { width: 48px; height: 48px; }
+  .transport .playButton { width: 44px; height: 44px; }
+  .transport button, .backButton, .replayActions > button, .playerActions button { width: 40px; min-height: 44px; height: 44px; }
   .replayActions { grid-column: 2; grid-row: 1; gap: 3px; }
   .replayActions .playerActions { gap: 3px; }
   .playerActionStatus, .recordingStatus { display: none; }
@@ -594,9 +615,9 @@
   .playerModalHeader h2 { font-size: 27px; }
 }
 
-@media (max-width: 440px) {
+@media (max-width: 379px) {
   .playerHalf { padding-inline: 6px; }
-  .timeline { grid-template-rows: auto auto auto; min-height: calc(188px + var(--safe-bottom)); }
+  .timeline { grid-template-rows: auto auto auto; min-height: calc(168px + var(--safe-bottom)); }
   .timelineWithActions .transport { grid-column: 1 / -1; grid-row: 1; justify-self: center; gap: 3px; }
   .replayActions { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
   .scrubber { grid-column: 1; grid-row: 3; }
@@ -609,4 +630,16 @@
   .frameCount strong { font-size: 15px; }
   .frameCount span { font-size: 7px; }
   .card > span { font-size: 5px; }
+}
+
+/* Short touch screens need scrolling space instead of a clipped desktop mat. */
+@media (min-width: 681px) and (max-height: 600px) and (pointer: coarse) {
+  .replay { --card-size: max(44px, min(11dvh, var(--card-size-by-width))); overflow-y: auto; }
+  .tableWorkspace { min-height: 320px; }
+  .valueToggle { right: calc(var(--card-size) * 2 + 20px); }
+  .hand { left: 34%; min-width: 0; max-width: 30%; justify-content: safe center; overflow-x: auto; transform: translateX(-50%); }
+  .opponentHand { top: 4px; }
+  .playerHand { bottom: 4px; }
+  .shortcutHint { display: none; }
+  .timeline { position: sticky; bottom: 0; }
 }

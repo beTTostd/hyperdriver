@@ -283,7 +283,14 @@ function CardView({ card, hidden = false, variant = "normal", label }: { card?: 
       tabIndex={canPreview ? 0 : undefined}
       onPointerEnter={(event) => { if (event.pointerType !== "touch") openPreview(event.currentTarget, false); }}
       onPointerLeave={() => preview?.hideTransientPreview()}
-      onPointerUp={(event) => { if (event.pointerType === "touch") openPreview(event.currentTarget, true); }}
+      onClick={(event) => openPreview(event.currentTarget, true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          openPreview(event.currentTarget, true);
+        }
+      }}
       onFocus={(event) => openPreview(event.currentTarget, false)}
       onBlur={() => preview?.hideTransientPreview()}
     >
@@ -322,7 +329,8 @@ function ZonePile({ className, label, values, count, topCard, hidden = false, st
           </div>
         )) : <CardView card={card} hidden={hidden} /> : <div className={styles.zoneGhost}>{label}</div>}
       </div>
-      {occupied && !hideCount && <b>{total}</b>}
+      {occupied && <span className={styles.zoneLabel} aria-hidden="true">{label}</span>}
+      {occupied && (!hideCount || stacked) && <b className={hideCount ? styles.mobileCount : undefined}>{total}</b>}
     </section>
   );
 }
@@ -1037,7 +1045,7 @@ export default function TalisharTable({
             <button type="button" disabled={recordingLocked || index === 0} onClick={() => { setPlaying(false); setIndex((value) => Math.max(0, value - 1)); }} aria-label="Frame anterior" title="Frame anterior"><TransportIcon name="previous" /></button>
             <button type="button" className={styles.playButton} disabled={recordingLocked} onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pausar" : "Reproduzir"} title={playing ? "Pausar" : "Reproduzir"}><TransportIcon name={playing ? "pause" : "play"} /></button>
             <button type="button" disabled={recordingLocked || index === frames.length - 1} onClick={() => { setPlaying(false); setIndex((value) => Math.min(frames.length - 1, value + 1)); }} aria-label="Próximo frame" title="Próximo frame"><TransportIcon name="next" /></button>
-            <label className={styles.speedControl} title="Velocidade de reprodução"><span>Velocidade</span><select value={playbackRate} disabled={recordingLocked} onChange={(event) => setPlaybackRate(Number(event.target.value))}><option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option></select></label>
+            <label className={styles.speedControl} title="Velocidade de reprodução"><span>Velocidade</span><select aria-label="Velocidade de reprodução" value={playbackRate} disabled={recordingLocked} onChange={(event) => setPlaybackRate(Number(event.target.value))}><option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option></select></label>
           </div>
           <div className={styles.scrubber}>
             <div className={styles.turns}>{markers.map((marker, markerIndex) => {
