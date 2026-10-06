@@ -356,7 +356,7 @@ function HeroCluster({ equipment, health, opponent }: { equipment?: Card[]; heal
   const values = list(equipment);
   const hero = values.find((card) => card.slot === "Hero");
   const leftWeapon = values.find((card) => card.slot === "LWep");
-  const rightWeapon = values.find((card) => card.slot === "RWep");
+  const rightWeapon = values.find((card) => (card.slot === "RWep" || card.slot === "Off-Hand") && card.cardNumber !== "NONE00");
   return (
     <section className={`${styles.heroCluster} ${opponent ? styles.opponentHero : styles.playerHero}`}>
       <div className={styles.leftWeapon}>{leftWeapon && <CardView card={leftWeapon} />}</div>
